@@ -60,11 +60,6 @@ class FixerIO:
         except NameError:
             return raw_input(message)
 
-    def prompt_image(self, message, image_path):
-        """Ask user for input, optionally showing an image."""
-        # Default behavior: Ignore image, just prompt text
-        return self.prompt(f"[Image: {os.path.basename(image_path)}] {message}")
-
     def confirm(self, message):
         return self.prompt(f"{message} (y/n): ").lower().strip() == 'y'
 
@@ -244,15 +239,18 @@ def resolve_image_path(src, filepath, root_dir, io_handler):
                 if os.path.exists(candidate):
                     return candidate
             
-            # Strategy B: Check relative to HTML file (e.g. ../web_resources)
+            # Strategy B: Check relative to HTML file (e.g. current folder or ../web_resources)
             parent = os.path.dirname(filepath)
+            
+            # Try 1: Expanded path directly from parent (for grouped images)
+            candidate_grp = os.path.abspath(os.path.join(parent, expanded))
+            if os.path.exists(candidate_grp): return candidate_grp
+            
+            # Try 2: Up one level (legacy/standard structure)
             candidate_rel = os.path.abspath(os.path.join(parent, "..", expanded))
-            # io_handler.log(f"    [Trace] Checking HTML+Token: {candidate_rel}")
-            if os.path.exists(candidate_rel):
-                return candidate_rel
+            if os.path.exists(candidate_rel): return candidate_rel
 
             # Strategy C: Token expansion failed to find file.
-            # Force cleanup of clean_src so we can try filename-based search later.
             io_handler.log(f"    [Info] Token path not found. Checking elsewhere...")
             clean_src = os.path.basename(clean_src)
 
@@ -472,9 +470,9 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             if choice and choice.strip():
                 a.string = choice.strip()
                 modified = True
-                io_handler.log(f"    -> Updated to: '{choice.strip()}'")
+                io_handler.log(f"    [FIXED] Updated Link Text: {href[:30]}... -> \"{choice.strip()}\"")
             else:
-                io_handler.log("    -> Skipped.")
+                io_handler.log(f"    [SKIP] No change for link: {href[:30]}...")
             
             if io_handler.is_stopped(): return
 

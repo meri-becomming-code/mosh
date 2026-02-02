@@ -160,11 +160,92 @@ class ToolkitGUI:
         help_menu.add_command(label="Welcome / Dedication", command=lambda: self._show_instructions(force=True))
 
     def _ask_api_key(self):
-        key = simpledialog.askstring("API Key", "Enter Google Gemini API Key:", initialvalue=self.api_key, parent=self.root)
-        if key is not None:
-            self._save_config(key.strip(), self.config.get("show_instructions", True), self.config.get("theme", "light"))
-            messagebox.showinfo("Saved", "API Key saved successfully!")
-            self.api_key = key
+        """Deprecated in favor of _show_ai_setup_wizard, but kept for menu backward compatibility."""
+        self._show_ai_setup_wizard()
+
+    def _show_ai_setup_wizard(self):
+        """Phase 6: Friendly wizard to help teachers get and set their Gemini key."""
+        dialog = Toplevel(self.root)
+        dialog.title("✨ MOSH AI Assistant Setup")
+        dialog.geometry("550x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        colors = THEMES[self.config.get("theme", "light")]
+        dialog.configure(bg=colors["bg"])
+
+        tk.Label(dialog, text="Set Up Your AI Assistant", font=("Segoe UI", 16, "bold"), 
+                 bg=colors["bg"], fg=colors["header"]).pack(pady=15)
+        
+        instructions = (
+            "The AI Assistant helps you write 'Alt Text' for images automatically.\n"
+            "To use it, you need a free 'API Key' from Google.\n\n"
+            "1. Click the button below to open Google AI Studio.\n"
+            "2. Click 'Create API key'.\n"
+            "3. If asked, select 'Create API key in a new project'.\n"
+            "4. Copy the key and paste it here."
+        )
+        tk.Label(dialog, text=instructions, justify="left", wraplength=480, 
+                 bg=colors["bg"], fg=colors["fg"], font=("Segoe UI", 10)).pack(pady=5, padx=20)
+
+        def open_studio():
+            webbrowser.open("https://aistudio.google.com/app/apikey")
+
+        tk.Button(dialog, text="🌐 Step 1: Get My Free Gemini Key", command=open_studio, 
+                  bg="#BBDEFB", font=("Segoe UI", 10, "bold"), pady=8).pack(pady=10)
+
+        tk.Label(dialog, text="Step 2: Paste Your Key Below", bg=colors["bg"], fg=colors["fg"], 
+                 font=("Segoe UI", 10, "bold")).pack(pady=(15, 5))
+        
+        key_var = tk.StringVar(value=self.api_key)
+        entry = tk.Entry(dialog, textvariable=key_var, width=50, font=("Consolas", 10))
+        entry.pack(pady=5)
+        
+        lbl_status = tk.Label(dialog, text="", bg=colors["bg"], font=("Segoe UI", 9, "italic"))
+        lbl_status.pack(pady=5)
+
+        def test_key():
+            k = key_var.get().strip()
+            if not k:
+                lbl_status.config(text="Please paste a key first!", fg="red")
+                return
+            
+            lbl_status.config(text="Testing connection...", fg="blue")
+            dialog.update()
+            
+            # Simple test: Can we list models or just try a dummy prompt?
+            # Actually, let's just save it and try a small generate call if we want to be thorough.
+            # For simplicity, we'll try to initialize the model.
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=k)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                # Try a very small prompt
+                response = model.generate_content("Hi", generation_config={"max_output_tokens": 5})
+                if response:
+                    lbl_status.config(text="✅ Success! Key is working and saved.", fg="green")
+                    self.api_key = k
+                    self._save_config(k, self.config.get("show_instructions", True), self.config.get("theme", "light"))
+                    self._update_ai_button_visibility()
+                else: 
+                    raise Exception("No response from AI.")
+            except Exception as e:
+                lbl_status.config(text=f"❌ Failed: {str(e)[:50]}...", fg="red")
+
+        def save_and_close():
+            k = key_var.get().strip()
+            self.api_key = k
+            self._save_config(k, self.config.get("show_instructions", True), self.config.get("theme", "light"))
+            self._update_ai_button_visibility()
+            dialog.destroy()
+
+        btn_frame = tk.Frame(dialog, bg=colors["bg"])
+        btn_frame.pack(pady=20)
+        
+        tk.Button(btn_frame, text="Verify & Save Key", command=test_key, bg="#C8E6C9", width=18).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Close", command=save_and_close, width=12).pack(side="left", padx=10)
+
+        dialog.wait_window(dialog)
 
     def _build_styles(self):
         style = ttk.Style()
@@ -295,12 +376,16 @@ class ToolkitGUI:
         self.btn_batch_ai = ttk.Button(frame_actions, text="✨ Batch AI\n(Suggest Alt Text)", command=self._run_batch_ai, style="Action.TButton")
         self.btn_batch_ai.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
 
-        self.btn_link_audit = ttk.Button(frame_actions, text="🔗 Link Auditor\n(Find Broken Links)", command=self._run_link_audit, style="Action.TButton")
-        self.btn_link_audit.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        # Row 3 (AI Setup / Status)
+        self.btn_ai_setup = ttk.Button(frame_actions, text="✨ Set Up AI Assistant", command=self._show_ai_setup_wizard, style="Action.TButton")
+        self.btn_ai_setup.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
         
         frame_actions.columnconfigure(0, weight=1)
         frame_actions.columnconfigure(1, weight=1)
         frame_actions.columnconfigure(2, weight=1)
+        
+        # Initial AI Button update
+        self._update_ai_button_visibility()
 
 
         # -- Converters --
@@ -309,15 +394,20 @@ class ToolkitGUI:
         frame_convert = ttk.Frame(content)
         frame_convert.pack(fill="x", pady=(10, 20))
         
-        ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> HTML)", command=self._show_conversion_wizard, style="Action.TButton").pack(fill="x", pady=5)
+        self.btn_wizard = ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> HTML)", command=self._show_conversion_wizard, style="Action.TButton")
+        self.btn_wizard.pack(fill="x", pady=5)
         
         frame_singles = ttk.Frame(frame_convert)
         frame_singles.pack(fill="x")
         
-        ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_singles, text="Excel", command=lambda: self._show_conversion_wizard("xlsx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf")).pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_word = ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx"))
+        self.btn_word.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_excel = ttk.Button(frame_singles, text="Excel", command=lambda: self._show_conversion_wizard("xlsx"))
+        self.btn_excel.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_ppt = ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx"))
+        self.btn_ppt.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_pdf = ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf"))
+        self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
 
 
         # -- Logs --
@@ -446,7 +536,7 @@ class ToolkitGUI:
         """Custom dialog to show an image and prompt for alt text."""
         dialog = Toplevel(self.root)
         dialog.title("Image Review")
-        dialog.geometry("600x650") 
+        dialog.geometry("600x680") 
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -481,7 +571,8 @@ class ToolkitGUI:
 
         def suggest_ai():
             if not self.api_key:
-                messagebox.showwarning("No API Key", "Please set your Gemini Key in Settings first.")
+                if messagebox.askyesno("AI Not Setup", "AI features require a Gemini API Key.\n\nWould you like to set it up now?"):
+                    self._show_ai_setup_wizard()
                 return
             lbl_status.config(text="Thinking...", fg="blue")
             dialog.update()
@@ -557,20 +648,34 @@ class ToolkitGUI:
         self.root.wait_window(dialog)
         return result["text"]
 
+    def _update_ai_button_visibility(self):
+        """Changes AI setup button text based on status."""
+        if not hasattr(self, 'btn_ai_setup'): return
+        if self.api_key:
+            self.btn_ai_setup.config(text="✅ AI Assistant is Ready (Click to Change Key)", style="TButton")
+        else:
+            self.btn_ai_setup.config(text="✨ Step 0: Set Up AI Assistant (Recommended)", style="Action.TButton")
+
     def _disable_buttons(self):
-        self.btn_wizard.config(state='disabled')
-        self.btn_inter.config(state='disabled')
-        self.btn_batch_ai.config(state='disabled')
-        self.btn_audit.config(state='disabled')
+        """Gray out all action buttons while a task is running."""
+        for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
+                   self.btn_batch_ai, self.btn_wizard,
+                   self.btn_word, self.btn_excel, self.btn_ppt, self.btn_pdf,
+                   self.btn_ai_setup]:
+            try: btn.config(state='disabled')
+            except: pass
         self.btn_stop.config(state='normal')
         self.gui_handler.stop_requested = False
         self.is_running = True
 
     def _enable_buttons(self):
-        self.btn_wizard.config(state='normal')
-        self.btn_inter.config(state='normal')
-        self.btn_batch_ai.config(state='normal')
-        self.btn_audit.config(state='normal')
+        """Restore all action buttons."""
+        for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
+                   self.btn_batch_ai, self.btn_wizard,
+                   self.btn_word, self.btn_excel, self.btn_ppt, self.btn_pdf,
+                   self.btn_ai_setup]:
+            try: btn.config(state='normal')
+            except: pass
         self.btn_stop.config(state='disabled')
         self.is_running = False
 
@@ -608,36 +713,6 @@ class ToolkitGUI:
 
         self._run_task_in_thread(task, "Batch AI Alt-Text")
 
-    def _run_link_audit(self):
-        """Phase 3: Scans for broken links and reports them."""
-        import link_auditor
-        def task():
-            report = link_auditor.audit_directory(self.target_dir, self.gui_handler)
-            if not report:
-                self.gui_handler.log("\n[SUCCESS] No broken links found!")
-                messagebox.showinfo("Audit Complete", "Course is clean! No broken links found.")
-            else:
-                self.gui_handler.log(f"\n[ISSUE] Found {len(report)} broken links.")
-                # Show report in a popup
-                self.root.after(0, lambda: self._show_audit_report(report))
-        
-        self._run_task_in_thread(task, "Link Audit")
-
-    def _show_audit_report(self, report):
-        """Displays broken links in a scrollable window."""
-        dialog = Toplevel(self.root)
-        dialog.title("Broken Link Report")
-        dialog.geometry("800x500")
-        
-        txt = tk.Text(dialog, wrap="none")
-        txt.pack(fill="both", expand=True)
-        
-        txt.insert("1.0", f"{'FILE':<30} | {'ISSUE':<20} | {'LINK':<40}\n")
-        txt.insert("end", "-"*100 + "\n")
-        for item in report:
-            txt.insert("end", f"{item['file'][:30]:<30} | {item['issue'][:20]:<20} | {item['link']}\n")
-        
-        txt.config(state='disabled')
 
     def _run_task_in_thread(self, task_func, task_name):
         if self.is_running: return
