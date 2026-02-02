@@ -16,7 +16,6 @@ import threading
 import queue
 import json
 import darkdetect
-import ai_helper  # AI Support
 import webbrowser
 import converter_utils
 
@@ -106,7 +105,6 @@ class ToolkitGUI:
         # --- State ---
         self.target_dir = os.getcwd()
         self.config = self._load_config()
-        self.api_key = self.config.get("api_key", "")
         self.is_running = False
         self.current_dialog = None
         
@@ -152,7 +150,7 @@ class ToolkitGUI:
         
         advanced_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Advanced", menu=advanced_menu)
-        advanced_menu.add_command(label="✨ Set Up AI Assistant", command=self._show_ai_setup_wizard)
+        advanced_menu.add_command(label="Open Documentation (README)", command=self._open_readme)
         advanced_menu.add_separator()
         advanced_menu.add_command(label="Toggle Theme (Light/Dark)", command=self._toggle_theme)
         
@@ -160,93 +158,13 @@ class ToolkitGUI:
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Welcome / Dedication", command=lambda: self._show_instructions(force=True))
 
-    def _ask_api_key(self):
-        """Deprecated in favor of _show_ai_setup_wizard, but kept for menu backward compatibility."""
-        self._show_ai_setup_wizard()
-
-    def _show_ai_setup_wizard(self):
-        """Phase 6: Friendly wizard to help teachers get and set their Gemini key."""
-        dialog = Toplevel(self.root)
-        dialog.title("✨ MOSH AI Assistant Setup")
-        dialog.geometry("550x500")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        colors = THEMES[self.config.get("theme", "light")]
-        dialog.configure(bg=colors["bg"])
-
-        tk.Label(dialog, text="Set Up Your AI Assistant", font=("Segoe UI", 16, "bold"), 
-                 bg=colors["bg"], fg=colors["header"]).pack(pady=15)
-        
-        instructions = (
-            "The AI Assistant helps you write 'Alt Text' for images automatically.\n"
-            "To use it, you need a free 'API Key' from Google.\n\n"
-            "1. Click the button below to open Google AI Studio.\n"
-            "2. Click 'Create API key'.\n"
-            "3. Select 'Create API key in a new project'. (This is free and one-click)\n"
-            "4. Copy the key and paste it here."
-        )
-        tk.Label(dialog, text=instructions, justify="left", wraplength=480, 
-                 bg=colors["bg"], fg=colors["fg"], font=("Segoe UI", 10)).pack(pady=5, padx=20)
-
-        def open_studio():
-            webbrowser.open("https://aistudio.google.com/app/apikey")
-
-        tk.Button(dialog, text="🌐 Step 1: Get My Free Gemini Key", command=open_studio, 
-                  bg="#BBDEFB", font=("Segoe UI", 10, "bold"), pady=8).pack(pady=10)
-
-        tk.Label(dialog, text="Step 2: Paste Your Key Below", bg=colors["bg"], fg=colors["fg"], 
-                 font=("Segoe UI", 10, "bold")).pack(pady=(15, 5))
-        
-        key_var = tk.StringVar(value=self.api_key)
-        entry = tk.Entry(dialog, textvariable=key_var, width=50, font=("Consolas", 10))
-        entry.pack(pady=5)
-        
-        lbl_status = tk.Label(dialog, text="", bg=colors["bg"], font=("Segoe UI", 9, "italic"))
-        lbl_status.pack(pady=5)
-
-        def test_key():
-            k = key_var.get().strip()
-            if not k:
-                lbl_status.config(text="Please paste a key first!", fg="red")
-                return
-            
-            lbl_status.config(text="Testing connection...", fg="blue")
-            dialog.update()
-            
-            # Simple test: Can we list models or just try a dummy prompt?
-            # Actually, let's just save it and try a small generate call if we want to be thorough.
-            # For simplicity, we'll try to initialize the model.
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=k)
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                # Try a very small prompt
-                response = model.generate_content("Hi", generation_config={"max_output_tokens": 5})
-                if response:
-                    lbl_status.config(text="✅ Success! Key is working and saved.", fg="green")
-                    self.api_key = k
-                    self._save_config(k, self.config.get("show_instructions", True), self.config.get("theme", "light"))
-                    self._update_ai_button_visibility()
-                else: 
-                    raise Exception("No response from AI.")
-            except Exception as e:
-                lbl_status.config(text=f"❌ Failed: {str(e)[:50]}...", fg="red")
-
-        def save_and_close():
-            k = key_var.get().strip()
-            self.api_key = k
-            self._save_config(k, self.config.get("show_instructions", True), self.config.get("theme", "light"))
-            self._update_ai_button_visibility()
-            dialog.destroy()
-
-        btn_frame = tk.Frame(dialog, bg=colors["bg"])
-        btn_frame.pack(pady=20)
-        
-        tk.Button(btn_frame, text="Verify & Save Key", command=test_key, bg="#C8E6C9", width=18).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="Close", command=save_and_close, width=12).pack(side="left", padx=10)
-
-        dialog.wait_window(dialog)
+    def _open_readme(self):
+        """Opens the README.md file in the default text editor or browser."""
+        readme_path = os.path.abspath("README.md")
+        if os.path.exists(readme_path):
+            webbrowser.open(readme_path)
+        else:
+            messagebox.showerror("Error", "README.md not found in the application directory.")
 
     def _build_styles(self):
         style = ttk.Style()
@@ -297,7 +215,7 @@ class ToolkitGUI:
     def _toggle_theme(self):
         current = self.config.get("theme", "light")
         new_theme = "dark" if current == "light" else "light"
-        self._save_config(self.api_key, self.config.get("show_instructions", True), new_theme)
+        self._save_config("", self.config.get("show_instructions", True), new_theme)
         self._build_styles() # Re-apply styles
 
     def _build_ui_modern(self):
@@ -368,25 +286,13 @@ class ToolkitGUI:
         self.btn_auto.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         
         self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Alt Text, Links)", command=self._run_interactive, style="Action.TButton")
-        self.btn_inter.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        
+        # Row 2 (Audit)
         self.btn_audit = ttk.Button(frame_actions, text="Quick Report\n(Audit JSON)", command=self._run_audit, style="Action.TButton")
-        self.btn_audit.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        self.btn_audit.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
 
-        # Row 2 (Advanced)
-        self.btn_batch_ai = ttk.Button(frame_actions, text="✨ Batch AI\n(Suggest Alt Text)", command=self._run_batch_ai, style="Action.TButton")
-        self.btn_batch_ai.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
-
-        # Status Label instead of big button
-        self.lbl_ai_status = ttk.Label(frame_actions, text="AI Status: Not Configured", font=("Segoe UI", 9, "italic"))
-        self.lbl_ai_status.grid(row=2, column=0, columnspan=3, pady=5)
-        
         frame_actions.columnconfigure(0, weight=1)
         frame_actions.columnconfigure(1, weight=1)
         frame_actions.columnconfigure(2, weight=1)
-        
-        # Initial AI Button update
-        self._update_ai_button_visibility()
 
 
         # -- Converters --
@@ -570,21 +476,6 @@ class ToolkitGUI:
         lbl_status = tk.Label(dialog, text="", fg="blue", font=("Segoe UI", 9, "italic"))
         lbl_status.pack(pady=2)
 
-        def suggest_ai():
-            if not self.api_key:
-                if messagebox.askyesno("AI Not Setup", "AI features require a Gemini API Key.\n\nWould you like to set it up now?"):
-                    self._show_ai_setup_wizard()
-                return
-            lbl_status.config(text="Thinking...", fg="blue")
-            dialog.update()
-            def run_ai():
-                text, err = ai_helper.generate_alt_text(image_path, self.api_key)
-                if err: lbl_status.config(text=f"Error: {err}", fg="red")
-                else: 
-                    entry_var.set(text)
-                    lbl_status.config(text="Suggested!", fg="green")
-            threading.Thread(target=run_ai, daemon=True).start()
-
         result = {"text": ""}
         def on_ok(event=None):
             result["text"] = entry_var.get()
@@ -595,7 +486,6 @@ class ToolkitGUI:
             
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=15)
-        tk.Button(btn_frame, text="✨ Suggest Alt Text (AI)", command=suggest_ai, bg="#E1BEE7").pack(side="left", padx=10)
         tk.Button(btn_frame, text="Update Alt Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
         
@@ -649,16 +539,6 @@ class ToolkitGUI:
         self.root.wait_window(dialog)
         return result["text"]
 
-    def _update_ai_button_visibility(self):
-        """Changes AI status label text."""
-        if not hasattr(self, 'lbl_ai_status'): return
-        if self.api_key:
-            self.lbl_ai_status.config(text="✅ AI Assistant is Ready", foreground="green")
-            self.btn_batch_ai.config(state="normal")
-        else:
-            self.lbl_ai_status.config(text="✨ AI Optional: See 'Advanced' menu to setup", foreground="gray")
-            self.btn_batch_ai.config(state="disabled")
-
     def _disable_buttons(self):
         """Gray out all action buttons while a task is running."""
         for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
@@ -689,23 +569,6 @@ class ToolkitGUI:
             self.gui_handler.log("\n[STOP] Stop requested. Finishing current file and exiting...")
             self.btn_stop.config(state='disabled')
 
-    def _run_batch_ai(self):
-        """Phase 2: Scans all images and applies AI suggestions in bulk."""
-        if not self.api_key:
-            messagebox.showwarning("API Key Required", "Please set your Gemini API Key in Settings first.")
-            return
-
-        def task():
-            self.gui_handler.log(f"--- Starting Batch AI Alt-Text ---")
-            found_images = []
-            for root, dirs, files in os.walk(self.target_dir):
-                for file in files:
-                    if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-                        found_images.append(os.path.join(root, file))
-            
-            if not found_images:
-                self.gui_handler.log("No images found to process.")
-                return
 
             def on_progress(curr, total, fname, result):
                 self.gui_handler.log(f"[{curr}/{total}] {fname} -> {result[:40]}...")
