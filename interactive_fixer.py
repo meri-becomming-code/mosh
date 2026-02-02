@@ -477,25 +477,6 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 io_handler.log("    -> Skipped.")
             
             if io_handler.is_stopped(): return
-                 io_handler.log(f"    [TIP] Suggested Text: \"{suggestion}\"")
-                 prompt_text = f"    > Enter new Link Text (Press Enter to use '{suggestion}'): "
-            else:
-                 prompt_text = "    > Enter new Link Text (or Press Enter to skip): "
-
-            choice = io_handler.prompt(prompt_text, help_url).strip()
-            
-            if choice:
-                a.string = choice
-                modified = True
-                io_handler.log(f"    -> Updated to: '{choice}'")
-            elif suggestion:
-                 a.string = suggestion
-                 modified = True
-                 io_handler.log(f"    -> Updated to: '{suggestion}' (Used Suggestion)")
-            else:
-                io_handler.log("    -> Skipped.")
-            
-            if io_handler.is_stopped(): return
 
     # --- 3. Iframe Remediation ---
     iframes = soup.find_all('iframe')

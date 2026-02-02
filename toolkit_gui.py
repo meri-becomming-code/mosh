@@ -5,9 +5,15 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, scrolledtext, Toplevel, Menu, ttk
 from PIL import Image, ImageTk
 import sys
+import os
+
+# Ensure the script's directory is in the Python path for local imports
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 import threading
 import queue
-import os
 import json
 import darkdetect
 import ai_helper  # AI Support
