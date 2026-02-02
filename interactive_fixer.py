@@ -340,7 +340,9 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
     if root_dir:
         io_handler.log(f"[INFO] Root Dir: {root_dir}")
 
-    # --- 0. Stop Check ---
+    # --- 0. Filename Audit ---
+    filepath = audit_filename(filepath, io_handler, root_dir)
+    filename = os.path.basename(filepath)
     if io_handler.is_stopped():
         return
 
@@ -532,7 +534,77 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
          io_handler.log("  (This file may still have Heading or Contrast issues. Run Option 2: Auto-Fixer to fix those.)")
     else:
         io_handler.log("  No interactive issues found (Alt Text, Link Text, Iframe Titles are OK).")
-        io_handler.log("  (Run Option 3: Audit Report to check for Headings/Contrast issues.)")
+
+def fix_link_filenames(root_dir, old_name, new_name, io_handler):
+    """
+    Project-wide Find & Replace for file references.
+    Updates all .html files when a linked file is renamed.
+    """
+    io_handler.log(f"    [Global Fix] Updating links: '{old_name}' -> '{new_name}'...")
+    count = 0
+    for root, dirs, files in os.walk(root_dir):
+        for file in files:
+            if file.endswith('.html'):
+                path = os.path.join(root, file)
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # We do a careful replace of the filename in src/href
+                # Target common patterns: href="name" src="name"
+                new_content = content.replace(f'href="{old_name}"', f'href="{new_name}"')
+                new_content = new_content.replace(f'src="{old_name}"', f'src="{new_name}"')
+                # Also handle URL encoded spaces if the old name had them
+                old_encoded = old_name.replace(" ", "%20")
+                new_content = new_content.replace(f'href="{old_encoded}"', f'href="{new_name}"')
+                new_content = new_content.replace(f'src="{old_encoded}"', f'src="{new_name}"')
+
+                if content != new_content:
+                    with open(path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    count += 1
+    io_handler.log(f"    [Global Fix] Updated {count} files.")
+
+def audit_filename(filepath, io_handler, root_dir):
+    """
+    Checks if a filename has spaces or bad characters.
+    Prompts user to sanitize and updates project links.
+    """
+    old_full_path = filepath
+    dir_name = os.path.dirname(filepath)
+    old_name = os.path.basename(filepath)
+    
+    # Check for spaces or special chars
+    if " " in old_name or any(c in old_name for c in "()[]{}!@#$%^&+"):
+        io_handler.log(f"\n  [FILENAME ISSUE] \"{old_name}\" contains spaces or special characters.")
+        io_handler.log("    (Bad filenames can break links and cause issues in Canvas/Web)")
+        
+        suggested = old_name.replace(" ", "_")
+        # Clean other chars
+        for c in "()[]{}!@#$%^&+":
+            suggested = suggested.replace(c, "")
+            
+        msg = f"    > Rename to \"{suggested}\"? (And update all project links): "
+        if io_handler.confirm(msg):
+            new_full_path = os.path.join(dir_name, suggested)
+            
+            # 1. Rename File
+            try:
+                if os.path.exists(new_full_path):
+                    io_handler.log(f"    [ERROR] Cannot rename: \"{suggested}\" already exists.")
+                    return filepath
+                
+                os.rename(old_full_path, new_full_path)
+                io_handler.log(f"    [REPIX] Renamed: {old_name} -> {suggested}")
+                
+                # 2. Global Link Update
+                if root_dir:
+                    fix_link_filenames(root_dir, old_name, suggested, io_handler)
+                
+                return new_full_path
+            except Exception as e:
+                io_handler.log(f"    [ERROR] Rename failed: {e}")
+    
+    return filepath
 
 # --- Auto-Fix Logic (Imported from run_fixer.py) ---
 def run_auto_fixer(filepath, io_handler=None):
