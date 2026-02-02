@@ -182,7 +182,11 @@ class ToolkitGUI:
         doc_content = """MOSH Faculty ADA Toolkit (2026 Edition)
 =====================================
 
-This toolkit helps you audit and fix accessibility (ADA) issues in your HTML course content.
+DEDICATION
+----------
+This software is dedicated to my son, Michael Joshua (Mosh) Albright, 
+who deals with diabetic retinopathy and spent three years blind, 
+and to all the other students struggling with their own challenges.
 
 🚀 QUICK START WORKFLOW
 -----------------------
@@ -337,7 +341,8 @@ This toolkit helps you audit and fix accessibility (ADA) issues in your HTML cou
         self.btn_auto = ttk.Button(frame_actions, text="Auto-Fix Issues\n(Headings, Tables)", command=self._run_auto_fixer, style="Action.TButton")
         self.btn_auto.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         
-        self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Alt Text, Links)", command=self._run_interactive, style="Action.TButton")
+        self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Alt Tags, Links, File Names)", command=self._run_interactive, style="Action.TButton")
+        self.btn_inter.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         # Row 2 (Audit)
         self.btn_audit = ttk.Button(frame_actions, text="Quick Report\n(Audit JSON)", command=self._run_audit, style="Action.TButton")
         self.btn_audit.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
@@ -637,6 +642,7 @@ This toolkit helps you audit and fix accessibility (ADA) issues in your HTML cou
         
         def worker():
             self.gui_handler.log(f"--- Starting {task_name} ---")
+            self.gui_handler.log(f"[DEBUG] Target: {self.target_dir}")
             try:
                 task_func()
                 self.gui_handler.log(f"--- {task_name} Completed ---")
@@ -648,46 +654,40 @@ This toolkit helps you audit and fix accessibility (ADA) issues in your HTML cou
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
+    def _get_all_html_files(self):
+        """Standardized helper to find all HTML files in the target directory."""
+        if not os.path.isdir(self.target_dir):
+            self.gui_handler.log(f"[ERROR] Invalid directory: {self.target_dir}")
+            return []
+            
+        html_files = []
+        for root, dirs, files in os.walk(self.target_dir):
+            for file in files:
+                if file.endswith('.html'):
+                    html_files.append(os.path.join(root, file))
+        return html_files
+
     def _run_auto_fixer(self):
         def task():
-            if not os.path.isdir(self.target_dir):
-                self.gui_handler.log("Invalid directory.")
-                return
+            html_files = self._get_all_html_files()
+            if not html_files: return
             
             count = 0
-            for root, dirs, files in os.walk(self.target_dir):
-                for file in files:
-                    if file.endswith('.html'):
-                        path = os.path.join(root, file)
-                        success, fixes = interactive_fixer.run_auto_fixer(path, self.gui_handler)
-                        if success:
-                            count += 1
-                            if fixes:
-                                self.gui_handler.log(f"   [FIXED] {file}:")
-                                for fix in fixes:
-                                    self.gui_handler.log(f"    - {fix}")
+            for path in html_files:
+                success, fixes = interactive_fixer.run_auto_fixer(path, self.gui_handler)
+                if success:
+                    count += 1
+                    if fixes:
+                        self.gui_handler.log(f"   [FIXED] {os.path.basename(path)}:")
+                        for fix in fixes:
+                            self.gui_handler.log(f"    - {fix}")
             self.gui_handler.log(f"Finished. Total files auto-fixed: {count}")
 
         self._run_task_in_thread(task, "Auto-Fixer")
 
     def _run_interactive(self):
         def task():
-            # We override sys.argv to pass the directory to the script if needed, 
-            # or we just call the logic directly. 
-            # reusing interactive_fixer's main logic but bypassing sys.argv parsing inside it
-            # actually main_interactive_mode tries to parse sys.argv or ask input.
-            # Best to just manually implement the loop here to be safe and clean.
-            
-            if not os.path.isdir(self.target_dir):
-                self.gui_handler.log("Invalid directory.")
-                return
-
-            html_files = []
-            for root, dirs, files in os.walk(self.target_dir):
-                for file in files:
-                    if file.endswith('.html'):
-                        html_files.append(os.path.join(root, file))
-            
+            html_files = self._get_all_html_files()
             if not html_files:
                 self.gui_handler.log("No HTML files found.")
                 return
@@ -702,27 +702,18 @@ This toolkit helps you audit and fix accessibility (ADA) issues in your HTML cou
 
     def _run_audit(self):
         def task():
-            # Start logic from run_audit.py
-            # Since run_audit prints to stdout, we need to capture it or modify it.
-            # But run_audit.py is simple. Let's redirect stdout temporarily?
-            # Or just rewrite the loop here using run_audit.audit_file
-            
-            if not os.path.isdir(self.target_dir):
-                self.gui_handler.log("Invalid directory.")
-                return
+            html_files = self._get_all_html_files()
+            if not html_files: return
 
-            self.gui_handler.log(f"Auditing {self.target_dir}...")
+            self.gui_handler.log(f"Auditing {len(html_files)} files...")
             all_issues = {}
             
-            for root, dirs, files in os.walk(self.target_dir):
-                for file in files:
-                    if file.endswith('.html'):
-                        path = os.path.join(root, file)
-                        res = run_audit.audit_file(path)
-                        if res and (res["technical"] or res["subjective"]):
-                             rel_path = os.path.relpath(path, self.target_dir)
-                             all_issues[rel_path] = res
-                             self.gui_handler.log(f"Issues found in: {file}")
+            for path in html_files:
+                res = run_audit.audit_file(path)
+                if res and (res["technical"] or res["subjective"]):
+                     rel_path = os.path.relpath(path, self.target_dir)
+                     all_issues[rel_path] = res
+                     self.gui_handler.log(f"Issues found in: {os.path.basename(path)}")
 
             out_file = os.path.join(self.target_dir, 'audit_report.json')
             with open(out_file, 'w', encoding='utf-8') as f:
@@ -756,18 +747,8 @@ This toolkit helps you audit and fix accessibility (ADA) issues in your HTML cou
 
         MOSH's Toolkit is designed to help educators create accessible online spaces. This tool was built to bridge the gap between complex accessibility requirements and everyday teaching.
 
-        License & Spirit:
-        - This is solely the work of Meri Kasprak with the assistance of Gemini.
-        - Licensed under GNU General Public License version 3.
-        - Keep it Free: Non-commercial, open-source software.
-        - Keep it Improving: Share your improvements freely.
-        - Open & Shared: Released for the greater good of the academic community.
-
-        For instructions and the story behind this project, please see the README.md file.
-
-        Safety First:
-        - Always use an empty Canvas course for testing.
-        - You are the expert—the tool helps, but you provide the final "Human-in-the-Loop" review.
+        Dedication:
+        This software is dedicated to my son, Michael Joshua (Mosh) Albright, who deals with diabetic retinopathy and spent three years blind, and to all the other students struggling with their own challenges.
         """
         
         lbl = tk.Label(dialog, text=intro, justify="left", font=("Segoe UI", 11), 

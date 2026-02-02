@@ -276,6 +276,7 @@ def remediate_html_file(filepath):
             fixes.append(f"Removed empty link to '{a.get('href', 'unknown')}'")
             a.extract()
     
+    for iframe in soup.find_all('iframe'):
         if not iframe.has_attr('title') or not iframe['title'].strip():
             iframe['title'] = "Embedded Content"
             iframe.insert_after(Comment("ADA FIX: Added generic title to iframe"))
