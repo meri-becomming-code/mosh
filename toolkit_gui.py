@@ -1,0 +1,975 @@
+# Created by Dr. Meri Kasprak.
+# Released freely under the MOSH License. USE AT YOUR OWN RISK.
+
+import tkinter as tk
+from tkinter import filedialog, messagebox, simpledialog, scrolledtext, Toplevel, Menu, ttk
+from PIL import Image, ImageTk
+import sys
+import threading
+import queue
+import os
+import json
+import darkdetect
+import ai_helper  # AI Support
+import webbrowser
+import converter_utils
+
+# Import Toolkit Modules
+import interactive_fixer
+import run_fixer
+import run_audit
+
+CONFIG_FILE = "toolkit_config.json"
+
+class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
+    """
+    Bridge between the worker thread running the scripts and the Main GUI thread.
+    Handles logging and user input via thread-safe events.
+    """
+    def __init__(self, root, log_queue):
+        self.root = root
+        self.log_queue = log_queue
+        # Queues for input requests/responses
+        self.input_request_queue = queue.Queue()
+        self.input_response_queue = queue.Queue()
+
+    def log(self, message):
+        """Send log message to the queue."""
+        self.log_queue.put(message)
+
+    def prompt(self, message):
+        """Ask user for input (Blocking from worker thread perspective)."""
+        self.input_request_queue.put(('prompt', message, None))
+        return self.input_response_queue.get()
+
+    def confirm(self, message):
+        """Ask user for Yes/No (Blocking)."""
+        self.input_request_queue.put(('confirm', message, None))
+        return self.input_response_queue.get()
+        
+    def prompt_image(self, message, image_path):
+        """Ask user for input while showing an image."""
+        self.input_request_queue.put(('prompt_image', message, image_path))
+        return self.input_response_queue.get()
+
+    def prompt(self, message, help_url=None):
+        """Ask user for input, optionally showing a clickable link."""
+        if help_url:
+             self.input_request_queue.put(('prompt_link', message, help_url))
+        else:
+             self.input_request_queue.put(('prompt', message, None))
+        return self.input_response_queue.get()
+
+# Colors
+# --- Themes ---
+THEMES = {
+    "light": {
+        "bg": "#FFFFF0",       # Ivory
+        "fg": "#212121",       # Dark Grey
+        "sidebar": "#0D47A1",  # Mosh's Deep Blue
+        "sidebar_fg": "#FFFFFF",
+        "primary": "#009688",  # Teal (Buttons)
+        "accent": "#FFD700",   # Yellow (Highlight)
+        "header": "#0D47A1",   # Blue Headers
+        "subheader": "#00796B",# Teal Subheaders
+        "button": "#E0F2F1",   # Very Light Teal
+        "button_fg": "#004D40",
+    },
+    "dark": {
+        "bg": "#263238",       # Dark Blue Grey
+        "fg": "#FFFFF0",       # Ivory Text
+        "sidebar": "#102027",  # Very Dark Blue
+        "sidebar_fg": "#E0E0E0",
+        "primary": "#4DB6AC",  # Light Teal
+        "accent": "#FFD700",   # Yellow
+        "header": "#81D4FA",   # Light Blue
+        "subheader": "#80CBC4",# Light Teal
+        "button": "#37474F",   # Dark Button
+        "button_fg": "#FFFFFF",
+    }
+}
+
+class ToolkitGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("MOSH's Toolkit: Making Online Spaces Helpful")
+        self.root.geometry("900x650") # Slightly wider for sidebar
+
+        # --- State ---
+        self.target_dir = os.getcwd()
+        self.config = self._load_config()
+        self.api_key = self.config.get("api_key", "")
+        self.is_running = False
+        self.current_dialog = None
+        
+        # Check instructions
+        if self.config.get("show_instructions", True):
+             self.root.after(500, self._show_instructions)
+        
+        # --- Threading Queues ---
+        self.log_queue = queue.Queue()
+        self.gui_handler = ThreadSafeGuiHandler(root, self.log_queue)
+
+        # --- UI Layout ---
+        self._build_styles()
+        self._build_menu()
+        self._build_ui_modern()
+        
+        # --- Start Polling Loops ---
+        self.root.after(100, self._process_logs)
+        self.root.after(100, self._process_inputs)
+
+    def _load_config(self):
+        try:
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r') as f:
+                    return json.load(f)
+        except:
+            pass
+        return {"show_instructions": True, "api_key": ""}
+
+    def _save_config(self, key, start_show, theme="light"):
+        self.config["api_key"] = key
+        self.config["show_instructions"] = start_show
+        self.config["theme"] = theme
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(self.config, f)
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not save settings: {e}")
+
+    def _build_menu(self):
+        menubar = Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        settings_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Settings", menu=settings_menu)
+        settings_menu.add_command(label="Set Gemini API Key...", command=self._ask_api_key)
+        settings_menu.add_command(label="Toggle Theme (Light/Dark)", command=self._toggle_theme)
+        
+        help_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Welcome / Dedication", command=lambda: self._show_instructions(force=True))
+
+    def _ask_api_key(self):
+        key = simpledialog.askstring("API Key", "Enter Google Gemini API Key:", initialvalue=self.api_key, parent=self.root)
+        if key is not None:
+            self._save_config(key.strip(), self.config.get("show_instructions", True), self.config.get("theme", "light"))
+            messagebox.showinfo("Saved", "API Key saved successfully!")
+            self.api_key = key
+
+    def _build_styles(self):
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # Determine Theme
+        mode = self.config.get("theme", "light")
+        if mode not in THEMES: mode = "light"
+        colors = THEMES[mode]
+        
+        # Base
+        style.configure(".", background=colors["bg"], foreground=colors["fg"], font=("Segoe UI", 10))
+        style.configure("TFrame", background=colors["bg"])
+        style.configure("TLabel", background=colors["bg"], foreground=colors["fg"])
+        
+        # Headers
+        style.configure("Header.TLabel", font=("Segoe UI", 18, "bold"), foreground=colors["header"])
+        style.configure("SubHeader.TLabel", font=("Segoe UI", 12, "bold"), foreground=colors["subheader"])
+        
+        # Sidebar
+        style.configure("Sidebar.TFrame", background=colors["sidebar"])
+        style.configure("Sidebar.TLabel", background=colors["sidebar"], foreground=colors["sidebar_fg"], font=("Segoe UI", 10))
+        
+        # Buttons
+        style.configure("TButton", 
+            padding=6, 
+            relief="flat", 
+            background=colors["button"], 
+            foreground=colors["button_fg"],
+            font=("Segoe UI", 9)
+        )
+        style.map("TButton", background=[('active', colors["accent"])], foreground=[('active', 'black')])
+
+        # Action Buttons (Primary)
+        style.configure("Action.TButton", 
+            font=("Segoe UI", 10, "bold"), 
+            background=colors["primary"], 
+            foreground="white"
+        )
+        style.map("Action.TButton", 
+            background=[('active', colors["accent"]), ('!disabled', colors["primary"])],
+            foreground=[('active', 'black')]
+        )
+        
+        # Force background update for root
+        self.root.configure(bg=colors["bg"])
+
+    def _toggle_theme(self):
+        current = self.config.get("theme", "light")
+        new_theme = "dark" if current == "light" else "light"
+        self._save_config(self.api_key, self.config.get("show_instructions", True), new_theme)
+        self._build_styles() # Re-apply styles
+
+    def _build_ui_modern(self):
+        # Main Container: Sidebar (Left) + Content (Right)
+        
+        # 1. Sidebar
+        sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", width=200)
+        sidebar.pack(side="left", fill="y")
+        
+        # Logo Area
+        lbl_logo = ttk.Label(sidebar, text="MOSH's\nTOOLKIT", style="Sidebar.TLabel", font=("Segoe UI", 16, "bold"), justify="center")
+        lbl_logo.pack(pady=20, padx=10)
+        
+        ttk.Label(sidebar, text="(Making Online Spaces Helpful)", style="Sidebar.TLabel", font=("Segoe UI", 8, "italic")).pack(pady=(0, 5))
+        ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 20))
+
+        # 2. Main Content Area
+        content = ttk.Frame(self.root, padding="20 20 20 20")
+        content.pack(side="right", fill="both", expand=True)
+
+        # -- Target Project Section --
+        ttk.Label(content, text="1. Select Project", style="SubHeader.TLabel").pack(anchor="w")
+        
+        frame_dir = ttk.Frame(content)
+        frame_dir.pack(fill="x", pady=(5, 15))
+        
+        # Row 1: Import Button (New)
+        btn_import = ttk.Button(
+            frame_dir, 
+            text="📦 Import Course Package (.imscc / .zip)", 
+            command=self._import_package,
+            style="Action.TButton"
+        )
+        btn_import.pack(side="top", fill="x", pady=(0, 5))
+        
+        # Row 1b: Export Button (New)
+        btn_export = ttk.Button(
+            frame_dir, 
+            text="📤 Repackage Course (.imscc)", 
+            command=self._export_package,
+            style="Action.TButton"
+        )
+        btn_export.pack(side="top", fill="x", pady=(0, 5))
+        
+        # Row 2: Folder Browser
+        frame_browse = ttk.Frame(frame_dir)
+        frame_browse.pack(fill="x")
+        
+        self.lbl_dir = ttk.Entry(frame_browse)
+        self.lbl_dir.insert(0, self.target_dir)
+        self.lbl_dir.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ttk.Button(frame_browse, text="Browse Folder...", command=self._browse_folder).pack(side="right")
+
+
+        # -- Remediation Actions (Grid) --
+        ttk.Label(content, text="2. Fix & Review", style="SubHeader.TLabel").pack(anchor="w")
+        
+        frame_actions = ttk.Frame(content)
+        frame_actions.pack(fill="x", pady=(10, 20))
+        
+        # Friendly Button Names
+        self.btn_auto = ttk.Button(frame_actions, text="Auto-Fix Issues\n(Headings, Tables)", command=self._run_auto_fixer, style="Action.TButton")
+        self.btn_auto.grid(row=0, column=0, padx=5, sticky="ew")
+        
+        self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Alt Text, Links)", command=self._run_interactive, style="Action.TButton")
+        self.btn_inter.grid(row=0, column=1, padx=5, sticky="ew")
+        
+        self.btn_audit = ttk.Button(frame_actions, text="Create Report\n(Audit JSON)", command=self._run_audit, style="Action.TButton")
+        self.btn_audit.grid(row=0, column=2, padx=5, sticky="ew")
+        
+        frame_actions.columnconfigure(0, weight=1)
+        frame_actions.columnconfigure(1, weight=1)
+        frame_actions.columnconfigure(2, weight=1)
+
+
+        # -- Converters --
+        ttk.Label(content, text="3. Convert Files", style="SubHeader.TLabel").pack(anchor="w")
+        
+        frame_convert = ttk.Frame(content)
+        frame_convert.pack(fill="x", pady=(10, 20))
+        
+        ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> HTML)", command=self._show_conversion_wizard, style="Action.TButton").pack(fill="x", pady=5)
+        
+        frame_singles = ttk.Frame(frame_convert)
+        frame_singles.pack(fill="x")
+        
+        ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_singles, text="Excel", command=lambda: self._show_conversion_wizard("xlsx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf")).pack(side="left", fill="x", expand=True, padx=2)
+
+
+        # -- Logs --
+        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w")
+        self.txt_log = scrolledtext.ScrolledText(content, height=8, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
+        self.txt_log.pack(fill="both", expand=True, pady=5)
+
+    def _browse_folder(self):
+        path = filedialog.askdirectory(initialdir=self.target_dir)
+        if path:
+            self.target_dir = path
+            self.lbl_dir.delete(0, tk.END)
+            self.lbl_dir.insert(0, path)
+            self._log(f"Selected: {path}")
+
+    def _import_package(self):
+        """Allows user to select .imscc or .zip and extracts it."""
+        path = filedialog.askopenfilename(
+            filetypes=[("Canvas Export / Zip", "*.imscc *.zip"), ("All Files", "*.*")]
+        )
+        if not path: return
+        
+        # Determine extraction folder
+        # Logic: Create a folder with same name as file in the same directory
+        directory = os.path.dirname(path)
+        filename = os.path.basename(path)
+        folder_name = os.path.splitext(filename)[0] + "_extracted"
+        extract_to = os.path.join(directory, folder_name)
+        
+        # Confirm
+        if not messagebox.askyesno("Confirm Import", f"Extract package to:\n{extract_to}?"):
+            return
+            
+        self._log(f"--- Extracting Package: {filename} ---")
+        self.root.update()
+        
+        success, msg = converter_utils.unzip_course_package(path, extract_to)
+        
+        if success:
+            self._log(f"Success! {msg}")
+            # Update Target Dir automatically
+            self.target_dir = extract_to
+            self.lbl_dir.delete(0, tk.END)
+            self.lbl_dir.insert(0, extract_to)
+            messagebox.showinfo("Import Complete", f"Package extracted successfully!\n\nTarget Project updated to:\n{extract_to}")
+        else:
+            self._log(f"[ERROR] Import Failed: {msg}")
+            messagebox.showerror("Import Error", f"Failed to extract package:\n{msg}")
+
+    def _export_package(self):
+        """Zips the current target directory back into a .imscc file."""
+        if not os.path.isdir(self.target_dir):
+            messagebox.showerror("Error", "Please select a valid project folder first.")
+            return
+
+        # Default Name: folder_name_remediated.imscc
+        default_name = os.path.basename(self.target_dir) + "_remediated.imscc"
+        
+        output_path = filedialog.asksaveasfilename(
+            defaultextension=".imscc",
+            initialfile=default_name,
+            filetypes=[("Canvas Course Package", "*.imscc")]
+        )
+        
+        if not output_path: return
+        
+        self._log(f"--- Packaging Course... ---")
+        self.root.update()
+        
+        success, msg = converter_utils.create_course_package(self.target_dir, output_path)
+        
+        if success:
+             self._log(f"Success! Saved to {os.path.basename(output_path)}")
+             messagebox.showinfo("Export Complete", 
+                f"Course Package Created:\n{output_path}\n\nIMPORTANT SAFETY NOTICE:\n"
+                "1. Create a NEW, EMPTY Sandbox Course in Canvas.\n"
+                "2. Import this file into that empty course.\n"
+                "3. Review all changes BEFORE moving content to a live semester."
+             )
+        else:
+             self._log(f"[ERROR] Packaging Failed: {msg}")
+             messagebox.showerror("Export Error", f"Failed to create package:\n{msg}")
+
+    def _log(self, msg):
+        self.txt_log.configure(state='normal')
+        self.txt_log.insert(tk.END, msg + "\n")
+        self.txt_log.see(tk.END)
+        self.txt_log.configure(state='disabled')
+
+    def _process_logs(self):
+        """Poll the log queue and update the text widget."""
+        try:
+            while True:
+                msg = self.log_queue.get_nowait()
+                self._log(msg)
+        except queue.Empty:
+            pass
+        self.root.after(100, self._process_logs)
+
+    def _process_inputs(self):
+        """Poll for input requests from the worker thread."""
+        try:
+            req = self.gui_handler.input_request_queue.get_nowait()
+            kind, message, payload = req
+            
+            response = None
+            if kind == 'prompt':
+                response = simpledialog.askstring("Input Required", message, parent=self.root)
+                if response is None: response = "" 
+            elif kind == 'confirm':
+                response = messagebox.askyesno("Confirm", message, parent=self.root)
+            elif kind == 'prompt_image':
+                response = self._show_image_dialog(message, payload)
+            elif kind == 'prompt_link':
+                response = self._show_link_dialog(message, payload)
+            
+            self.gui_handler.input_response_queue.put(response)
+        except queue.Empty:
+            pass
+        self.root.after(100, self._process_inputs)
+        
+    def _show_image_dialog(self, message, image_path):
+        """Shows a custom dialog with the image and a text input."""
+        dialog = Toplevel(self.root)
+        dialog.title("Image Check (Interactive)")
+        dialog.geometry("700x650")
+        dialog.lift()
+        dialog.focus_force()
+        dialog.grab_set() # Make it modal
+        
+        # Load and resize image
+        try:
+            pil_img = Image.open(image_path)
+            # Max dimensions
+            pil_img.thumbnail((500, 350)) 
+            tk_img = ImageTk.PhotoImage(pil_img)
+            
+            lbl_img = tk.Label(dialog, image=tk_img)
+            lbl_img.image = tk_img # Keep reference
+            lbl_img.pack(pady=10)
+        except Exception as e:
+            tk.Label(dialog, text=f"[Could not load image: {e}]", fg="red").pack(pady=10)
+        
+        tk.Label(dialog, text=message, wraplength=550, font=("Arial", 10)).pack(pady=5)
+        
+        # Input Area
+        entry_var = tk.StringVar()
+        entry = tk.Entry(dialog, textvariable=entry_var, width=60)
+        entry.pack(pady=5)
+        entry.focus_set()
+        
+        lbl_status = tk.Label(dialog, text="", fg="blue", font=("Arial", 9, "italic"))
+        lbl_status.pack(pady=2)
+
+        # AI Function
+        def suggest_ai():
+            if not self.api_key:
+                messagebox.showwarning("No API Key", "Please go to 'Settings' > 'Set Gemini API Key' first.")
+                return
+            
+            lbl_status.config(text="Thinking... (Querying Gemini)", fg="blue")
+            dialog.update()
+            
+            def run_ai():
+                text, err = ai_helper.generate_alt_text(image_path, self.api_key)
+                if err:
+                    lbl_status.config(text=f"AI Error: {err}", fg="red")
+                else:
+                    entry_var.set(text)
+                    lbl_status.config(text="Suggestion applied!", fg="green")
+            
+            # Run in thread to avoid freezing UI
+            threading.Thread(target=run_ai, daemon=True).start()
+
+        # Result container
+        result = {"text": ""}
+        
+        def on_ok(event=None):
+            result["text"] = entry_var.get()
+            dialog.destroy()
+            
+        def on_skip():
+            result["text"] = "" 
+            dialog.destroy()
+            
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=15)
+        
+        tk.Button(btn_frame, text="✨ Suggest Alt Text (AI)", command=suggest_ai, bg="#E1BEE7").pack(side="left", padx=20)
+        tk.Button(btn_frame, text="Update Alt Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
+        
+        dialog.bind('<Return>', on_ok)
+        
+        # Wait for window to close
+        self.root.wait_window(dialog)
+        return result["text"]
+
+    def _show_link_dialog(self, message, help_url):
+         """Shows a custom dialog with a generic input and an 'Open Link' button."""
+         dialog = Toplevel(self.root)
+         dialog.title("Link Check (Interactive)")
+         dialog.geometry("600x250")
+         dialog.lift()
+         dialog.focus_force()
+         dialog.grab_set() 
+         
+         tk.Label(dialog, text=message, wraplength=550, font=("Arial", 10)).pack(pady=20)
+         
+         # Link Button
+         def open_link():
+             webbrowser.open(help_url)
+             
+         if help_url:
+             btn_link = tk.Button(dialog, text=f"🌐 Open Link / File (Verify)", command=open_link, bg="#BBDEFB", cursor="hand2")
+             btn_link.pack(pady=5)
+             tk.Label(dialog, text=f"Target: {os.path.basename(help_url) if len(help_url) < 50 else 'External Link'}", font=("Arial", 8, "italic"), fg="gray").pack()
+ 
+         # Input Area
+         entry_var = tk.StringVar()
+         entry = tk.Entry(dialog, textvariable=entry_var, width=60)
+         entry.pack(pady=15)
+         entry.focus_set()
+         
+         # Result container
+         result = {"text": ""}
+         
+         def on_ok(event=None):
+             result["text"] = entry_var.get()
+             dialog.destroy()
+             
+         def on_skip():
+             result["text"] = "" 
+             dialog.destroy()
+             
+         btn_frame = tk.Frame(dialog)
+         btn_frame.pack(pady=10)
+         
+         tk.Button(btn_frame, text="Update Link Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
+         tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
+         
+         dialog.bind('<Return>', on_ok)
+         
+         # Wait for window to close
+         self.root.wait_window(dialog)
+         return result["text"]
+
+    def _disable_buttons(self):
+        self.btn_auto.config(state='disabled')
+        self.btn_inter.config(state='disabled')
+        self.btn_audit.config(state='disabled')
+        self.is_running = True
+
+    def _enable_buttons(self):
+        self.btn_auto.config(state='normal')
+        self.btn_inter.config(state='normal')
+        self.btn_audit.config(state='normal')
+        self.is_running = False
+
+    # --- Task Wrappers ---
+
+    def _run_task_in_thread(self, task_func, task_name):
+        if self.is_running: return
+        self._disable_buttons()
+        self.target_dir = self.lbl_dir.get().strip()
+        
+        def worker():
+            self.gui_handler.log(f"--- Starting {task_name} ---")
+            try:
+                task_func()
+                self.gui_handler.log(f"--- {task_name} Completed ---")
+            except Exception as e:
+                self.gui_handler.log(f"[ERROR] {e}")
+            finally:
+                self.root.after(0, self._enable_buttons)
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+    def _run_auto_fixer(self):
+        def task():
+            if not os.path.isdir(self.target_dir):
+                self.gui_handler.log("Invalid directory.")
+                return
+            
+            count = 0
+            for root, dirs, files in os.walk(self.target_dir):
+                for file in files:
+                    if file.endswith('.html'):
+                        path = os.path.join(root, file)
+                        if interactive_fixer.run_auto_fixer(path, self.gui_handler):
+                            count += 1
+            self.gui_handler.log(f"Total files auto-fixed: {count}")
+
+        self._run_task_in_thread(task, "Auto-Fixer")
+
+    def _run_interactive(self):
+        def task():
+            # We override sys.argv to pass the directory to the script if needed, 
+            # or we just call the logic directly. 
+            # reusing interactive_fixer's main logic but bypassing sys.argv parsing inside it
+            # actually main_interactive_mode tries to parse sys.argv or ask input.
+            # Best to just manually implement the loop here to be safe and clean.
+            
+            if not os.path.isdir(self.target_dir):
+                self.gui_handler.log("Invalid directory.")
+                return
+
+            html_files = []
+            for root, dirs, files in os.walk(self.target_dir):
+                for file in files:
+                    if file.endswith('.html'):
+                        html_files.append(os.path.join(root, file))
+            
+            if not html_files:
+                self.gui_handler.log("No HTML files found.")
+                return
+                
+            self.gui_handler.log(f"Found {len(html_files)} HTML files.")
+            self.gui_handler.log("Starting Interactive Scan...")
+            
+            for filepath in html_files:
+                interactive_fixer.scan_and_fix_file(filepath, self.gui_handler, self.target_dir)
+                
+        self._run_task_in_thread(task, "Interactive Fixer")
+
+    def _run_audit(self):
+        def task():
+            # Start logic from run_audit.py
+            # Since run_audit prints to stdout, we need to capture it or modify it.
+            # But run_audit.py is simple. Let's redirect stdout temporarily?
+            # Or just rewrite the loop here using run_audit.audit_file
+            
+            if not os.path.isdir(self.target_dir):
+                self.gui_handler.log("Invalid directory.")
+                return
+
+            self.gui_handler.log(f"Auditing {self.target_dir}...")
+            all_issues = {}
+            
+            for root, dirs, files in os.walk(self.target_dir):
+                for file in files:
+                    if file.endswith('.html'):
+                        path = os.path.join(root, file)
+                        res = run_audit.audit_file(path)
+                        if res and (res["technical"] or res["subjective"]):
+                             rel_path = os.path.relpath(path, self.target_dir)
+                             all_issues[rel_path] = res
+                             self.gui_handler.log(f"Issues found in: {file}")
+
+            out_file = os.path.join(self.target_dir, 'audit_report.json')
+            with open(out_file, 'w', encoding='utf-8') as f:
+                json.dump(all_issues, f, indent=2)
+            
+            self.gui_handler.log(f"Audit Complete. Issues found in {len(all_issues)} files.")
+            self.gui_handler.log(f"Report saved to {out_file}")
+
+        self._run_task_in_thread(task, "Audit")
+
+    # --- NEW METHODS ---
+    def _show_instructions(self, force=False):
+        """Shows Welcome/Instructions Dialog."""
+        if not force and not self.config.get("show_instructions", True):
+            return
+
+        dialog = Toplevel(self.root)
+        dialog.title("MOSH's Toolkit: Making Online Spaces Helpful")
+        dialog.geometry("750x700")
+        dialog.lift()
+        dialog.focus_force()
+        
+        # Style
+        colors = THEMES[self.config.get("theme", "light")]
+        dialog.configure(bg=colors["bg"])
+        
+        # Content
+        intro = """
+        Welcome to MOSH's Toolkit
+        (Making Online Spaces Helpful)
+
+        MOSH's Toolkit is designed to help educators create accessible online spaces. This tool was built to bridge the gap between complex accessibility requirements and everyday teaching.
+
+        License & Spirit:
+        - Licensed under GNU GPL v3.0.
+        - Keep it Free: Non-commercial, open-source software.
+        - Keep it Improving: Share your improvements freely.
+        - Open & Shared: Released for the greater good of the academic community.
+
+        For instructions and the story behind this project, please see the README.md file.
+
+        Safety First:
+        - Always use a Canvas Sandbox for testing.
+        - You are the expert—the tool helps, but you provide the final "Human-in-the-Loop" review.
+        """
+        
+        lbl = tk.Label(dialog, text=intro, justify="left", font=("Segoe UI", 11), 
+                       wraplength=650, bg=colors["bg"], fg=colors["fg"])
+        lbl.pack(pady=20, padx=30)
+        
+        # Checkbox
+        var_show = tk.BooleanVar(value=True if force else self.config.get("show_instructions", True))
+        
+        def on_close():
+            self._save_config(self.api_key, var_show.get())
+            dialog.destroy()
+            
+        chk = tk.Checkbutton(dialog, text="Show this message on startup", variable=var_show)
+        chk.pack(pady=10)
+        
+        tk.Button(dialog, text="Get Started", command=on_close, bg="#4b3190", fg="white", font=("Arial", 10, "bold"), width=20).pack(pady=10)
+
+
+    def _show_math_guide(self):
+        """Shows the Math Migration Guide."""
+        guide_text = """MATH CONTENT MIGRATION GUIDE
+
+THE INSTRUCTURE ENGINE:
+- Canvas uses **LaTeX** for math.
+- It automatically converts LaTeX to **MathML** for screen readers.
+- Goal: You need your math in LaTeX format.
+
+INDUSTRY STANDARD (Don't Reinvent the Wheel):
+1. **Mathpix Snip**: The "Gold Standard" tool used by universities.
+   - Converts PDF/Images -> LaTeX/Word reliably.
+   - Recommended: Use Mathpix to convert PDF -> Word, then use this Toolkit.
+
+2. **Equidox**: Best for complex PDF forms remediation.
+
+YOUR WORKFLOW:
+1. **Prefer Word (.docx)**: Always convert the original Word file if possible.
+2. **If PDF is unique**:
+   - Option A: Use Mathpix (External Tool) to get LaTeX.
+   - Option B: Use "PDF to HTML" (This Tool) for TEXT ONLY, then manually re-type equations in Canvas.
+"""
+        messagebox.showinfo("math_migration_guide.md", guide_text)
+
+
+    def _show_conversion_wizard(self, filter_ext=None):
+        """
+        Shows dialog to select files for interactive conversion.
+        filter_ext: Optional string (e.g. 'docx') to show only files of that type.
+        """
+        # 1. Scan for files
+        if filter_ext:
+            supported_exts = {f".{filter_ext}"}
+            title_suffix = f"({filter_ext.upper()})"
+        else:
+            supported_exts = {'.docx', '.pptx', '.xlsx', '.pdf'}
+            title_suffix = "(All Types)"
+            
+        found_files = []
+        for root, dirs, files in os.walk(self.target_dir):
+            for file in files:
+                ext = os.path.splitext(file)[1].lower()
+                if ext in supported_exts:
+                     # Ignore temp files (~$)
+                     if not file.startswith('~$'):
+                        found_files.append(os.path.join(root, file))
+        
+        if not found_files:
+             messagebox.showinfo("No Files", f"No convertible files found matching {supported_exts} in the current folder.")
+             return
+
+        # 2. Show Dialog
+        dialog = Toplevel(self.root)
+        dialog.title("Interactive Conversion Wizard")
+        dialog.geometry("600x600")
+        dialog.lift()
+        dialog.focus_force()
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Select Files to Convert", font=("Arial", 12, "bold"), fg="#4b3190").pack(pady=10)
+        tk.Label(dialog, text="We will process these one by one. You will preview each change.", font=("Arial", 10)).pack(pady=(0,10))
+
+        # Scrollable Frame for Checkboxes
+        frame_canvas = tk.Frame(dialog)
+        frame_canvas.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        canvas = tk.Canvas(frame_canvas, bg="white")
+        scrollbar = tk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg="white")
+        
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Populate
+        vars_map = {}
+        for fpath in found_files:
+            rel_path = os.path.relpath(fpath, self.target_dir)
+            var = tk.BooleanVar(value=True)
+            chk = tk.Checkbutton(scroll_frame, text=rel_path, variable=var, anchor="w", bg="white")
+            chk.pack(fill="x", padx=5, pady=2)
+            vars_map[fpath] = var
+            
+        # Buttons
+        def on_start():
+            selected = [path for path, var in vars_map.items() if var.get()]
+            if not selected:
+                messagebox.showwarning("None Selected", "Please select at least one file.")
+                return
+            dialog.destroy()
+            self._run_wizard_task(selected)
+            
+        def on_toggle_all():
+            any_unchecked = any(not v.get() for v in vars_map.values())
+            new_val = True if any_unchecked else False
+            for v in vars_map.values():
+                v.set(new_val)
+
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(fill="x", pady=20, padx=20)
+        
+        tk.Button(btn_frame, text="Select/Deselect All", command=on_toggle_all).pack(side="left")
+        tk.Button(btn_frame, text="Start Conversion Process ▶", command=on_start, bg="#4b3190", fg="white", font=("bold")).pack(side="right")
+
+
+    def _run_wizard_task(self, files):
+        """Worker thread for the wizard."""
+        
+        def task():
+            self.gui_handler.log(f"--- Starting Wizard on {len(files)} files ---")
+            
+            kept_files = [] # Track successful conversions
+
+            for i, fpath in enumerate(files):
+                fname = os.path.basename(fpath)
+                ext = os.path.splitext(fpath)[1].lower().replace('.', '')
+                self.gui_handler.log(f"[{i+1}/{len(files)}] Processing: {fname}...")
+                
+                # 1. Convert
+                output_path = None
+                err = None
+                
+                if ext == "docx":
+                    output_path, err = converter_utils.convert_docx_to_html(fpath)
+                elif ext == "xlsx":
+                    output_path, err = converter_utils.convert_excel_to_html(fpath)
+                elif ext == "pptx":
+                     output_path, err = converter_utils.convert_ppt_to_html(fpath)
+                elif ext == "pdf":
+                     output_path, err = converter_utils.convert_pdf_to_html(fpath)
+                
+                if err or not output_path:
+                    self.gui_handler.log(f"   [ERROR] Failed to convert: {err}")
+                    continue
+                
+                self.gui_handler.log(f"   Converted to: {os.path.basename(output_path)}")
+                
+                # 2. Preview (Open both)
+                try:
+                    os.startfile(fpath) # Open Original
+                    os.startfile(output_path) # Open New HTML
+                except Exception as e:
+                    self.gui_handler.log(f"   [WARNING] Could not auto-open files: {e}")
+                
+                # 3. Prompt user (Keep/Discard?)
+                msg = (f"Reviewing: {fname}\n\n"
+                       f"I have opened both the original and the new HTML file.\n"
+                       f"Do you want to KEEP this new HTML version?")
+                
+                keep = self.gui_handler.confirm(msg)
+                
+                if not keep:
+                    # Delete and continue
+                    try:
+                        os.remove(output_path)
+                        self.gui_handler.log("   Discarded.")
+                    except:
+                        pass
+                    continue
+                
+                kept_files.append(output_path)
+
+                # 4. Prompt Update Links
+                msg_link = (f"Excellent. The original file is untouched.\n\n"
+                            f"Would you like to SCAN ALL OTHER FILES in this folder\n"
+                            f"and update any links to point to this new HTML file instead?")
+                
+                if self.gui_handler.confirm(msg_link):
+                    count = converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
+                    self.gui_handler.log(f"   Updated links in {count} files.")
+                
+                self.gui_handler.log("   Done.")
+            
+            self.gui_handler.log("--- Wizard Complete ---")
+            
+            # --- 5. NEW: Post-Conversion Audit/Fix ---
+            if kept_files:
+                msg_fix = (f"Conversion finished for {len(kept_files)} files.\n\n"
+                           f"Would you like to run the GUIDED REVIEW (Accessibility Check) on these new files now?\n"
+                           f"(Highly Recommended for Alt Text & Links)")
+                           
+                if self.gui_handler.confirm(msg_fix):
+                     self.gui_handler.log("\n--- Starting Post-Conversion Review ---")
+                     for fp in kept_files:
+                         interactive_fixer.scan_and_fix_file(fp, self.gui_handler, self.target_dir)
+                     
+                     self.gui_handler.log("--- Review Complete ---")
+            
+            messagebox.showinfo("Done", "All selected files have been processed!")
+
+        self._run_task_in_thread(task, "Conversion Wizard")
+
+    def _convert_file(self, ext):
+        """Generic handler for file conversion."""
+        file_path = filedialog.askopenfilename(filetypes=[(f"{ext.upper()} Files", f"*.{ext}")])
+        if not file_path: return
+        
+        if ext == "pdf":
+             if not messagebox.askyesno("PDF Conversion (Beta)", 
+                "⚠️ PDF Conversion is extremely difficult to automate.\n\n"
+                "This tool will extract TEXT ONLY. It will likely lose:\n"
+                "- Math Equations\n- Images\n- Layout/Columns\n\n"
+                "Are you sure you want to proceed with a text extraction?"):
+                return
+
+        
+        self.gui_handler.log(f"Converting {os.path.basename(file_path)}...")
+        
+        def task():
+            output_path, err = None, None
+            
+            if ext == "docx":
+                output_path, err = converter_utils.convert_docx_to_html(file_path)
+            elif ext == "xlsx":
+                output_path, err = converter_utils.convert_excel_to_html(file_path)
+            elif ext == "pptx":
+                output_path, err = converter_utils.convert_ppt_to_html(file_path)
+            elif ext == "pdf":
+                output_path, err = converter_utils.convert_pdf_to_html(file_path)
+            
+            if err:
+                 self.gui_handler.log(f"[ERROR] Conversion failed: {err}")
+                 return
+
+
+            self.gui_handler.log(f"[SUCCESS] Created: {os.path.basename(output_path)}")
+            
+            # Post-Conversion Prompts
+            if ext == "pptx":
+                self.gui_handler.log("[INFO] Images extracted with [FIX_ME] tags.")
+                self.gui_handler.log("Please run '2. Interactive Fixer' to describe them.")
+                # We need to schedule the messagebox on the main thread
+                # Or just rely on the log? The user asked for "tell the users". 
+                # messagebox from thread is risky in some TK versions but usually works if root is main.
+                # Safer:
+                self.gui_handler.log("!!! IMPORTANT: Run Option 2 now to fix image descriptions !!!")
+
+            # Link Updater Logic inside thread? 
+            # messagebox.askyesno blocks. 
+            # We need to bridge this to UI thread.
+            
+            self.gui_handler.confirm(f"Update links to {os.path.basename(output_path)}?")
+            # Actually confirm returns boolean from UI thread!
+            
+            if self.gui_handler.confirm(f"Do you want to update links in ALL HTML files?\nFrom: {os.path.basename(file_path)}\nTo: {os.path.basename(output_path)}"):
+                count = converter_utils.update_links_in_directory(self.target_dir, file_path, output_path)
+                self.gui_handler.log(f"Updated links in {count} files.")
+            
+            
+        self._run_task_in_thread(task, f"Convert {ext.upper()}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ToolkitGUI(root)
+    root.mainloop()

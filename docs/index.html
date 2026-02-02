@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCC Accessibility Toolkit</title>
+    <style>
+        :root {
+            --primary: #4b3190;
+            --secondary: #2c3e50;
+            --text: #333;
+            --light: #f4f6f8;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+            color: var(--text);
+            background-color: var(--light);
+        }
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 3rem 1rem;
+            text-align: center;
+        }
+        h1 { margin: 0; font-size: 2.5rem; }
+        .subtitle { font-size: 1.2rem; opacity: 0.9; margin-top: 0.5rem; }
+        .container {
+            max-width: 900px;
+            margin: -2rem auto 2rem;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .dedication {
+            background-color: #e8f5e9;
+            border-left: 5px solid #2e7d32;
+            padding: 1.5rem;
+            margin: 2rem 0;
+            font-style: italic;
+            font-size: 1.1rem;
+        }
+        .btn {
+            display: inline-block;
+            background-color: var(--primary);
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-top: 1rem;
+            transition: background 0.2s;
+        }
+        .btn:hover { background-color: #3a2670; }
+        section { margin-bottom: 2rem; }
+        h2 { color: var(--secondary); border-bottom: 2px solid #eee; padding-bottom: 0.5rem; }
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>MCC Accessibility Toolkit</h1>
+        <p class="subtitle">Open Source Canvas Remediation & Conversion Tool</p>
+    </header>
+
+    <div class="container">
+        
+        <div class="dedication">
+            "I watched our faculty for hours and hours working on doing this by hand. I can't charge for it... Created by Dr. Meri Kasprak. Dedicated to the academic community to make the world a slightly better, more accessible place."
+        </div>
+
+        <section style="background-color: #fff3cd; padding: 15px; border-radius: 5px; border-left: 5px solid #ffc107;">
+            <h2 style="color: #856404; margin-top:0;">⚠️ Disclaimer & Safety</h2>
+            <p><strong>USE AT YOUR OWN RISK.</strong> This is a personal open-source project by Dr. Meri Kasprak and is <strong>NOT</strong> affiliated with or endorsed by McHenry County College.</p>
+            <p><strong>Recommendation:</strong> Always run this tool on a <strong>Sandbox/Practice Course</strong> first. Do not use on live courses until you have verified the results. Always backup your data.</p>
+        </section>
+
+        <section>
+            <h2>About This Project</h2>
+            <p>The MCC Accessibility Toolkit was born from the observation that accessibility compliance often falls on individual faculty members who lack the time or training to do it manualy. It provides a <strong>free, open-source</strong> alternative to expensive enterprise software.</p>
+        </section>
+        
+        <section>
+            <h2>Core Features</h2>
+            <ul>
+                <li><strong>HTML Remediation</strong>: Automatically fixes table headers, contrast issues, and heading structures in Canvas exports.</li>
+                <li><strong>Link Validator</strong>: Finds broken links and unsafe targets.</li>
+                <li><strong>File Converters</strong>: Converts <code>.docx</code>, <code>.xlsx</code>, and <code>.pptx</code> files into clean, accessible HTML.</li>
+                <li><strong>AI Alt Text</strong>: Uses Google Gemini to generate descriptions for images.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Get Started</h2>
+            <p>This tool is available for Windows and Mac/Linux users running Python.</p>
+            <a href="https://github.com/YOUR_USERNAME/mcc-ada-toolkit" class="btn">View on GitHub</a>
+            <a href="https://github.com/YOUR_USERNAME/mcc-ada-toolkit/archive/refs/heads/main.zip" class="btn" style="background-color: #2c3e50;">Download ZIP</a>
+        </section>
+
+        <section>
+            <h2>Installation (Non-Technical)</h2>
+            <ol>
+                <li>Download and install <a href="https://www.python.org/downloads/">Python 3.10+</a>.</li>
+                <li>Download the Toolkit ZIP (button above) and extract it.</li>
+                <li>Open the folder, double-click <code>install_dependencies.bat</code> (Windows) or run the setup command in terminal.</li>
+                <li>Double-click <code>LAUNCH_TOOLKIT.bat</code> to start the app.</li>
+            </ol>
+        </section>
+
+    </div>
+
+    <footer>
+        <p>Licensed under GNU GPLv3. Free forever.</p>
+    </footer>
+
+</body>
+</html>

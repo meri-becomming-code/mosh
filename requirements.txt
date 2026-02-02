@@ -1,0 +1,8 @@
+bs4
+requests
+colorama
+darkdetect
+mammoth
+openpyxl
+python-pptx
+pdfminer.six

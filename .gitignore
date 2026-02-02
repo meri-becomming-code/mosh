@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.manifest
+*.spec
+
+# VS Code
+.vscode/
+
+# Config & Secrets (Important!)
+toolkit_config.json
+*.key
+.env
+
+# Output/Test Files
+*_fixed.html
+*_audit.txt
+*.log
+test_math.html
+test_math.docx
+
+# System
+.DS_Store
+Thumbs.db
