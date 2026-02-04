@@ -124,16 +124,20 @@ def remediate_html_file(filepath):
             new_wrapper = soup.new_tag('div', style="overflow-x: auto; margin-bottom: 20px;")
             pre.wrap(new_wrapper)
 
-        # Apply Deep Obsidian theme to ALL code blocks (user requested consistent styling)
-        pre['style'] = (
-            f"background-color: {COLOR_BG_DARK}; "
-            f"color: {COLOR_TEXT_WHITE}; "
-            "padding: 15px; "
-            "border-radius: 5px; "
-            "font-family: 'Courier New', monospace; "
-            "white-space: pre;"
-        )
-        fixes.append("Applied 'Deep Obsidian' theme to code block")
+        # Apply Deep Obsidian theme - but check if already styled (idempotency)
+        current_style = pre.get('style', '').lower()
+        already_styled = COLOR_BG_DARK.lower() in current_style
+        
+        if not already_styled:
+            pre['style'] = (
+                f"background-color: {COLOR_BG_DARK}; "
+                f"color: {COLOR_TEXT_WHITE}; "
+                "padding: 15px; "
+                "border-radius: 5px; "
+                "font-family: 'Courier New', monospace; "
+                "white-space: pre;"
+            )
+            fixes.append("Applied 'Deep Obsidian' theme to code block")
         
         for span in pre.find_all('span'):
             text = span.get_text().strip()
