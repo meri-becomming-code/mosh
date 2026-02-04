@@ -373,6 +373,11 @@ and to all the other students struggling with their own challenges.
         self.btn_pdf = ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf"))
         self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
 
+        # Batch Everything (Risky)
+        self.btn_batch = ttk.Button(frame_convert, text="🎲 Roll the Dice: Convert Everything (Risky) 🎲", 
+                                    command=self._run_batch_conversion, style="Action.TButton")
+        self.btn_batch.pack(fill="x", pady=(10, 0))
+
 
         # -- Logs --
         ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w")
@@ -503,6 +508,12 @@ and to all the other students struggling with their own challenges.
         dialog.geometry("600x680") 
         dialog.transient(self.root)
         dialog.grab_set()
+        
+        def on_close_x():
+            self.gui_handler.stop_requested = True
+            dialog.destroy()
+            
+        dialog.protocol("WM_DELETE_WINDOW", on_close_x)
 
         # Context area
         if context:
@@ -562,6 +573,12 @@ and to all the other students struggling with their own challenges.
         dialog.geometry("550x400")
         dialog.transient(self.root)
         dialog.grab_set()
+        
+        def on_close_x():
+            self.gui_handler.stop_requested = True
+            dialog.destroy()
+            
+        dialog.protocol("WM_DELETE_WINDOW", on_close_x)
 
         if context:
             ctx_frame = ttk.LabelFrame(dialog, text="Surrounding Text Context", padding=5)
@@ -605,7 +622,7 @@ and to all the other students struggling with their own challenges.
         """Gray out all action buttons while a task is running."""
         for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
                    self.btn_wizard, self.btn_word, self.btn_excel, 
-                   self.btn_ppt, self.btn_pdf]:
+                   self.btn_ppt, self.btn_pdf, self.btn_batch]:
             try: btn.config(state='disabled')
             except: pass
         self.btn_stop.config(state='normal')
@@ -616,7 +633,7 @@ and to all the other students struggling with their own challenges.
         """Restore all action buttons."""
         for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
                    self.btn_wizard, self.btn_word, self.btn_excel, 
-                   self.btn_ppt, self.btn_pdf]:
+                   self.btn_ppt, self.btn_pdf, self.btn_batch]:
             try: btn.config(state='normal')
             except: pass
         self.btn_stop.config(state='disabled')
@@ -688,10 +705,14 @@ and to all the other students struggling with their own challenges.
                     self.gui_handler.log(f"   [{i+1}/{len(html_files)}] [FIXED] {os.path.basename(path)}:")
                     for fix in fixes:
                         self.gui_handler.log(f"    - {fix}")
-                elif success:
-                    self.gui_handler.log(f"   [{i+1}/{len(html_files)}] [OK] {os.path.basename(path)}")
+            # Estimate time saved: 1.5 minutes per fix seems reasonable for manual H1/Table/Tag fixing
+            minutes_saved = total_fixes * 1.5
+            hours = int(minutes_saved // 60)
+            mins = int(minutes_saved % 60)
+            time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
             
             self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
+            self.gui_handler.log(f"🏆 YOU SAVED APPROXIMATELY {time_str} OF TEDIOUS MANUAL LABOR!")
 
         self._run_task_in_thread(task, "Auto-Fixer")
 
@@ -1072,6 +1093,87 @@ YOUR WORKFLOW:
             
             
         self._run_task_in_thread(task, f"Convert {ext.upper()}")
+
+    def _run_batch_conversion(self):
+        """Processes ALL convertible files in one go without per-file verification."""
+        # 1. Scary Warning
+        msg = ("🎲 ROLL THE DICE: BATCH CONVERSION 🎲\n\n"
+               "WARNING: This will convert EVERY Word, PPT, Excel, and PDF file in your project to HTML automatically.\n\n"
+               "- It is NOT perfect. Layouts may break.\n"
+               "- Original files will be moved to the archive folder for safety.\n"
+               "- Links will be updated throughout your project.\n\n"
+               "YOU are responsible for reviewing the resulting HTML pages. "
+               "Are you sure you want to take this gamble?")
+        
+        if not messagebox.askyesno("🎲 Feeling Lucky?", msg):
+            return
+
+        def task():
+            supported_exts = {'.docx', '.pptx', '.xlsx', '.pdf'}
+            found_files = []
+            for root, dirs, files in os.walk(self.target_dir):
+                if converter_utils.ARCHIVE_FOLDER_NAME in root: continue
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in supported_exts and not file.startswith('~$'):
+                        found_files.append(os.path.join(root, file))
+            
+            if not found_files:
+                self.gui_handler.log("No convertible files found.")
+                return
+
+            self.gui_handler.log(f"--- 🎲 Starting Batch Gamble on {len(found_files)} files ---")
+            success_count = 0
+            total_auto_fixes = 0
+            
+            for i, fpath in enumerate(found_files):
+                if self.gui_handler.is_stopped(): break
+                fname = os.path.basename(fpath)
+                ext = os.path.splitext(fpath)[1].lower().replace('.', '')
+                self.gui_handler.log(f"[{i+1}/{len(found_files)}] Converting: {fname}")
+                
+                output_path = None
+                err = None
+                
+                if ext == "docx":
+                    output_path, err = converter_utils.convert_docx_to_html(fpath)
+                elif ext == "xlsx":
+                    output_path, err = converter_utils.convert_excel_to_html(fpath)
+                elif ext == "pptx":
+                    output_path, err = converter_utils.convert_ppt_to_html(fpath)
+                elif ext == "pdf":
+                    output_path, err = converter_utils.convert_pdf_to_html(fpath)
+                
+                if output_path:
+                    success_count += 1
+                    
+                    # Run Auto-Fixer on the document immediately
+                    self.gui_handler.log(f"   [FIXING] Running Auto-Fixer on new HTML...")
+                    success_fix, fixes = interactive_fixer.run_auto_fixer(output_path, self.gui_handler)
+                    if success_fix and fixes:
+                        total_auto_fixes += len(fixes)
+                    
+                    # Update Links (extensionless)
+                    l_count = converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
+                    # Archive
+                    converter_utils.archive_source_file(fpath)
+                    self.gui_handler.log(f"   [DONE] Links updated in {l_count} files. Original archived.")
+                else:
+                    self.gui_handler.log(f"   [FAILED] {err}")
+            
+            # Estimation: 20 minutes per file vs manual remediation + auto-fixes
+            total_mins = (success_count * 20) + (total_auto_fixes * 1.5)
+            hours = int(total_mins // 60)
+            mins = int(total_mins % 60)
+            time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+
+            self.gui_handler.log(f"\n--- Batch Complete. {success_count} files converted. ---")
+            self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
+            self.gui_handler.log(f"   (Estimate based on 20m/file vs manual source remediation + {total_auto_fixes} automatic HTML fixes)")
+            self.gui_handler.log("🛡️ Remember: Check the files in Canvas before publishing!")
+            messagebox.showinfo("Gamble Complete", f"Processed {len(found_files)} files.\nCheck the logs for details.")
+
+        self._run_task_in_thread(task, "Batch Gamble")
 
 if __name__ == "__main__":
     root = tk.Tk()
