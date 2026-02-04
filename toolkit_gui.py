@@ -745,14 +745,17 @@ and to all the other students struggling with their own challenges.
         Welcome to MOSH's Toolkit
         (Making Online Spaces Helpful)
 
-        🚀 QUICK START:
-        1. Select Project: Click "Browse Folder" to choose your content folder.
-        2. Auto-Fix: Run "Auto-Fix Issues" to handle headings and tables.
-        3. Guided Review: Use "Guided Review" to check Alt Text and Links.
-        4. Repackage: Use "Repackage Course" to create a standard Canvas export.
+        🚀 QUICK START WORKFLOW:
+        1. Export & Download: Export your course from Canvas and download the .imscc file.
+        2. Import Package: Click "Import Course Package" in this tool to unpack it.
+        3. Auto-Fix & Review: Run "Auto-Fix" and then "Guided Review" to remediate content.
+        4. Repackage: Click "Repackage Course" to create a new file for upload.
 
-        💡 TIP:
-        The "Dedication" and detailed "About" info can be found in the Help menu.
+        ⚠️ ALPHA TEST WARNING:
+        This is ALPHA software. Use a NEW EMPTY CANVAS COURSE to test your files.
+        Do NOT import directly into a live course until you have verified everything.
+        
+        🐛 Found a bug? Email: meredithkasprak@gmail.com
         """
         
         lbl = tk.Label(dialog, text=intro, justify="left", font=("Segoe UI", 11), 

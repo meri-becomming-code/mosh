@@ -289,7 +289,16 @@ def convert_ppt_to_html(ppt_path):
                             
                         # Embed in HTML with Standard Relative Path
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
-                        html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" class="slide-image">')
+                        
+                        # [SIZE FIX] Calculate dimensions
+                        # PPTX uses EMUs (English Metric Units). 1 inch = 914400 EMUs. 
+                        # Web usually treats 96 DPI. So 914400 / 96 = 9525 EMUs per pixel.
+                        width_px = int(shape.width / 9525) if hasattr(shape, 'width') else None
+                        
+                        if width_px:
+                             html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" width="{width_px}" class="slide-image">')
+                        else:
+                             html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" class="slide-image">')
                     except Exception as img_err:
                         print(f"Skipped image on slide {slide_num}: {img_err}")
 
@@ -333,47 +342,59 @@ def convert_pdf_to_html(pdf_path):
             html_parts.append(f'<div class="page-container" id="page-{page_num}" style="margin-bottom: 30px; border-bottom: 1px solid #ccc; padding-bottom: 20px;">')
             html_parts.append(f'<p class="note">Page {page_num}</p>')
             
-            # 1. Extract Images
-            image_list = page.get_images()
-            for img_index, img in enumerate(image_list):
-                xref = img[0]
-                try:
-                    base_image = doc.extract_image(xref)
-                    image_bytes = base_image["image"]
-                    ext = base_image["ext"]
-                    
-                    # Use web_resources/[filename] folder
-                    safe_filename = filename.replace(" ", "_")
-                    res_dir = os.path.join(output_dir, "web_resources", safe_filename)
-                    if not os.path.exists(res_dir): os.makedirs(res_dir)
-
-                    image_filename = f"page{page_num}_img{img_index + 1}_{uuid.uuid4().hex[:6]}.{ext}"
-                    image_full_path = os.path.join(res_dir, image_filename)
-                    
-                    with open(image_full_path, "wb") as f:
-                        f.write(image_bytes)
+            # 1. Extract Content via Dict (Structure + Images)
+            page_dict = page.get_text("dict")
+            blocks = page_dict.get("blocks", [])
+            
+            for block in blocks:
+                # Type 1 = Image
+                if block['type'] == 1:
+                    try:
+                        ext = block['ext']
+                        image_bytes = block['image']
                         
-                    rel_path = f"web_resources/{safe_filename}/{image_filename}"
-                    html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Page {page_num}" class="content-image" style="max-width: 100%; height: auto; display: block; margin: 10px 0;">')
-                except:
-                    pass
+                        # [SIZE FIX] Get dimensions from BBox (in points)
+                        bbox = block['bbox'] # (x0, y0, x1, y1)
+                        width_pt = bbox[2] - bbox[0]
+                        # Convert to roughly pixels (1pt = 1.33px roughly, or just use pt)
+                        # Let's use int points for cleaner HTML
+                        width_attr = int(width_pt)
+                        
+                        # Save Image
+                        safe_filename = filename.replace(" ", "_")
+                        res_dir = os.path.join(output_dir, "web_resources", safe_filename)
+                        if not os.path.exists(res_dir): os.makedirs(res_dir)
 
-            # 2. Extract Text (Blocks to preserve some structure)
-            blocks = page.get_text("blocks")
-            for b in blocks:
-                # b = (x0, y0, x1, y1, text, block_no, block_type)
-                text = b[4].strip()
-                if not text: continue
-                
-                # Heuristic for headers: Short lines, no ending period?
-                # PyMuPDF doesn't give font info in "blocks" mode easily without "dict"
-                # Keep it simple for now.
-                if len(text) < 80 and not text.endswith('.') and not text.endswith(','):
-                     html_parts.append(f"<h3>{text}</h3>")
-                else:
-                     # Escape HTML chars? Basic replace
-                     safe_text = text.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
-                     html_parts.append(f"<p>{safe_text}</p>")
+                        image_filename = f"page{page_num}_img_{uuid.uuid4().hex[:6]}.{ext}"
+                        image_full_path = os.path.join(res_dir, image_filename)
+                        
+                        with open(image_full_path, "wb") as f:
+                            f.write(image_bytes)
+                            
+                        rel_path = f"web_resources/{safe_filename}/{image_filename}"
+                        html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Page {page_num}" width="{width_attr}" class="content-image" style="display: block; margin: 10px 0;">')
+                    except Exception as e:
+                        print(f"Skipped PDF image: {e}")
+
+                # Type 0 = Text
+                elif block['type'] == 0:
+                     for line in block["lines"]:
+                         for span in line["spans"]:
+                             text = span["text"].strip()
+                             font_size = span["size"]
+                             if not text: continue
+                             
+                             # Simple Heuristic for Headers based on font size
+                             # (Adjust thresholds as needed)
+                             if font_size > 18:
+                                  html_parts.append(f"<h2>{text}</h2>")
+                             elif font_size > 14:
+                                  html_parts.append(f"<h3>{text}</h3>")
+                             else:
+                                  # Basic text
+                                  # Sanitize
+                                  safe_text = text.replace("<", "&lt;").replace(">", "&gt;")
+                                  html_parts.append(f"<p>{safe_text}</p>")
 
             html_parts.append('</div>')
 
