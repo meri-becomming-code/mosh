@@ -88,7 +88,8 @@ def check_reflow_styles(tag):
     if not style: return None
     
     # Check 1: fixed width > 320px
-    width_match = re.search(r'\bwidth:\s*(\d+)px', style)
+    # [FIX] Use negative lookbehind (?<!-) to ensure we don't match 'max-width' or 'min-width'
+    width_match = re.search(r'(?<!-)width:\s*(\d+)px', style)
     if width_match:
         px = int(width_match.group(1))
         if px > 320:

@@ -51,6 +51,24 @@ def remediate_html_file(filepath):
     # Check for legacy shorthands (REMOVED: Dangerous collisions with #ffffff)
     # html_content = html_content.replace('background-fff', '').replace('background-f;', '').replace('fff;', '')
 
+    # --- Part 1: Pre-Soup Regex Fixes (Reflow/Mobile) ---
+    # Fix 1: Fixed Width Containers > 320px
+    # [FIX] Use negative lookbehind (?<!-) to avoid matching max-width
+    def width_replacer(match):
+        val = int(match.group(1))
+        if val > 320:
+            return f"width: 100%; max-width: {val}px"
+        return match.group(0)
+
+    if re.search(r'(?<!-)width:\s*(\d+)px', html_content, re.IGNORECASE):
+        html_content = re.sub(r'(?<!-)width:\s*(\d+)px', width_replacer, html_content, flags=re.IGNORECASE)
+        fixes.append("Converted fixed widths >320px to responsive max-width")
+
+    # Fix 2: Justified Text
+    if "text-align: justify" in html_content.lower() or "text-align:justify" in html_content.lower():
+         html_content = re.sub(r'text-align:\s*justify;?', 'text-align: left;', html_content, flags=re.IGNORECASE)
+         fixes.append("Replaced 'justify' text alignment with 'left'")
+
     soup = BeautifulSoup(html_content, 'html.parser')
 
     # --- Part 2: Document Structure ---
@@ -93,23 +111,6 @@ def remediate_html_file(filepath):
             main_div['lang'] = 'en'
             fixes.append("Applied default language 'en' to main container")
 
-    # --- Part 3: Reflow & Layout Fixes (Added per User Request) ---
-    # Fix 1: Fixed Width Containers > 320px
-    # Regex to find "width: 123px" (case insensitive)
-    def width_replacer(match):
-        val = int(match.group(1))
-        if val > 320:
-            return f"width: 100%; max-width: {val}px"
-        return match.group(0) # Keep small fixed widths (buttons, icons)
-
-    html_content = re.sub(r'width:\s*(\d+)px', width_replacer, html_content, flags=re.IGNORECASE)
-
-    # Fix 2: Justified Text (Accessibility/Dyslexia)
-    if "text-align: justify" in html_content.lower() or "text-align:justify" in html_content.lower():
-         html_content = re.sub(r'text-align:\s*justify;?', 'text-align: left;', html_content, flags=re.IGNORECASE)
-         fixes.append("Replaced 'justify' text alignment with 'left'")
-
-    fixes.append("Converted fixed widths >320px to responsive max-width")
 
     # --- Part 4: "Deep Obsidian" Code & Standardized Math ---
     
@@ -120,17 +121,24 @@ def remediate_html_file(filepath):
             new_wrapper = soup.new_tag('div', style="overflow-x: auto; margin-bottom: 20px;")
             pre.wrap(new_wrapper)
 
-        pre['style'] = (
-            f"background-color: {COLOR_BG_DARK}; "
-            f"color: {COLOR_TEXT_WHITE}; "
-            "padding: 15px; "
-            "border-radius: 5px; "
-            "font-family: 'Courier New', monospace; "
-            "white-space: pre;"
-        )
-        fixes.append("Applied 'Deep Obsidian' theme to code block")
         
         # C. Syntax Highlighting (Basic Heuristics)
+        # Check if already styled (Idempotency)
+        current_style = pre.get('style', '').lower()
+        if "background-color" in current_style and "#2b2b2b" in current_style:
+            # Already fixed, skip
+            pass 
+        else:
+            pre['style'] = (
+                f"background-color: {COLOR_BG_DARK}; "
+                f"color: {COLOR_TEXT_WHITE}; "
+                "padding: 15px; "
+                "border-radius: 5px; "
+                "font-family: 'Courier New', monospace; "
+                "white-space: pre;"
+            )
+            fixes.append("Applied 'Deep Obsidian' theme to code block")
+        
         for span in pre.find_all('span'):
             text = span.get_text().strip()
             
