@@ -636,9 +636,22 @@ def run_auto_fixer(filepath, io_handler=None):
     import run_fixer
     try:
         remediated, fixes = run_fixer.remediate_html_file(filepath)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(remediated)
+        
+        # Only write if there were actual fixes
+        if fixes:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(remediated)
+            # Verify write succeeded
+            import os as os_check
+            if os_check.path.getsize(filepath) > 0:
+                io_handler.log(f"      [SAVED] {os.path.basename(filepath)}")
+            else:
+                io_handler.log(f"      [WARNING] File may not have saved: {os.path.basename(filepath)}")
+        
         return True, fixes
+    except PermissionError as e:
+        io_handler.log(f"  [ERROR] Permission denied writing to {os.path.basename(filepath)}: {e}")
+        return False, []
     except Exception as e:
         io_handler.log(f"  [ERROR] Auto-fix failed for {os.path.basename(filepath)}: {e}")
         return False, []
