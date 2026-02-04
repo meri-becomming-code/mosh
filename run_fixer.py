@@ -52,16 +52,20 @@ def remediate_html_file(filepath):
     # html_content = html_content.replace('background-fff', '').replace('background-f;', '').replace('fff;', '')
 
     # --- Part 1: Pre-Soup Regex Fixes (Reflow/Mobile) ---
-    # Fix 1: Fixed Width Containers > 320px
-    # [FIX] Use negative lookbehind (?<!-) to avoid matching max-width
+    # [FIX] Track if we actually changed anything
+    reflow_fixed = False
     def width_replacer(match):
+        nonlocal reflow_fixed
         val = int(match.group(1))
         if val > 320:
+            reflow_fixed = True
             return f"width: 100%; max-width: {val}px"
         return match.group(0)
 
-    if re.search(r'(?<!-)width:\s*(\d+)px', html_content, re.IGNORECASE):
-        html_content = re.sub(r'(?<!-)width:\s*(\d+)px', width_replacer, html_content, flags=re.IGNORECASE)
+    # Transform
+    html_content = re.sub(r'(?<!-)width:\s*(\d+)px', width_replacer, html_content, flags=re.IGNORECASE)
+    
+    if reflow_fixed:
         fixes.append("Converted fixed widths >320px to responsive max-width")
 
     # Fix 2: Justified Text
