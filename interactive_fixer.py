@@ -358,6 +358,8 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         # Detection Logic
         if 'alt' not in img.attrs:
             issue = "Missing 'alt' attribute"
+        elif not alt:
+            issue = "Empty alt text"
         elif alt.lower() in BAD_ALT_TEXT:
             issue = f"Generic alt text ('{alt}')"
         elif alt.lower() == img_filename.lower():

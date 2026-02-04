@@ -261,14 +261,43 @@ def convert_ppt_to_html(ppt_path):
                 if shape.has_text_frame:
                     if shape == slide.shapes.title: continue # Skip title (already added)
                     
+                    # [SMART FIX] 1. Code Block Detection (Monospace Fonts)
+                    is_code = False
+                    if shape.text_frame.paragraphs:
+                        # Check first paragraph font
+                        font_name = shape.text_frame.paragraphs[0].font.name
+                        if font_name and any(f in font_name.lower() for f in ['courier', 'consolas', 'mono', 'lucida console']):
+                            is_code = True
+                            
+                    if is_code:
+                        # Wrap entire shape text in <pre>
+                        full_text = shape.text_frame.text
+                        # Escaping HTML entities is good practice but keeping it simple for now
+                        safe_text = full_text.replace("<", "&lt;").replace(">", "&gt;")
+                        html_parts.append(f'<pre class="code-block" style="background:#f4f4f4; padding:10px; font-family:monospace;">{safe_text}</pre>')
+                        continue
+
+                    # [SMART FIX] 2. Text Box vs Placeholder (Bullets vs Paragraphs)
+                    # MSO_SHAPE_TYPE.TEXT_BOX (17) -> <p>
+                    # MSO_SHAPE_TYPE.PLACEHOLDER (14) -> <ul> (Usually bulleted body)
+                    use_bullets = True
+                    if shape.shape_type == MSO_SHAPE_TYPE.TEXT_BOX:
+                        use_bullets = False
+                    
                     text_content = []
                     for paragraph in shape.text_frame.paragraphs:
                         txt = paragraph.text.strip()
                         if txt:
-                            text_content.append(f"<li>{txt}</li>")
+                            if use_bullets:
+                                text_content.append(f"<li>{txt}</li>")
+                            else:
+                                text_content.append(f"<p>{txt}</p>")
                     
                     if text_content:
-                        html_parts.append("<ul>" + "".join(text_content) + "</ul>")
+                        if use_bullets:
+                            html_parts.append("<ul>" + "".join(text_content) + "</ul>")
+                        else:
+                            html_parts.append("".join(text_content))
 
                 # Tables
                 if shape.has_table:
@@ -386,7 +415,7 @@ def convert_pdf_to_html(pdf_path):
                             f.write(image_bytes)
                             
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
-                        html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Page {page_num}" width="{width_attr}" class="content-image" style="display: block; margin: 10px 0;">')
+                        html_parts.append(f'<img src="{rel_path}" alt="" width="{width_attr}" class="content-image" style="display: block; margin: 10px 0;">')
                     except Exception as e:
                         print(f"Skipped PDF image: {e}")
 

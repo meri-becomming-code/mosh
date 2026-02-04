@@ -126,7 +126,9 @@ def audit_file(filepath):
     for img in soup.find_all('img'):
         alt = img.get('alt', '').strip().lower()
         if 'alt' not in img.attrs:
-            results["technical"].append(f"Image missing alt attribute: {img.get('src')}")
+            results["technical"].append(f"Missing alt attribute: {img.get('src')}")
+        elif not alt:
+            results["technical"].append(f"Empty alt text: {img.get('src')}")
         elif alt in ['image', 'photo', 'picture']:
              results["subjective"].append(f"Generic Alt Text: '{alt}'")
         
@@ -177,21 +179,34 @@ def audit_file(filepath):
     return results
 
 def get_issue_summary(results):
-    """Returns a short string summary of issues for logging."""
+    """Returns a detailed string summary of issues for logging."""
     if not results: return "None"
     
     parts = []
     
-    # 1. Tech Issues
-    tech_count = len(results.get("technical", []))
-    if tech_count > 0:
-        parts.append(f"{tech_count} Tech Issues")
-        
-        # Add quick hint for common ones
-        tech_str = " ".join(results["technical"]).lower()
-        if "alt" in tech_str: parts.append("(Alt Text)")
-        if "heading" in tech_str: parts.append("(Headings)")
-        if "contrast" in tech_str: parts.append("(Contrast)")
+    # 1. Tech Issues - Detailed Breakdown
+    tech_issues = results.get("technical", [])
+    if tech_issues:
+        counts = {}
+        for issue in tech_issues:
+            # Simplistic grouping by keyword
+            key = "Other"
+            lower = issue.lower()
+            if "missing alt" in lower: key = "Missing Alt Attr"
+            elif "empty alt" in lower: key = "Empty Alt Text"
+            elif "heading" in lower: key = "Heading Structure"
+            elif "table" in lower: key = "Table Issues"
+            elif "iframe" in lower: key = "Missing Iframe Title"
+            elif "caption" in lower or "track" in lower: key = "Missing Captions"
+            elif "deprecated" in lower: key = "Deprecated Tags"
+            elif "contrast" in lower: key = "Contrast"
+            else: key = "Other Tech Issues"
+            
+            counts[key] = counts.get(key, 0) + 1
+            
+        # Format: "Missing Alt (3), Headings (1)"
+        details = [f"{k} ({v})" for k, v in counts.items()]
+        parts.append(", ".join(details))
 
     # 2. Subjective
     subj_count = len(results.get("subjective", []))
