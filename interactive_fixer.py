@@ -201,13 +201,11 @@ def fetch_youtube_title(url):
 def save_html(filepath, soup, io_handler):
     """Saves the modified soup to the file."""
     try:
+        io_handler.log(f"  [DEBUG] Attempting to save file: {filepath}")
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(str(soup))
-        io_handler.log(f"  [SAVED] {os.path.basename(filepath)}")
+        io_handler.log(f"  [SUCCESS] Saved file: {os.path.basename(filepath)}")
         return True
-    except Exception as e:
-        io_handler.log(f"  [ERROR] Could not save {filepath}: {e}")
-        return False
     except Exception as e:
         io_handler.log(f"  [ERROR] Could not save {filepath}: {e}")
         return False
