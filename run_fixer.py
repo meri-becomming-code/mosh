@@ -312,6 +312,45 @@ def remediate_html_file(filepath):
             iframe.insert_after(Comment("ADA FIX: Added generic title to iframe"))
             fixes.append("Added title to embedded content (iframe)")
 
+    # --- Part 8: Deprecated Tags ---
+    # Convert <b> to <strong>
+    for tag in soup.find_all('b'):
+        tag.name = 'strong'
+        fixes.append("Converted deprecated <b> to <strong>")
+    
+    # Convert <i> to <em>
+    for tag in soup.find_all('i'):
+        # Skip Font Awesome icons (they use <i class="fa-...">)
+        if tag.get('class') and any('fa' in c for c in tag.get('class', [])):
+            continue
+        tag.name = 'em'
+        fixes.append("Converted deprecated <i> to <em>")
+    
+    # Convert <center> to <div style="text-align: center">
+    for tag in soup.find_all('center'):
+        tag.name = 'div'
+        existing_style = tag.get('style', '')
+        tag['style'] = f"text-align: center; {existing_style}".strip()
+        fixes.append("Converted deprecated <center> to styled <div>")
+    
+    # Unwrap <font> (preserve content, remove tag)
+    for tag in soup.find_all('font'):
+        # Try to preserve color as a span with inline style
+        color = tag.get('color')
+        if color:
+            new_span = soup.new_tag('span', style=f"color: {color};")
+            new_span.extend(tag.contents[:])
+            tag.replace_with(new_span)
+        else:
+            tag.unwrap()
+        fixes.append("Removed deprecated <font> tag")
+    
+    # Unwrap <blink> and <marquee> (just remove the tag, keep content)
+    for tag_name in ['blink', 'marquee']:
+        for tag in soup.find_all(tag_name):
+            tag.unwrap()
+            fixes.append(f"Removed deprecated <{tag_name}> tag")
+
     # Deduplicate fixes
     unique_fixes = list(set(fixes))
     return str(soup), unique_fixes
