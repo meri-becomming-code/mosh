@@ -128,7 +128,7 @@ def remediate_html_file(filepath):
         # C. Syntax Highlighting (Basic Heuristics)
         # Check if already styled (Idempotency)
         current_style = pre.get('style', '').lower()
-        if "background-color" in current_style and "#2b2b2b" in current_style:
+        if "background-color" in current_style and COLOR_BG_DARK.lower() in current_style:
             # Already fixed, skip
             pass 
         else:
