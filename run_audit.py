@@ -125,10 +125,14 @@ def audit_file(filepath):
     # 3. Images
     for img in soup.find_all('img'):
         alt = img.get('alt', '').strip().lower()
+        role = img.get('role', '').strip().lower()
+        
         if 'alt' not in img.attrs:
             results["technical"].append(f"Missing alt attribute: {img.get('src')}")
         elif not alt:
-            results["technical"].append(f"Empty alt text: {img.get('src')}")
+            # [PANORAMA MATCH] Empty alt is OK if role="presentation"
+            if role != "presentation":
+                 results["technical"].append(f"Empty alt text (needs role='presentation'): {img.get('src')}")
         elif alt in ['image', 'photo', 'picture']:
              results["subjective"].append(f"Generic Alt Text: '{alt}'")
         
@@ -200,12 +204,19 @@ def get_issue_summary(results):
             elif "caption" in lower or "track" in lower: key = "Missing Captions"
             elif "deprecated" in lower: key = "Deprecated Tags"
             elif "contrast" in lower: key = "Contrast"
-            else: key = "Other Tech Issues"
+            elif "scope" in lower: key = "Missing Header Scope"    # [NEW]
+            elif "viewport" in lower: key = "Missing Viewport"      # [NEW]
+            elif "fixed width" in lower or "justify" in lower: key = "Reflow/Mobile Issue" # [NEW] Reflow checks
+            else: 
+                 # Fallback: Capture the actual issue text to help debug "Other"
+                 # Truncate to keep log readable
+                 short_issue = issue.split(':')[0] if ':' in issue else issue[:20]
+                 key = f"Other ({short_issue})"
             
             counts[key] = counts.get(key, 0) + 1
             
         # Format: "Missing Alt (3), Headings (1)"
-        details = [f"{k} ({v})" for k, v in counts.items()]
+        details = [f"{k} {v}" for k, v in counts.items()]
         parts.append(", ".join(details))
 
     # 2. Subjective

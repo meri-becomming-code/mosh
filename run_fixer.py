@@ -262,12 +262,17 @@ def remediate_html_file(filepath):
             reason = "Filename used as Alt Text"
 
         if needs_fix:
-            img['alt'] = f"[FIX_ME]: {reason}. Describe this image."
-            # Visual Marker
-            warning_span = soup.new_tag('span', style="color:red; font-weight:bold; border:1px solid red; padding:2px;")
-            warning_span.string = f"[ADA FIX: {reason}]"
-            img.insert_after(warning_span)
-            fixes.append(f"Flagged image for review: {reason}")
+            # Check if we already flagged this
+            next_node = img.find_next_sibling()
+            already_flagged = next_node and next_node.name == 'span' and "ADA FIX" in next_node.get_text()
+            
+            if not already_flagged:
+                img['alt'] = f"[FIX_ME]: {reason}. Describe this image."
+                # Visual Marker
+                warning_span = soup.new_tag('span', style="color:red; font-weight:bold; border:1px solid red; padding:2px;")
+                warning_span.string = f"[ADA FIX: {reason}]"
+                img.insert_after(warning_span)
+                fixes.append(f"Flagged image for review: {reason}")
 
     # --- Part 8: Links & Iframes ---
     # Remove empty links

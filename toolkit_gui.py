@@ -541,9 +541,14 @@ and to all the other students struggling with their own challenges.
             result["text"] = "" 
             dialog.destroy()
             
+        def on_decorate():
+            result["text"] = "__DECORATIVE__"
+            dialog.destroy()
+            
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=15)
         tk.Button(btn_frame, text="Update Alt Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#fff9c4", width=15).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
         
         dialog.bind('<Return>', on_ok)

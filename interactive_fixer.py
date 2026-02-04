@@ -19,7 +19,8 @@ class FixerIO:
     """Handles Input/Output. Subclass this for GUI integration."""
     def __init__(self):
         self.stop_requested = False
-        self.alt_memory_file = "alt_text_memory.json"
+        # Use user's home directory for global memory
+        self.alt_memory_file = os.path.join(os.path.expanduser("~"), ".mosh_alt_memory.json")
         self.memory = self._load_memory()
 
     def _load_memory(self):
@@ -405,18 +406,33 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                  prompt_text = f"    > Enter new Alt Text (Press Enter to keep '{alt}'): " if issue == "Review suggested alt text" else "    > Enter new Alt Text (or Press Enter to skip): "
                  choice = io_handler.prompt(prompt_text).strip()
             
-            # If they enter text, save to memory
+            # If they enter text (or special token), save to memory
             if choice:
-                img['alt'] = choice
-                io_handler.memory[mem_key] = choice
+                # [DECORATIVE LOGIC]
+                if choice == "__DECORATIVE__":
+                    img['alt'] = ""
+                    # [PANORAMA MATCH] Add role="presentation" to explicitly hide from screen readers
+                    img['role'] = "presentation" 
+                    io_handler.log(f"    -> Marked as DECORATIVE (Saved to Memory)")
+                    
+                    # Save exact token OR empty string?
+                    # If we save "", next time it auto-applies "".
+                    # If we save "__DECORATIVE__", next time we see it, we apply "".
+                    # Let's save "" so it's transparent.
+                    io_handler.memory[mem_key] = "" 
+                else:
+                    img['alt'] = choice
+                    io_handler.memory[mem_key] = choice
+                    io_handler.log(f"    -> Updated and saved to memory: '{choice}'")
+
                 io_handler.save_memory()
+                
                 # Remove any warning spans/markers if they exist
                 next_node = img.find_next_sibling()
                 if next_node and next_node.name == 'span' and "ADA FIX" in next_node.get_text():
                      next_node.extract()
                 
                 modified = True
-                io_handler.log(f"    -> Updated and saved to memory: '{choice}'")
                 
             # If "Review suggest alt" and they press enter, it's NOT a skip, it's a keep.
             elif not choice and issue == "Review suggested alt text":
