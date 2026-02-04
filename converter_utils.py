@@ -270,6 +270,20 @@ def convert_ppt_to_html(ppt_path):
                     if text_content:
                         html_parts.append("<ul>" + "".join(text_content) + "</ul>")
 
+                # Tables
+                if shape.has_table:
+                    html_parts.append('<table class="content-table" border="1">')
+                    for row in shape.table.rows:
+                        html_parts.append('<tr>')
+                        for cell in row.cells:
+                            # Extract text from cell
+                            cell_text = ""
+                            if cell.text_frame:
+                                cell_text = cell.text_frame.text.strip()
+                            html_parts.append(f'<td>{cell_text}</td>')
+                        html_parts.append('</tr>')
+                    html_parts.append('</table>')
+
                 # Images
                 if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                     try:
@@ -397,6 +411,17 @@ def convert_pdf_to_html(pdf_path):
                                   html_parts.append(f"<p>{safe_text}</p>")
 
             html_parts.append('</div>')
+            
+            # [TABLE FIX] Extract Tables
+            # We append them at the bottom of the page content for now to avoid breaking flow logic
+            try:
+                tables = page.find_tables()
+                if tables.tables:
+                    html_parts.append('<h4>Found Tables:</h4>')
+                    for tab in tables:
+                        html_parts.append(tab.to_pandas().to_html(index=False, header=False, classes="content-table").replace('class="dataframe content-table"', 'class="content-table"'))
+            except Exception as e:
+                print(f"Table detection failed: {e}")
 
         html_parts.append('</div>')
         

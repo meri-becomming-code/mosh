@@ -176,6 +176,30 @@ def audit_file(filepath):
 
     return results
 
+def get_issue_summary(results):
+    """Returns a short string summary of issues for logging."""
+    if not results: return "None"
+    
+    parts = []
+    
+    # 1. Tech Issues
+    tech_count = len(results.get("technical", []))
+    if tech_count > 0:
+        parts.append(f"{tech_count} Tech Issues")
+        
+        # Add quick hint for common ones
+        tech_str = " ".join(results["technical"]).lower()
+        if "alt" in tech_str: parts.append("(Alt Text)")
+        if "heading" in tech_str: parts.append("(Headings)")
+        if "contrast" in tech_str: parts.append("(Contrast)")
+
+    # 2. Subjective
+    subj_count = len(results.get("subjective", []))
+    if subj_count > 0:
+        parts.append(f"{subj_count} Suggestions")
+        
+    return ", ".join(parts)
+
 
 def run_audit_v3(directory):
     print(f"Auditing {directory}...")

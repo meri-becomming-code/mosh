@@ -713,7 +713,10 @@ and to all the other students struggling with their own challenges.
                 if res and (res["technical"] or res["subjective"]):
                      rel_path = os.path.relpath(path, self.target_dir)
                      all_issues[rel_path] = res
-                     self.gui_handler.log(f"Issues found in: {os.path.basename(path)}")
+                     
+                     # [AUDIT FIX] Show summary directly in log
+                     summary = run_audit.get_issue_summary(res)
+                     self.gui_handler.log(f"Issues in {os.path.basename(path)}: {summary}")
 
             out_file = os.path.join(self.target_dir, 'audit_report.json')
             with open(out_file, 'w', encoding='utf-8') as f:
