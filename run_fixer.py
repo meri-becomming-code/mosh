@@ -90,7 +90,11 @@ def remediate_html_file(filepath):
             fixes.append("Added mobile viewport meta tag")
 
     # Ensure main div has lang='en' (or inherits from doc)
-    main_div = soup.find('div')
+    # First, check if any top-level div already has lang attribute (idempotency)
+    main_div = soup.find('div', attrs={'lang': True})
+    if not main_div:
+        main_div = soup.find('div')
+    
     if not main_div:
         # Create a wrapper if none exists
         new_div = soup.new_tag('div')

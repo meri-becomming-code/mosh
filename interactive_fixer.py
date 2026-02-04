@@ -27,7 +27,13 @@ class FixerIO:
         if os.path.exists(self.alt_memory_file):
             try:
                 with open(self.alt_memory_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    raw_memory = json.load(f)
+                    # Normalize keys for consistent matching (URL decode + lowercase)
+                    normalized = {}
+                    for key, value in raw_memory.items():
+                        norm_key = urllib.parse.unquote(key).lower()
+                        normalized[norm_key] = value
+                    return normalized
             except Exception as e:
                 print(f"[Warning] Could not load memory file: {e}")
                 return {}
@@ -66,6 +72,12 @@ class FixerIO:
 
     def confirm(self, message):
         return self.prompt(f"{message} (y/n): ").lower().strip() == 'y'
+
+def normalize_image_key(src):
+    """Normalizes an image src to a consistent memory key (URL-decoded basename, lowercase)."""
+    basename = os.path.basename(src)
+    decoded = urllib.parse.unquote(basename)
+    return decoded.lower()
 
 def get_suggested_title(tag):
     """Attempts to guess a title based on surrounding text."""
@@ -381,8 +393,8 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             io_handler.log(f"    Reason: {issue}")
             io_handler.log(f"    Current Alt: '{alt}'")
             
-            # [NEW] Check Memory Bank First
-            mem_key = os.path.basename(src)
+            # [NEW] Check Memory Bank First (normalize key for consistent matching)
+            mem_key = normalize_image_key(src)
             if mem_key in io_handler.memory:
                 suggested_alt = io_handler.memory[mem_key]
                 io_handler.log(f"    [Memory Bank] Found saved alt text: '{suggested_alt}'")
