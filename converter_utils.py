@@ -52,7 +52,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 16px;
             line-height: 1.6; 
             color: #333;
-            max-width: 800px; 
+            max-width: 900px; 
             margin: 0 auto; 
             padding: 40px; 
         }}
@@ -68,14 +68,35 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         h3 {{ color: #444; margin-top: 30px; font-weight: 600; }}
         a {{ color: #0056b3; text-decoration: none; }}
         a:hover {{ text-decoration: underline; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 25px 0; font-size: 0.95em; }}
+        
+        /* Table Styles */
+        table {{ border-collapse: collapse; width: 100%; margin: 25px 0; font-size: 0.95em; border: 1px solid #ddd; }}
         th, td {{ border: 1px solid #ddd; padding: 12px 15px; text-align: left; }}
         th {{ background-color: #f8f9fa; font-weight: 600; color: #495057; }}
-        tr:nth-child(even) {{ background-color: #f8f9fa; }}
+        tr:nth-child(even) {{ background-color: #fcfcfc; }}
+        .content-table {{ width: 100%; border-collapse: collapse; }}
+        
         img {{ max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #eee; }}
         .grading-note {{ background-color: #e8f5e9; padding: 10px; border-left: 4px solid #4caf50; font-style: italic; }}
         .note {{ font-size: 0.9em; color: #666; background: #fff3cd; padding: 15px; border-radius: 4px; border: 1px solid #ffeeba; }}
-        code {{ background-color: #f1f3f5; padding: 2px 5px; border-radius: 4px; font-family: Consolas, monospace; color: #d63384; }}
+        
+        /* Code Block Styles */
+        code {{ background-color: #f1f3f5; padding: 2px 5px; border-radius: 4px; font-family: Consolas, 'Courier New', monospace; color: #d63384; }}
+        pre {{ 
+            background-color: #272822; 
+            color: #f8f8f2; 
+            padding: 15px; 
+            border-radius: 8px; 
+            overflow-x: auto; 
+            font-family: Consolas, 'Courier New', monospace; 
+            line-height: 1.4;
+            margin: 20px 0;
+        }}
+        .code-block {{ margin: 15px 0; }}
+        
+        .slide-container {{ overflow: auto; clear: both; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 1px solid #eee; }}
+        .slide-container::after {{ content: ""; display: table; clear: both; }}
+        .slide-image {{ border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
     </style>
 </head>
 <body>
@@ -192,7 +213,7 @@ def convert_excel_to_html(xlsx_path):
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             html_parts.append(f"<h2>Sheet: {sheet_name}</h2>")
-            html_parts.append("<table>")
+            html_parts.append('<table class="content-table">')
             
             rows = list(ws.rows)
             if rows:
@@ -259,45 +280,87 @@ def convert_ppt_to_html(ppt_path):
             for shape in slide.shapes:
                 # Text
                 if shape.has_text_frame:
-                    if shape == slide.shapes.title: continue # Skip title (already added)
-                    
+                    if shape == slide.shapes.title: continue 
+
                     # [SMART FIX] 1. Code Block Detection (Monospace Fonts)
                     is_code = False
+                    bg_color = None
+                    text_color = None
+                    
                     if shape.text_frame.paragraphs:
                         # Check first paragraph font
-                        font_name = shape.text_frame.paragraphs[0].font.name
+                        para = shape.text_frame.paragraphs[0]
+                        font_name = para.font.name
                         if font_name and any(f in font_name.lower() for f in ['courier', 'consolas', 'mono', 'lucida console']):
                             is_code = True
                             
+                            # Try to extract Background Color from Shape Fill
+                            try:
+                                if shape.fill.type == 1: # Solid fill
+                                    rgb = shape.fill.fore_color.rgb
+                                    bg_color = f"#{rgb}"
+                            except: pass
+                            
+                            # Try to extract Text Color from first run
+                            try:
+                                if para.runs:
+                                    rgb = para.runs[0].font.color.rgb
+                                    if rgb:
+                                        text_color = f"#{rgb}"
+                            except: pass
+
                     if is_code:
-                        # Wrap entire shape text in <pre>
-                        full_text = shape.text_frame.text
-                        # Escaping HTML entities is good practice but keeping it simple for now
-                        safe_text = full_text.replace("<", "&lt;").replace(">", "&gt;")
-                        html_parts.append(f'<pre class="code-block" style="background:#f4f4f4; padding:10px; font-family:monospace;">{safe_text}</pre>')
+                        safe_text = shape.text_frame.text.replace("<", "&lt;").replace(">", "&gt;")
+                        style = ""
+                        if bg_color: style += f"background-color: {bg_color}; "
+                        if text_color: style += f"color: {text_color}; "
+                        
+                        html_parts.append(f'<pre class="code-block" style="{style}">{safe_text}</pre>')
                         continue
 
-                    # [SMART FIX] 2. Text Box vs Placeholder (Bullets vs Paragraphs)
-                    # MSO_SHAPE_TYPE.TEXT_BOX (17) -> <p>
-                    # MSO_SHAPE_TYPE.PLACEHOLDER (14) -> <ul> (Usually bulleted body)
-                    use_bullets = True
-                    if shape.shape_type == MSO_SHAPE_TYPE.TEXT_BOX:
-                        use_bullets = False
-                    
+                    # [SMART FIX] 2. Improved Bullet Detection
+                    # Instead of assuming bullets, we check the actual paragraph level/bullet property
                     text_content = []
                     for paragraph in shape.text_frame.paragraphs:
                         txt = paragraph.text.strip()
-                        if txt:
-                            if use_bullets:
-                                text_content.append(f"<li>{txt}</li>")
-                            else:
-                                text_content.append(f"<p>{txt}</p>")
+                        if not txt: continue
+                        
+                        # Check if this paragraph is actually a bullet
+                        # In python-pptx, a bullet is often indicated by level > 0 OR explicit bullet property
+                        # but often we can just check if the paragraph has a bullet character or is in a bulleted style
+                        is_bullet = False
+                        try:
+                            # Level > 0 is a strong indicator of intent for bullets in PPT
+                            if paragraph.level > 0:
+                                is_bullet = True
+                            # Check if the text actually starts with a bullet-like character if it's level 0
+                            elif txt.startswith(('•', '-', '*', '◦', '▪')):
+                                is_bullet = True
+                        except: pass
+
+                        if is_bullet:
+                            text_content.append(f"<li>{txt}</li>")
+                        else:
+                            # Close <ul> if it was open (handled by joining logic later)
+                            text_content.append(f"<p>{txt}</p>")
                     
                     if text_content:
-                        if use_bullets:
-                            html_parts.append("<ul>" + "".join(text_content) + "</ul>")
-                        else:
-                            html_parts.append("".join(text_content))
+                        final_shape_html = ""
+                        in_list = False
+                        for item in text_content:
+                            if item.startswith("<li>"):
+                                if not in_list:
+                                    final_shape_html += "<ul>"
+                                    in_list = True
+                                final_shape_html += item
+                            else:
+                                if in_list:
+                                    final_shape_html += "</ul>"
+                                    in_list = False
+                                final_shape_html += item
+                        if in_list:
+                            final_shape_html += "</ul>"
+                        html_parts.append(final_shape_html)
 
                 # Tables
                 if shape.has_table:
@@ -333,15 +396,30 @@ def convert_ppt_to_html(ppt_path):
                         # Embed in HTML with Standard Relative Path
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
                         
-                        # [SIZE FIX] Calculate dimensions
+                        # [ENHANCED] Calculate dimensions and position for floating
                         # PPTX uses EMUs (English Metric Units). 1 inch = 914400 EMUs. 
                         # Web usually treats 96 DPI. So 914400 / 96 = 9525 EMUs per pixel.
-                        width_px = int(shape.width / 9525) if hasattr(shape, 'width') else None
+                        width_px = int(shape.width / 9525) if hasattr(shape, 'width') else 300
                         
-                        if width_px:
-                             html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" width="{width_px}" class="slide-image">')
+                        # Limit max width for better text flow
+                        max_img_width = 300
+                        if width_px > max_img_width:
+                            width_px = max_img_width
+                        
+                        # Detect horizontal position on slide (for floating)
+                        # Slide width is typically 9144000 EMUs (10 inches)
+                        slide_width = prs.slide_width if hasattr(prs, 'slide_width') else 9144000
+                        shape_center_x = shape.left + (shape.width / 2) if hasattr(shape, 'left') else 0
+                        
+                        # Determine float direction based on position
+                        if shape_center_x < slide_width / 2:
+                            # Image is on the left side of slide
+                            float_style = "float: left; margin: 0 15px 10px 0;"
                         else:
-                             html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" class="slide-image">')
+                            # Image is on the right side of slide
+                            float_style = "float: right; margin: 0 0 10px 15px;"
+                        
+                        html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" width="{width_px}" class="slide-image" style="{float_style}">')
                     except Exception as img_err:
                         print(f"Skipped image on slide {slide_num}: {img_err}")
 
