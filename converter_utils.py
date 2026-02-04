@@ -584,9 +584,13 @@ def update_links_in_directory(directory, old_filename, new_filename):
     old_base = os.path.basename(old_filename)
     new_base = os.path.basename(new_filename)
     
-    # URL encode spaces for href matching just in case
+    # [CANVAS FIX] Remove extension for the NEW link as requested
+    # e.g. "syllabus.docx" -> "syllabus" (instead of "syllabus.html")
+    new_base_no_ext = os.path.splitext(new_base)[0]
+    
+    # URL encode spaces
     old_base_enc = old_base.replace(' ', '%20')
-    new_base_enc = new_base.replace(' ', '%20')
+    new_base_no_ext_enc = new_base_no_ext.replace(' ', '%20')
 
     for root, dirs, files in os.walk(directory):
         for file in files:
@@ -596,11 +600,10 @@ def update_links_in_directory(directory, old_filename, new_filename):
                     with open(filepath, 'r', encoding='utf-8') as f:
                         content = f.read()
                     
-                    # Naive replace, but safe enough for filenames? 
-                    # Consider strictly within href="..." but simple replace often works for unique filenames.
                     if old_base in content or old_base_enc in content:
-                        new_content = content.replace(old_base, new_base)
-                        new_content = new_content.replace(old_base_enc, new_base_enc)
+                        # Replace with the extensionless version
+                        new_content = content.replace(old_base, new_base_no_ext)
+                        new_content = new_content.replace(old_base_enc, new_base_no_ext_enc)
                         
                         if new_content != content:
                             with open(filepath, 'w', encoding='utf-8') as f:
