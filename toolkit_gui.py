@@ -677,16 +677,21 @@ and to all the other students struggling with their own challenges.
             html_files = self._get_all_html_files()
             if not html_files: return
             
-            count = 0
-            for path in html_files:
+            self.gui_handler.log(f"Processing {len(html_files)} HTML files...")
+            files_with_fixes = 0
+            total_fixes = 0
+            for i, path in enumerate(html_files):
                 success, fixes = interactive_fixer.run_auto_fixer(path, self.gui_handler)
-                if success:
-                    count += 1
-                    if fixes:
-                        self.gui_handler.log(f"   [FIXED] {os.path.basename(path)}:")
-                        for fix in fixes:
-                            self.gui_handler.log(f"    - {fix}")
-            self.gui_handler.log(f"Finished. Total files auto-fixed: {count}")
+                if success and fixes:
+                    files_with_fixes += 1
+                    total_fixes += len(fixes)
+                    self.gui_handler.log(f"   [{i+1}/{len(html_files)}] [FIXED] {os.path.basename(path)}:")
+                    for fix in fixes:
+                        self.gui_handler.log(f"    - {fix}")
+                elif success:
+                    self.gui_handler.log(f"   [{i+1}/{len(html_files)}] [OK] {os.path.basename(path)}")
+            
+            self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
 
         self._run_task_in_thread(task, "Auto-Fixer")
 
