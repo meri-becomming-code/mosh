@@ -7,8 +7,21 @@ import re
 from bs4 import BeautifulSoup
 
 # --- Helper Functions (Math & Logic) ---
-def hex_to_rgb(hex_color):
-    hex_color = hex_color.lstrip('#')
+def hex_to_rgb(color_str):
+    """Converts hex OR basic named colors to RGB."""
+    color_str = color_str.lower().strip()
+    named_colors = {
+        'white': '#ffffff', 'black': '#000000', 'red': '#ff0000', 
+        'blue': '#0000ff', 'green': '#008000', 'yellow': '#ffff00',
+        'gray': '#808080', 'grey': '#808080', 'purple': '#800080',
+        'orange': '#ffa500', 'transparent': 'inherit' # Special case
+    }
+    if color_str in named_colors:
+        color_str = named_colors[color_str]
+    
+    if color_str == 'inherit' or not color_str: return None
+    
+    hex_color = color_str.lstrip('#')
     if len(hex_color) == 3:
         hex_color = ''.join([c*2 for c in hex_color])
     if len(hex_color) != 6: return None
@@ -32,23 +45,80 @@ def get_contrast_ratio(hex1, hex2):
 
 # --- Check Functions ---
 
-def check_style_contrast(tag):
-    """Calculates WCAG AA Contrast Ratio."""
+def get_style_property(tag, prop):
+    """Helper to find a style property in this tag or or its parents."""
+    # 1. Check current tag
     style = tag.get('style', '').lower()
-    if not style: return None
-    fg_match = re.search(r'(?:^|[\s;])color:\s*(#[0-9a-fA-F]{3,6})', style)
-    bg_match = re.search(r'background-color:\s*(#[0-9a-fA-F]{3,6})', style)
-    # DEBUG
-    # print(f"Checking style: {style}")
+    # Match hex or word characters (for named colors)
+    pattern = rf'(?:^|[\s;]){prop}:\s*(#[0-9a-fA-F]{{3,6}}|[a-zA-Z]+)'
+    match = re.search(pattern, style)
+    if match: return match.group(1)
     
-    if fg_match and bg_match:
-        rgb1 = hex_to_rgb(fg_match.group(1))
-        rgb2 = hex_to_rgb(bg_match.group(1))
+    # 2. If background, also check 'background' shorthand
+    if 'background' in prop:
+        match = re.search(r'(?:^|[\s;])background:\s*(#[0-9a-fA-F]{3,6}|[a-zA-Z]+)', style)
+        if match: return match.group(1)
+    
+    # 3. Recursive Parent Check
+    parent = tag.parent
+    if parent and parent.name not in ['[document]', 'html']:
+        return get_style_property(parent, prop)
+    
+    # 4. Defaults
+    if prop == 'color': return 'black'
+    if 'background' in prop: return 'white'
+    return None
+
+def check_style_contrast(tag):
+    """Calculates WCAG AA Contrast Ratio with hierarchical lookup."""
+    # Optimization: Only check tags that have text or are specific block levels
+    if not tag.get_text(strip=True): return None
+    
+    fg = get_style_property(tag, 'color')
+    bg = get_style_property(tag, 'background-color')
+    
+    if fg and bg:
+        # Avoid checking if both are same as default (optimization)
+        if fg == 'black' and bg == 'white': return None
         
-        ratio = get_contrast_ratio(fg_match.group(1), bg_match.group(1))
+        ratio = get_contrast_ratio(fg, bg)
+        if ratio:
+            # Thresholds
+            # WCAG Normal: 4.5:1
+            # WCAG Large: 3:1 (18pt+ or 14pt+ bold)
+            threshold = 4.5
+            
+            # Check for large text
+            style = tag.get('style', '').lower()
+            size_match = re.search(r'font-size:\s*(\d+)(px|pt|em|rem)', style)
+            is_bold = 'bold' in style or tag.name in ['h1', 'h2', 'strong']
+            
+            if size_match:
+                val, unit = int(size_match.group(1)), size_match.group(2)
+                # Roughly 18pt = 24px, 14pt = 18.6px
+                if unit == 'px' and (val >= 24 or (val >= 18 and is_bold)): threshold = 3.0
+                elif unit == 'pt' and (val >= 18 or (val >= 14 and is_bold)): threshold = 3.0
+            
+            if ratio < threshold:
+                return f"Contrast Fail ({ratio:.2f}:1 vs {threshold}:1) {fg} on {bg}"
+    return None
+
+def check_small_fonts(tag):
+    """Checks for font sizes <= 9px."""
+    style = tag.get('style', '').lower()
+    # Match px, pt, em, rem
+    size_match = re.search(r'font-size:\s*([0-9.]+)(px|pt|em|rem)', style)
+    if size_match:
+        val = float(size_match.group(1))
+        unit = size_match.group(2)
         
-        if ratio and ratio < 4.5:
-            return f"Contrast Fail ({ratio:.2f}:1) {fg_match.group(1)} on {bg_match.group(1)}"
+        is_small = False
+        if unit == 'px' and val <= 9: is_small = True
+        elif unit == 'pt' and val <= 7: is_small = True
+        elif unit in ['em', 'rem'] and val <= 0.6: is_small = True
+        
+        if is_small:
+            return f"Small Font Size: {val}{unit} (May be unreadable)"
     return None
 
 def check_headings(soup):
@@ -160,6 +230,11 @@ def audit_file(filepath):
         if r_issue:
             results["technical"].append(r_issue)
             
+        # [NEW] Small Fonts
+        f_issue = check_small_fonts(tag)
+        if f_issue:
+            results["technical"].append(f_issue)
+            
     # 7. Panorama Specials
     if soup.find_all('iframe', title=False):
         results["technical"].append("Iframe missing title")
@@ -200,6 +275,7 @@ def get_issue_summary(results):
             elif "caption" in lower or "track" in lower: key = "Missing Captions"
             elif "deprecated" in lower: key = "Deprecated Tags"
             elif "contrast" in lower: key = "Contrast"
+            elif "small font" in lower: key = "Small Font"          # [NEW]
             elif "scope" in lower: key = "Missing Header Scope"    # [NEW]
             elif "viewport" in lower: key = "Missing Viewport"      # [NEW]
             elif "fixed width" in lower or "justify" in lower: key = "Reflow/Mobile Issue" # [NEW] Reflow checks

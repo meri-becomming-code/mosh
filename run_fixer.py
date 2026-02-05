@@ -299,7 +299,53 @@ def remediate_html_file(filepath):
                 img.insert_after(warning_span)
                 fixes.append(f"Flagged image for review: {reason}")
 
-    # --- Part 8: Links & Iframes ---
+    # --- Part 8: Typography & Accessibility (Small Fonts / Contrast) ---
+    for tag in soup.find_all(style=True):
+        style = tag.get('style', '').lower()
+        
+        # A. Font Size Fix
+        # Match px, pt, em, rem
+        size_match = re.search(r'font-size:\s*([0-9.]+)(px|pt|em|rem)', style)
+        if size_match:
+            val = float(size_match.group(1))
+            unit = size_match.group(2)
+            
+            needs_elevation = False
+            new_val = 12 # Default elevation
+            
+            if unit == 'px' and val <= 9: needs_elevation = True
+            elif unit == 'pt' and val <= 7: needs_elevation = True; new_val = 9
+            elif unit in ['em', 'rem'] and val <= 0.6: needs_elevation = True; new_val = 0.8
+            
+            if needs_elevation:
+                # Replace in style string
+                tag['style'] = re.sub(rf'font-size:\s*[0-9.]+{unit}', f'font-size: {new_val}{unit}', tag['style'], flags=re.IGNORECASE)
+                fixes.append(f"Elevated small font size ({val}{unit} -> {new_val}{unit})")
+
+        # B. Contrast Flagging (Subjective/Review)
+        # We don't auto-fix contrast because color choice is aesthetic, but we flag it.
+        # Reuse logic from auditor (using smart property lookup)
+        import run_audit
+        
+        # Optimization: Only check tags that have text or are significant containers
+        if tag.get_text(strip=True):
+            fg = run_audit.get_style_property(tag, 'color')
+            bg = run_audit.get_style_property(tag, 'background-color')
+            
+            if fg and bg:
+                 ratio = run_audit.get_contrast_ratio(fg, bg)
+                 # We only flag if the tag ITSELF has some style, or if it's a primary text tag
+                 if ratio and ratio < 4.5:
+                     # Check if already flagged
+                     next_node = tag.find_next_sibling()
+                     flagged = next_node and next_node.name == 'span' and "Contrast" in next_node.get_text()
+                     if not flagged:
+                         warning_span = soup.new_tag('span', style="color:red; font-weight:bold; border:1px solid red; padding:2px; margin-left:5px;")
+                         warning_span.string = f"[ADA FIX: Low Contrast {ratio:.1f}:1]"
+                         tag.insert_after(warning_span)
+                         fixes.append(f"Flagged low contrast ({ratio:.1f}:1)")
+
+    # --- Part 9: Links & Iframes ---
     # Remove empty links
     for a in soup.find_all('a'):
         if not a.get_text(strip=True) and not a.find_all(True):

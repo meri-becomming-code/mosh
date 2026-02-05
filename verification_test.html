@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>ADA Audit Test Case</title>
+<meta content="width=device-width, initial-scale=1" name="viewport"/></head>
+<body style="background-color: white;">
+<h1>ADA Audit Verification Page</h1>
+<!-- Test case 1: Small font (px) -->
+<p style="font-size: 12px;">This text is way too small (8px). It should be elevated to 12px.</p>
+<!-- Test case 2: Small font (em) -->
+<p style="font-size: 0.8em;">This text is tiny (0.5em). It should be elevated to 0.8em.</p>
+<!-- Test case 3: Low Contrast (Hex) -->
+<p style="color: #999; background-color: #eee;">This is low contrast (Grey on Light Grey). Should be flagged.</p><span style="color:red; font-weight:bold; border:1px solid red; padding:2px; margin-left:5px;">[ADA FIX: Low Contrast 2.5:1]</span>
+<!-- Test case 4: Low Contrast (Named) -->
+<p style="color: yellow; background-color: white;">This is yellow on white. Very hard to read! Should be flagged.</p><span style="color:red; font-weight:bold; border:1px solid red; padding:2px; margin-left:5px;">[ADA FIX: Low Contrast 1.1:1]</span>
+<!-- Test case 5: Inherited Contrast (Hierarchy) -->
+<div lang="en" style="background-color: black; padding: 20px;">
+<span style="color: #333;">This is dark grey text on a black background (inherited from parent). This should be CAUGHT by the auditor.</span>
+</div>
+<!-- Test case 6: Large Text Contrast (Threshold check) -->
+<p style="font-size: 30px; color: #767676;">Large text (30px) with 4.5:1 ish ratio. Should PASS for large text but fail for normal.</p>
+</body>
+</html>
