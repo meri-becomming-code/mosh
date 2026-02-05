@@ -13,22 +13,18 @@ import uuid
 # --- Constants ---
 ARCHIVE_FOLDER_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
 
-def sanitize_filename(filename, is_directory=False):
+def sanitize_filename(base_name):
     """
     Replaces spaces and special characters with underscores to ensure web safety.
+    Input should be the filename WITHOUT extension.
     """
-    if is_directory:
-        name = filename
-        ext = ""
-    else:
-        name, ext = os.path.splitext(filename)
-        
-    s_name = re.sub(r'[^a-zA-Z0-9\.\-]', '_', name)
+    # [FIX] Don't split extension here, just sanitize the whole string
+    s_name = re.sub(r'[^a-zA-Z0-9\.\-]', '_', base_name)
     # Collapse multiple underscores
     s_name = re.sub(r'_+', '_', s_name)
     # Clean up trailing/leading underscores
     s_name = s_name.strip('_')
-    return s_name + ext
+    return s_name
 
 # --- Third Party Imports ---
 try:
@@ -166,7 +162,7 @@ def convert_docx_to_html(docx_path):
         # Image Handler for Mammoth
         def convert_image(image):
             # 1. Create web_resources/[filename] folder if it doesn't exist
-            safe_filename = sanitize_filename(filename, is_directory=True)
+            safe_filename = sanitize_filename(filename)
             res_dir = os.path.join(output_dir, "web_resources", safe_filename)
             if not os.path.exists(res_dir):
                 os.makedirs(res_dir)
@@ -280,12 +276,6 @@ def convert_ppt_to_html(ppt_path):
         filename = os.path.splitext(os.path.basename(ppt_path))[0]
         output_dir = os.path.dirname(ppt_path)
         
-        # Media Folder
-        media_folder_name = f"{filename}_media"
-        media_path = os.path.join(output_dir, media_folder_name)
-        if not os.path.exists(media_path):
-            os.makedirs(media_path)
-
         html_parts = []
         
         for i, slide in enumerate(prs.slides):
@@ -405,7 +395,7 @@ def convert_ppt_to_html(ppt_path):
                         image_bytes = image.blob
                         ext = image.ext
                         # Use web_resources/[filename] folder
-                        safe_filename = sanitize_filename(filename, is_directory=True)
+                        safe_filename = sanitize_filename(filename)
                         res_dir = os.path.join(output_dir, "web_resources", safe_filename)
                         if not os.path.exists(res_dir): os.makedirs(res_dir)
                         
@@ -472,12 +462,6 @@ def convert_pdf_to_html(pdf_path):
         filename = os.path.splitext(os.path.basename(pdf_path))[0]
         output_dir = os.path.dirname(pdf_path)
         
-        # Media Folder
-        media_folder_name = f"{filename}_media"
-        media_path = os.path.join(output_dir, media_folder_name)
-        if not os.path.exists(media_path):
-            os.makedirs(media_path)
-            
         html_parts = []
         html_parts.append('<div class="pdf-content">')
         
@@ -505,7 +489,7 @@ def convert_pdf_to_html(pdf_path):
                         width_attr = int(width_pt)
                         
                         # Save Image
-                        safe_filename = filename.replace(" ", "_")
+                        safe_filename = sanitize_filename(filename)
                         res_dir = os.path.join(output_dir, "web_resources", safe_filename)
                         if not os.path.exists(res_dir): os.makedirs(res_dir)
 
