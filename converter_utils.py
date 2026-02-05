@@ -13,6 +13,23 @@ import uuid
 # --- Constants ---
 ARCHIVE_FOLDER_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
 
+def sanitize_filename(filename, is_directory=False):
+    """
+    Replaces spaces and special characters with underscores to ensure web safety.
+    """
+    if is_directory:
+        name = filename
+        ext = ""
+    else:
+        name, ext = os.path.splitext(filename)
+        
+    s_name = re.sub(r'[^a-zA-Z0-9\.\-]', '_', name)
+    # Collapse multiple underscores
+    s_name = re.sub(r'_+', '_', s_name)
+    # Clean up trailing/leading underscores
+    s_name = s_name.strip('_')
+    return s_name + ext
+
 # --- Third Party Imports ---
 try:
     import mammoth
@@ -149,7 +166,7 @@ def convert_docx_to_html(docx_path):
         # Image Handler for Mammoth
         def convert_image(image):
             # 1. Create web_resources/[filename] folder if it doesn't exist
-            safe_filename = filename.replace(" ", "_")
+            safe_filename = sanitize_filename(filename, is_directory=True)
             res_dir = os.path.join(output_dir, "web_resources", safe_filename)
             if not os.path.exists(res_dir):
                 os.makedirs(res_dir)
@@ -194,7 +211,8 @@ def convert_docx_to_html(docx_path):
         # Ensure tables have some basic class for our CSS
         html_content = html_content.replace("<table>", '<table class="content-table">')
 
-        output_path = os.path.join(output_dir, f"{filename}.html")
+        s_filename = sanitize_filename(filename)
+        output_path = os.path.join(output_dir, f"{s_filename}.html")
         
         # Wrap in template
         _save_html(html_content, filename, docx_path, output_path)
@@ -242,7 +260,8 @@ def convert_excel_to_html(xlsx_path):
         full_content = "\n".join(html_parts)
         
         filename = os.path.splitext(os.path.basename(xlsx_path))[0]
-        output_path = os.path.join(os.path.dirname(xlsx_path), f"{filename}.html")
+        s_filename = sanitize_filename(filename)
+        output_path = os.path.join(os.path.dirname(xlsx_path), f"{s_filename}.html")
         
         _save_html(full_content, filename, xlsx_path, output_path)
         return output_path, None
@@ -386,7 +405,7 @@ def convert_ppt_to_html(ppt_path):
                         image_bytes = image.blob
                         ext = image.ext
                         # Use web_resources/[filename] folder
-                        safe_filename = filename.replace(" ", "_")
+                        safe_filename = sanitize_filename(filename, is_directory=True)
                         res_dir = os.path.join(output_dir, "web_resources", safe_filename)
                         if not os.path.exists(res_dir): os.makedirs(res_dir)
                         
@@ -429,7 +448,8 @@ def convert_ppt_to_html(ppt_path):
             html_parts.append('</div>')
 
         full_content = "\n".join(html_parts)
-        output_path = os.path.join(output_dir, f"{filename}.html")
+        s_filename = sanitize_filename(filename)
+        output_path = os.path.join(output_dir, f"{s_filename}.html")
         
         _save_html(full_content, filename, ppt_path, output_path)
         return output_path, None
@@ -541,7 +561,9 @@ def convert_pdf_to_html(pdf_path):
         h_count = full_content.count("<h3") + full_content.count("<h2")
         img_count = full_content.count("<img")
         print(f"    [LOG] PDF Conversion: Detected {h_count} headers and {img_count} images.")
-        output_path = os.path.join(output_dir, f"{filename}.html")
+        
+        s_filename = sanitize_filename(filename)
+        output_path = os.path.join(output_dir, f"{s_filename}.html")
         
         _save_html(full_content, filename, pdf_path, output_path)
         return output_path, None
@@ -566,7 +588,8 @@ def _convert_pdf_fallback(pdf_path):
         html_parts.append('</div>')
         full_content = "\n".join(html_parts)
         filename = os.path.splitext(os.path.basename(pdf_path))[0]
-        output_path = os.path.join(os.path.dirname(pdf_path), f"{filename}.html")
+        s_filename = sanitize_filename(filename)
+        output_path = os.path.join(os.path.dirname(pdf_path), f"{s_filename}.html")
         _save_html(full_content, filename, pdf_path, output_path)
         return output_path, None
 
