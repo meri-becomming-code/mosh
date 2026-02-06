@@ -9,6 +9,7 @@ from datetime import datetime
 import zipfile
 import base64
 import uuid
+import xml.etree.ElementTree as ET
 
 # --- Constants ---
 ARCHIVE_FOLDER_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
@@ -49,6 +50,11 @@ try:
     import fitz # PyMuPDF
 except ImportError:
     fitz = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
 
 try:
     from pdfminer.high_level import extract_text
@@ -176,20 +182,39 @@ def convert_docx_to_html(docx_path):
                 image_bytes = image_source.read()
             
             # Generate unique name
-            ext = image.content_type.split('/')[-1]
-            if ext == 'jpeg': ext = 'jpg'
+            ext_img = image.content_type.split('/')[-1]
+            if ext_img == 'jpeg': ext_img = 'jpg'
             short_id = uuid.uuid4().hex[:8]
-            img_name = f"img_{short_id}.{ext}"
+            img_name = f"img_{short_id}.{ext_img}"
             img_path = os.path.join(res_dir, img_name)
             
             with open(img_path, 'wb') as f:
                 f.write(image_bytes)
             
+            # [ENHANCED] Get Natural Dimensions via Pillow
+            from PIL import Image as PILImage
+            import io
+            width_attr = "100%"
+            style_attr = "max-width: 600px; height: auto;" # Safe default
+            
+            try:
+                with PILImage.open(io.BytesIO(image_bytes)) as pil_img:
+                    w, h = pil_img.size
+                    # If it's a small icon-like image, don't force full width
+                    if w < 200:
+                        width_attr = str(w)
+                        style_attr = "" # Keep natural
+                    else:
+                        # For medium/large images, cap at a reasonable width but allow relative scaling
+                        width_attr = str(min(w, 800))
+            except: pass
+
             # 4. Return Tag with Standard Relative Path
-            # This ensures images work locally AND in Canvas (standard import)
             return {
                 "src": f"web_resources/{safe_filename}/{img_name}",
-                "alt": alt_text
+                "alt": alt_text,
+                "width": width_attr,
+                "style": style_attr
             }
 
         with open(docx_path, "rb") as docx_file:
@@ -412,25 +437,31 @@ def convert_ppt_to_html(ppt_path):
                         # [ENHANCED] Calculate dimensions and position for floating
                         # PPTX uses EMUs (English Metric Units). 1 inch = 914400 EMUs. 
                         # Web usually treats 96 DPI. So 914400 / 96 = 9525 EMUs per pixel.
-                        width_px = int(shape.width / 9525) if hasattr(shape, 'width') else 300
+                        width_px = int(shape.width / 9525) if hasattr(shape, 'width') else 400
                         
-                        # Limit max width for better text flow
-                        max_img_width = 300
-                        if width_px > max_img_width:
-                            width_px = max_img_width
+                        # [STRICT FIX] Don't hard-cap at 300px if they want "same size"
+                        # But cap at 800px to avoid overflow in typical Canvas 950px containers
+                        if width_px > 800:
+                            width_px = 800
                         
                         # Detect horizontal position on slide (for floating)
-                        # Slide width is typically 9144000 EMUs (10 inches)
                         slide_width = prs.slide_width if hasattr(prs, 'slide_width') else 9144000
-                        shape_center_x = shape.left + (shape.width / 2) if hasattr(shape, 'left') else 0
+                        shape_left = shape.left if hasattr(shape, 'left') else 0
+                        shape_center_x = shape_left + (shape.width / 2) if hasattr(shape, 'width') else 0
                         
-                        # Determine float direction based on position
-                        if shape_center_x < slide_width / 2:
-                            # Image is on the left side of slide
-                            float_style = "float: left; margin: 0 15px 10px 0;"
+                        # Alignment detection
+                        # If image is in the middle 20%, don't float, just center
+                        center_threshold = slide_width * 0.1
+                        dist_from_center = abs(shape_center_x - (slide_width / 2))
+                        
+                        if dist_from_center < center_threshold:
+                            float_style = "display: block; margin: 20px auto;"
+                        elif shape_center_x < slide_width / 2:
+                            # Left side
+                            float_style = "float: left; margin: 0 20px 15px 0;"
                         else:
-                            # Image is on the right side of slide
-                            float_style = "float: right; margin: 0 0 10px 15px;"
+                            # Right side
+                            float_style = "float: right; margin: 0 0 15px 20px;"
                         
                         html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" width="{width_px}" class="slide-image" style="{float_style}">')
                     except Exception as img_err:
@@ -485,10 +516,24 @@ def convert_pdf_to_html(pdf_path):
                         # [SIZE FIX] Get dimensions from BBox (in points)
                         bbox = block['bbox'] # (x0, y0, x1, y1)
                         width_pt = bbox[2] - bbox[0]
-                        # Convert to roughly pixels (1pt = 1.33px roughly, or just use pt)
-                        # Let's use int points for cleaner HTML
                         width_attr = int(width_pt)
                         
+                        # [NEW] Alignment Detection
+                        # PDF page width (usually ~600pt)
+                        page_width = page.rect.width
+                        shape_center_x = bbox[0] + (width_pt / 2)
+                        
+                        # Alignment logic
+                        center_threshold = page_width * 0.1
+                        dist_from_center = abs(shape_center_x - (page_width / 2))
+                        
+                        if dist_from_center < center_threshold:
+                            float_style = "display: block; margin: 20px auto;"
+                        elif shape_center_x < page_width / 2:
+                            float_style = "float: left; margin: 0 20px 15px 0;"
+                        else:
+                            float_style = "float: right; margin: 0 0 15px 20px;"
+
                         # Save Image
                         safe_filename = sanitize_filename(filename)
                         res_dir = os.path.join(output_dir, "web_resources", safe_filename)
@@ -501,7 +546,7 @@ def convert_pdf_to_html(pdf_path):
                             f.write(image_bytes)
                             
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
-                        html_parts.append(f'<img src="{rel_path}" alt="" width="{width_attr}" class="content-image" style="display: block; margin: 10px 0;">')
+                        html_parts.append(f'<img src="{rel_path}" alt="" width="{width_attr}" class="content-image" style="{float_style}">')
                     except Exception as e:
                         print(f"Skipped PDF image: {e}")
 
@@ -731,4 +776,42 @@ def archive_source_file(file_path):
     except Exception as e:
         print(f"Error archiving {file_path}: {e}")
         return None
+
+def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
+    """
+    Updates imsmanifest.xml in the root_dir to reflect file changes.
+    Replaces all occurrences of old_rel_path with new_rel_path in href attributes.
+    """
+    manifest_path = os.path.join(root_dir, 'imsmanifest.xml')
+    if not os.path.exists(manifest_path):
+        return False, "imsmanifest.xml not found"
+
+    try:
+        # Standardize paths to forward slashes for XML
+        old_p = old_rel_path.replace("\\", "/").lower()
+        new_p = new_rel_path.replace("\\", "/")
+
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Find all href="..." and replace if they match old_p (case-insensitive comparison)
+        replacements = 0
+        def repl_func(match):
+            nonlocal replacements
+            href_val = match.group(1)
+            if href_val.replace("\\", "/").lower() == old_p:
+                replacements += 1
+                return f'href="{new_p}"'
+            return match.group(0)
+
+        new_content = re.sub(r'href="([^"]+)"', repl_func, content)
+
+        if replacements > 0:
+            with open(manifest_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            return True, f"Updated {replacements} references in imsmanifest.xml"
+        
+        return False, "No references found in imsmanifest.xml"
+    except Exception as e:
+        return False, f"Manifest update error: {str(e)}"
 

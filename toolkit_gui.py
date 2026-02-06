@@ -213,6 +213,11 @@ and to all the other students struggling with their own challenges.
 - Released under GNU General Public License version 3.
 - This is non-commercial, open-source software built for the academic community.
 - "Making Online Spaces Helpful" (MOSH) is dedicated to helping every student succeed.
+
+📣 SPREAD THE WORD
+------------------
+- April 2026 Deadline: The goal is to help every teacher reach compliance safely and quickly.
+- If this tool saved you time, click 'Spread the Word' on the sidebar to copy a message you can share with your department. Let's help everyone meet the deadline together!
 """
         txt.insert(tk.END, doc_content)
         txt.config(state='disabled') # Read-only
@@ -286,8 +291,12 @@ and to all the other students struggling with their own challenges.
         
         # Stop Button (Persistent)
         self.btn_stop = ttk.Button(sidebar, text="🛑 STOP PROCESSING", command=self._request_stop, style="TButton")
-        self.btn_stop.pack(pady=10, padx=10, fill="x")
+        self.btn_stop.pack(pady=5, padx=10, fill="x")
         self.btn_stop.config(state='disabled')
+
+        # [NEW] Viral/Mission Button
+        self.btn_share = ttk.Button(sidebar, text="📣 SPREAD THE WORD", command=self._show_share_dialog, style="Action.TButton")
+        self.btn_share.pack(pady=20, padx=10, fill="x")
 
         # 2. Main Content Area
         content = ttk.Frame(self.root, padding="20 20 20 20")
@@ -343,9 +352,10 @@ and to all the other students struggling with their own challenges.
         
         self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Alt Tags, Links, File Names)", command=self._run_interactive, style="Action.TButton")
         self.btn_inter.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
         # Row 2 (Audit)
         self.btn_audit = ttk.Button(frame_actions, text="Quick Report\n(Audit JSON)", command=self._run_audit, style="Action.TButton")
-        self.btn_audit.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
+        self.btn_audit.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
         frame_actions.columnconfigure(0, weight=1)
         frame_actions.columnconfigure(1, weight=1)
@@ -627,6 +637,47 @@ and to all the other students struggling with their own challenges.
         self.root.wait_window(dialog)
         return result["text"]
 
+    def _show_share_dialog(self):
+        """Phase Viral: Helps faculty spread the word to colleagues."""
+        dialog = Toplevel(self.root)
+        dialog.title("Spread the Word - April 2026 Deadline")
+        dialog.geometry("550x480")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        colors = THEMES[self.config.get("theme", "light")]
+        dialog.configure(bg=colors["bg"])
+
+        tk.Label(dialog, text="Help Your Colleagues Meet the Deadline!", 
+                 font=("Segoe UI", 14, "bold"), bg=colors["bg"], fg=colors["header"]).pack(pady=15)
+
+        msg = ("Teachers everywhere are stressed about the April 2026 compliance deadline.\n"
+               "If this tool helped you save time, please share it with your department!\n\n"
+               "Copy the message below to send in an email or Slack:")
+        tk.Label(dialog, text=msg, wraplength=500, bg=colors["bg"], fg=colors["fg"], justify="center").pack(pady=5)
+
+        share_text = ("Hi team,\n\n"
+                     "I found a great free tool called the MOSH ADA Toolkit that automatically "
+                     "remediates Canvas pages. It fixes headings, tables, and contrast issues in seconds, "
+                     "which makes the upcoming April 2026 deadline much more manageable.\n\n"
+                     "It was built by a fellow educator and it's completely free. "
+                     "Worth checking out to save some stress!")
+        
+        txt = tk.Text(dialog, height=8, width=60, font=("Segoe UI", 9))
+        txt.pack(pady=10, padx=20)
+        txt.insert(tk.END, share_text)
+
+        def copy_to_clipboard():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(share_text)
+            btn_copy.config(text="✅ COPIED TO CLIPBOARD!", state='disabled')
+
+        btn_copy = tk.Button(dialog, text="📋 Copy Message", command=copy_to_clipboard, 
+                             bg=colors["primary"], fg="white", width=25, font=("Segoe UI", 10, "bold"))
+        btn_copy.pack(pady=15)
+
+        tk.Button(dialog, text="Close", command=dialog.destroy, width=12).pack(pady=5)
+
     def _disable_buttons(self):
         """Gray out all action buttons while a task is running."""
         for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
@@ -714,7 +765,8 @@ and to all the other students struggling with their own challenges.
                     self.gui_handler.log(f"   [{i+1}/{len(html_files)}] [FIXED] {os.path.basename(path)}:")
                     for fix in fixes:
                         self.gui_handler.log(f"    - {fix}")
-            # Estimate time saved: 1.5 minutes per fix seems reasonable for manual H1/Table/Tag fixing
+            
+            # Estimate time saved
             minutes_saved = total_fixes * 1.5
             hours = int(minutes_saved // 60)
             mins = int(minutes_saved % 60)
@@ -722,6 +774,13 @@ and to all the other students struggling with their own challenges.
             
             self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
             self.gui_handler.log(f"🏆 YOU SAVED APPROXIMATELY {time_str} OF TEDIOUS MANUAL LABOR!")
+
+            # [STRICT FIX] Always remove visual markers at the end
+            self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
+            import run_fixer
+            strip_results = run_fixer.batch_strip_markers(self.target_dir)
+            total_stripped = sum(strip_results.values())
+            self.gui_handler.log(f"   Done! Stripped {total_stripped} temporary [ADA FIX] markers.")
 
         self._run_task_in_thread(task, "Auto-Fixer")
 
@@ -739,6 +798,28 @@ and to all the other students struggling with their own challenges.
                 interactive_fixer.scan_and_fix_file(filepath, self.gui_handler, self.target_dir)
                 
         self._run_task_in_thread(task, "Interactive Fixer")
+
+    def _run_cleanup_markers(self):
+        """Removes all [ADA FIX] visual labels from HTML files."""
+        if not messagebox.askyesno("Confirm Cleanup", 
+            "This will permanently REMOVE all red visual markers ([ADA FIX]) from your HTML files.\n\n"
+            "Use this only when you are satisfied with the remediation and ready to upload to Canvas.\n\n"
+            "Proceed?"):
+            return
+
+        def task():
+            self.gui_handler.log(f"--- 🧹 Cleaning Visual Markers: {os.path.basename(self.target_dir)} ---")
+            import run_fixer
+            results = run_fixer.batch_strip_markers(self.target_dir)
+            
+            total = sum(results.values())
+            self.gui_handler.log(f"   Done! Stripped {total} markers from {len(results)} files.")
+            for file, count in results.items():
+                self.gui_handler.log(f"    - {file}: {count}")
+            
+            self.root.after(0, lambda: messagebox.showinfo("Cleanup Complete", f"Successfully removed {total} visual markers from {len(results)} files."))
+
+        self._run_task_in_thread(task, "Marker Cleanup")
 
     def _run_audit(self):
         def task():
@@ -788,25 +869,27 @@ and to all the other students struggling with their own challenges.
         Welcome to MOSH's Toolkit
         (Making Online Spaces Helpful)
 
-        🚀 QUICK START WORKFLOW:
-        1. Export & Download: Export your course from Canvas and download the .imscc file.
-        2. Import Package: Click "Import Course Package" in this tool to unpack it.
-        3. Auto-Fix & Review: Run "Auto-Fix" and then "Guided Review" to remediate content.
-        4. Repackage: Click "Repackage Course" to create a new file for upload.
+        🎯 THE MISSION:
+        April 2026 is the Federal ADA deadline for institutions. 
+        This toolkit is designed to help teachers reach compliance 
+        without spending hundreds of hours on manual labor.
 
-        📦 BACKUP & SAFETY:
-        - **Keep Your Files**: Always keep both your original .imscc file and your 
-          extracted project folder on your computer. These are your local backups.
-        - **Compliance**: Original files (PPTX, PDF, etc.) are moved to a safety 
-          archive folder after conversion. This keeps them safe on YOUR computer 
-          but prevents them from being uploaded to Canvas where they could 
-          cause accessibility violations.
+        🚀 QUICK START WORKFLOW:
+        1. Select Project: Click "Browse Folder" and select your Canvas export folder.
+        2. Auto-Fix: Click "Auto-Fix Issues" to handle headings, tables, and contrast.
+        3. Guided Review: Click "Guided Review" to write Alt Text for images.
+        4. Repackage: Click "Repackage Course" to create a new file for Canvas.
+
+        📦 SAFETY ARCHIVE:
+        Original files (Word, PPT, PDF) are automatically moved to a hidden 
+        '_mosh_source_archive' folder. This ensures they aren't uploaded to 
+        Canvas accidentally, while keeping them safe on your local computer.
 
         ⚠️ ALPHA TEST WARNING:
-        This is ALPHA software. Use a NEW EMPTY CANVAS COURSE to test your files.
-        Do NOT import directly into a live course until you have verified everything.
+        Always test your remediated files in a NEW EMPTY CANVAS COURSE 
+        before moving them into a live semester.
         
-        🐛 Found a bug? Email: meredithkasprak@gmail.com
+        🐛 Support: meredithkasprak@gmail.com
         """
         
         lbl = tk.Label(dialog, text=intro, justify="left", font=("Segoe UI", 11), 
@@ -1044,9 +1127,9 @@ YOUR WORKFLOW:
         if ext == "pdf":
              if not messagebox.askyesno("PDF Conversion (Beta)", 
                 "⚠️ PDF Conversion is extremely difficult to automate.\n\n"
-                "This tool will extract TEXT ONLY. It will likely lose:\n"
-                "- Math Equations\n- Images\n- Layout/Columns\n\n"
-                "Are you sure you want to proceed with a text extraction?"):
+                "This tool will attempt to extract Text, Images, and basic Layout.\n"
+                "It is NOT perfect for complex documents.\n\n"
+                "Are you sure you want to proceed?"):
                 return
 
         
@@ -1104,6 +1187,13 @@ YOUR WORKFLOW:
             if self.gui_handler.confirm(msg_link):
                 count = converter_utils.update_links_in_directory(self.target_dir, file_path, output_path)
                 self.gui_handler.log(f"   Updated links in {count} files.")
+
+                # [NEW] Update Manifest
+                rel_old = os.path.relpath(file_path, self.target_dir)
+                rel_new = os.path.relpath(output_path, self.target_dir)
+                m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
+                if m_success:
+                    self.gui_handler.log(f"   [MANIFEST] {m_msg}")
             
             # 6. Archive Original (NEW)
             msg_archive = (f"To maintain Canvas compliance, original files should not be uploaded to your course.\n\n"
@@ -1177,22 +1267,51 @@ YOUR WORKFLOW:
                     
                     # Update Links (extensionless)
                     l_count = converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
+                    
+                    # [NEW] Update Manifest
+                    rel_old = os.path.relpath(fpath, self.target_dir)
+                    rel_new = os.path.relpath(output_path, self.target_dir)
+                    m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
+                    if m_success:
+                        self.gui_handler.log(f"   [MANIFEST] {m_msg}")
+                    
                     # Archive
                     converter_utils.archive_source_file(fpath)
                     self.gui_handler.log(f"   [DONE] Links updated in {l_count} files. Original archived.")
                 else:
                     self.gui_handler.log(f"   [FAILED] {err}")
             
-            # Estimation: 20 minutes per file vs manual remediation + auto-fixes
-            total_mins = (success_count * 20) + (total_auto_fixes * 1.5)
+            # Estimation: 10 minutes per file vs manual remediation + auto-fixes
+            # (Adjusted based on "fast techy user" feedback, though pottery teachers might take longer!)
+            total_mins = (success_count * 10) + (total_auto_fixes * 1.5)
             hours = int(total_mins // 60)
             mins = int(total_mins % 60)
             time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
 
             self.gui_handler.log(f"\n--- Batch Complete. {success_count} files converted. ---")
             self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
-            self.gui_handler.log(f"   (Estimate based on 20m/file vs manual source remediation + {total_auto_fixes} automatic HTML fixes)")
-            self.gui_handler.log("🛡️ Remember: Check the files in Canvas before publishing!")
+            self.gui_handler.log(f"   (Estimate based on 10m/file vs manual source remediation + {total_auto_fixes} automatic HTML fixes)")
+            
+            # [NEW] Integrated Interactive Checker
+            msg_review = ("Batch conversion is finished!\n\n"
+                         "Would you like to start the Guided Review (Interactive Checker) now?\n"
+                         "This will help you quickly fix image descriptions and check links.")
+            
+            # Use after() to show dialog on main thread
+            def ask_review():
+                if messagebox.askyesno("Step 2: Guided Review", msg_review):
+                    self.btn_inter.invoke() # Trigger the existing Guided Review logic
+            
+            self.root.after(0, ask_review)
+
+            # [STRICT FIX] Always remove visual markers at the end
+            self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
+            import run_fixer
+            strip_results = run_fixer.batch_strip_markers(self.target_dir)
+            total_stripped = sum(strip_results.values())
+            self.gui_handler.log(f"   Done! Stripped {total_stripped} temporary [ADA FIX] markers.")
+            
+            self.gui_handler.log("\n🛡️ Remember: Check the files in Canvas before publishing!")
             messagebox.showinfo("Gamble Complete", f"Processed {len(found_files)} files.\nCheck the logs for details.")
 
         self._run_task_in_thread(task, "Batch Gamble")
