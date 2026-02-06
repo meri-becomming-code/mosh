@@ -654,23 +654,84 @@ def convert_pdf_to_html(pdf_path):
 
                 # Type 0 = Text
                 elif block['type'] == 0:
+                     # [IMPROVED] Aggregate all text in this block first, then intelligently group
+                     block_lines = []
+                     
                      for line in block["lines"]:
+                         # Combine all spans in this line into a single text + metadata
+                         line_text = ""
+                         line_font_size = 0
+                         line_y_pos = line["bbox"][1]  # Top Y coordinate
+                         
                          for span in line["spans"]:
                              text = span["text"].strip()
-                             font_size = span["size"]
-                             if not text: continue
+                             if text:
+                                 if line_text:
+                                     line_text += " "
+                                 line_text += text
+                                 line_font_size = max(line_font_size, span["size"])
+                         
+                         if line_text:
+                             block_lines.append({
+                                 'text': line_text,
+                                 'font_size': line_font_size,
+                                 'y_pos': line_y_pos
+                             })
+                     
+                     if not block_lines:
+                         continue
+                     
+                     # Now group lines into semantic units (paragraphs, lists, headers)
+                     i = 0
+                     while i < len(block_lines):
+                         current_line = block_lines[i]
+                         text = current_line['text']
+                         font_size = current_line['font_size']
+                         safe_text = text.replace("<", "&lt;").replace(">", "&gt;")
+                         
+                         # Check for bullets first (priority over headers)
+                         is_bullet = text.startswith(('• ', '- ', '* ', '◦ ', '▪ ', '⚬ '))
+                         
+                         if is_bullet:
+                             # Collect consecutive bullet points
+                             html_parts.append("<ul>")
+                             while i < len(block_lines) and block_lines[i]['text'].startswith(('• ', '- ', '* ', '◦ ', '▪ ', '⚬ ')):
+                                 item_text = block_lines[i]['text'].replace("<", "&lt;").replace(">", "&gt;")
+                                 html_parts.append(f"<li>{item_text}</li>")
+                                 i += 1
+                             html_parts.append("</ul>")
+                             continue
+                         
+                         # Check if header
+                         if font_size > 18:
+                             html_parts.append(f"<h2>{safe_text}</h2>")
+                             i += 1
+                             continue
+                         elif font_size > 14:
+                             html_parts.append(f"<h3>{safe_text}</h3>")
+                             i += 1
+                             continue
+                         
+                         # Otherwise, group into paragraph
+                         paragraph_lines = [safe_text]
+                         i += 1
+                         
+                         while i < len(block_lines):
+                             next_line = block_lines[i]
+                             if next_line['font_size'] > 14:  # Next is a header
+                                 break
+                             if next_line['text'].startswith(('• ', '- ', '* ')):  # Next is a bullet
+                                 break
                              
-                             # Simple Heuristic for Headers based on font size
-                             # (Adjust thresholds as needed)
-                             if font_size > 18:
-                                  html_parts.append(f"\u003ch2\u003e{text}\u003c/h2\u003e")
-                             elif font_size > 14:
-                                  html_parts.append(f"\u003ch3\u003e{text}\u003c/h3\u003e")
-                             else:
-                                  # Basic text
-                                  # Sanitize
-                                  safe_text = text.replace("<", "&lt;").replace(">", "&gt;")
-                                  html_parts.append(f"\u003cp\u003e{safe_text}\u003c/p\u003e")
+                             # Check vertical gap
+                             y_gap = abs(next_line['y_pos'] - block_lines[i-1]['y_pos'])
+                             if y_gap > 24:  # Large gap = new paragraph
+                                 break
+                             
+                             paragraph_lines.append(next_line['text'].replace("<", "&lt;").replace(">", "&gt;"))
+                             i += 1
+                         
+                         html_parts.append(f"<p>{' '.join(paragraph_lines)}</p>")
             
             # Insert any remaining tables that weren't positioned
             for tr in table_regions:
