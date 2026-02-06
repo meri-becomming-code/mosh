@@ -661,7 +661,9 @@ and to all the other students struggling with their own challenges.
                      "remediates Canvas pages. It fixes headings, tables, and contrast issues in seconds, "
                      "which makes the upcoming April 2026 deadline much more manageable.\n\n"
                      "It was built by a fellow educator and it's completely free. "
-                     "Worth checking out to save some stress!")
+                     "Worth checking out to save some stress!\n\n"
+                     "GitHub: https://github.com/meri-becomming-code/mosh\n"
+                     "Download: https://meri-becomming-code.github.io/mosh/")
         
         txt = tk.Text(dialog, height=8, width=60, font=("Segoe UI", 9))
         txt.pack(pady=10, padx=20)
