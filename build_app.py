@@ -33,6 +33,18 @@ def build():
     args.append('--hidden-import=interactive_fixer')
     args.append('--hidden-import=run_fixer')
     args.append('--hidden-import=run_audit')
+    
+    # PDF Processing Libraries (Critical for table/image extraction)
+    args.append('--hidden-import=fitz')  # PyMuPDF
+    args.append('--hidden-import=pymupdf')
+    args.append('--hidden-import=pdfminer')
+    args.append('--hidden-import=pdfminer.high_level')
+    
+    # Document Conversion Libraries
+    args.append('--hidden-import=mammoth')
+    args.append('--hidden-import=openpyxl')
+    args.append('--hidden-import=pptx')
+    args.append('--hidden-import=docx')
 
     print("Building with PyInstaller...")
     PyInstaller.__main__.run(args)
