@@ -309,6 +309,14 @@ def convert_ppt_to_html(ppt_path):
             html_parts.append(f'<div class="slide-container" id="slide-{slide_num}">')
             html_parts.append(f'<p class="note">Slide {slide_num}</p>')
             
+            # [NEW] Detect if slide has text content (for image sizing)
+            has_text_content = False
+            for shape in slide.shapes:
+                if shape.has_text_frame and shape != slide.shapes.title:
+                    if shape.text_frame.text.strip():
+                        has_text_content = True
+                        break
+            
             # Title
             if slide.shapes.title:
                 title_text = slide.shapes.title.text_frame.text
@@ -439,10 +447,16 @@ def convert_ppt_to_html(ppt_path):
                         # Web usually treats 96 DPI. So 914400 / 96 = 9525 EMUs per pixel.
                         width_px = int(shape.width / 9525) if hasattr(shape, 'width') else 400
                         
-                        # [STRICT FIX] Don't hard-cap at 300px if they want "same size"
-                        # But cap at 800px to avoid overflow in typical Canvas 950px containers
-                        if width_px > 800:
-                            width_px = 800
+                        # [USER FIX] Limit image width to 50% of page width when there's text content
+                        # Typical Canvas content area is ~900px, so 50% = 450px max
+                        if has_text_content:
+                            max_width = 450  # 50% of typical page width
+                            if width_px > max_width:
+                                width_px = max_width
+                        else:
+                            # No text content - allow larger images but still cap at 800px
+                            if width_px > 800:
+                                width_px = 800
                         
                         # Detect horizontal position on slide (for floating)
                         slide_width = prs.slide_width if hasattr(prs, 'slide_width') else 9144000
@@ -502,11 +516,99 @@ def convert_pdf_to_html(pdf_path):
             html_parts.append(f'<div class="page-container" id="page-{page_num}" style="margin-bottom: 30px; border-bottom: 1px solid #ccc; padding-bottom: 20px;">')
             html_parts.append(f'<p class="note">Page {page_num}</p>')
             
+            # [IMPROVED] Extract tables FIRST to know their positions
+            table_regions = []
+            try:
+                tables = page.find_tables()
+                if tables.tables:
+                    for tab in tables:
+                        # Get the bounding box of the table
+                        bbox = tab.bbox  # (x0, y0, x1, y1)
+                        table_regions.append({
+                            'bbox': bbox,
+                            'table': tab
+                        })
+            except Exception as e:
+                print(f"Table detection failed on page {page_num}: {e}")
+            
             # 1. Extract Content via Dict (Structure + Images)
             page_dict = page.get_text("dict")
             blocks = page_dict.get("blocks", [])
             
+            # Helper function to check if a position overlaps with any table
+            def get_table_at_position(y_pos):
+                for tr in table_regions:
+                    bbox = tr['bbox']
+                    # Check if y_pos is within table's vertical range
+                    if bbox[1] <= y_pos <= bbox[3]:
+                        return tr
+                return None
+            
+            # Track which tables we've already inserted
+            inserted_tables = set()
+            
             for block in blocks:
+                # Check if we should insert a table before this block
+                block_top = block['bbox'][1]
+                table_region = get_table_at_position(block_top)
+                
+                if table_region and id(table_region) not in inserted_tables:
+                    # Insert table before this block
+                    try:
+                        tab = table_region['table']
+                        # Extract table data
+                        df = tab.to_pandas()
+                        
+                        # Build HTML table with proper structure
+                        html_parts.append('\u003ctable class="content-table"\u003e')
+                        
+                        # Detect if first row looks like headers (all strings, capitalized, etc.)
+                        first_row = df.iloc[0] if len(df) > 0 else []
+                        is_header = all(isinstance(v, str) for v in first_row if v is not None)
+                        
+                        if is_header and len(df) > 1:
+                            # Use first row as header
+                            html_parts.append('\u003cthead\u003e\u003ctr\u003e')
+                            for cell in first_row:
+                                html_parts.append(f'\u003cth\u003e{cell if cell else ""}\u003c/th\u003e')
+                            html_parts.append('\u003c/tr\u003e\u003c/thead\u003e')
+                            # Rest as body
+                            html_parts.append('\u003ctbody\u003e')
+                            for _, row in df.iloc[1:].iterrows():
+                                html_parts.append('\u003ctr\u003e')
+                                for cell in row:
+                                    html_parts.append(f'\u003ctd\u003e{cell if cell else ""}\u003c/td\u003e')
+                                html_parts.append('\u003c/tr\u003e')
+                            html_parts.append('\u003c/tbody\u003e')
+                        else:
+                            # No headers, all rows as data
+                            html_parts.append('\u003ctbody\u003e')
+                            for _, row in df.iterrows():
+                                html_parts.append('\u003ctr\u003e')
+                                for cell in row:
+                                    html_parts.append(f'\u003ctd\u003e{cell if cell else ""}\u003c/td\u003e')
+                                html_parts.append('\u003c/tr\u003e')
+                            html_parts.append('\u003c/tbody\u003e')
+                        
+                        html_parts.append('\u003c/table\u003e')
+                        inserted_tables.add(id(table_region))
+                    except Exception as e:
+                        print(f"Error rendering table: {e}")
+                
+                # Skip blocks that are part of tables
+                block_bbox = block['bbox']
+                is_in_table = False
+                for tr in table_regions:
+                    tab_bbox = tr['bbox']
+                    # Check if block is completely within table bounds
+                    if (tab_bbox[0] <= block_bbox[0] and block_bbox[2] <= tab_bbox[2] and 
+                        tab_bbox[1] <= block_bbox[1] and block_bbox[3] <= tab_bbox[3]):
+                        is_in_table = True
+                        break
+                
+                if is_in_table:
+                    continue
+                
                 # Type 1 = Image
                 if block['type'] == 1:
                     try:
@@ -546,7 +648,7 @@ def convert_pdf_to_html(pdf_path):
                             f.write(image_bytes)
                             
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
-                        html_parts.append(f'<img src="{rel_path}" alt="" width="{width_attr}" class="content-image" style="{float_style}">')
+                        html_parts.append(f'\u003cimg src="{rel_path}" alt="" width="{width_attr}" class="content-image" style="{float_style}"\u003e')
                     except Exception as e:
                         print(f"Skipped PDF image: {e}")
 
@@ -561,27 +663,27 @@ def convert_pdf_to_html(pdf_path):
                              # Simple Heuristic for Headers based on font size
                              # (Adjust thresholds as needed)
                              if font_size > 18:
-                                  html_parts.append(f"<h2>{text}</h2>")
+                                  html_parts.append(f"\u003ch2\u003e{text}\u003c/h2\u003e")
                              elif font_size > 14:
-                                  html_parts.append(f"<h3>{text}</h3>")
+                                  html_parts.append(f"\u003ch3\u003e{text}\u003c/h3\u003e")
                              else:
                                   # Basic text
                                   # Sanitize
                                   safe_text = text.replace("<", "&lt;").replace(">", "&gt;")
-                                  html_parts.append(f"<p>{safe_text}</p>")
-
-            html_parts.append('</div>')
+                                  html_parts.append(f"\u003cp\u003e{safe_text}\u003c/p\u003e")
             
-            # [TABLE FIX] Extract Tables
-            # We append them at the bottom of the page content for now to avoid breaking flow logic
-            try:
-                tables = page.find_tables()
-                if tables.tables:
-                    html_parts.append('<h4>Found Tables:</h4>')
-                    for tab in tables:
-                        html_parts.append(tab.to_pandas().to_html(index=False, header=False, classes="content-table").replace('class="dataframe content-table"', 'class="content-table"'))
-            except Exception as e:
-                print(f"Table detection failed: {e}")
+            # Insert any remaining tables that weren't positioned
+            for tr in table_regions:
+                if id(tr) not in inserted_tables:
+                    try:
+                        tab = tr['table']
+                        df = tab.to_pandas()
+                        html_parts.append('\u003ch4\u003eTable:\u003c/h4\u003e')
+                        html_parts.append(df.to_html(index=False, classes="content-table").replace('class="dataframe content-table"', 'class="content-table"'))
+                    except Exception as e:
+                        print(f"Error rendering remaining table: {e}")
+
+            html_parts.append('\u003c/div\u003e')
 
         html_parts.append('</div>')
         
