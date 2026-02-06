@@ -411,10 +411,10 @@ and to all the other students struggling with their own challenges.
 
         def task():
             self.gui_handler.log(f"--- Extracting Package: {filename} ---")
-            success, msg = converter_utils.unzip_course_package(path, extract_to)
+            success, msg = converter_utils.unzip_course_package(path, extract_to, log_func=self.gui_handler.log)
             
             if success:
-                self.gui_handler.log(f"Success! {msg}")
+                self.gui_handler.log(msg) # msg already has "Success!" prefix
                 # Update UI elements via after()
                 self.root.after(0, lambda: self._finalize_import(extract_to))
             else:
@@ -474,11 +474,13 @@ and to all the other students struggling with their own challenges.
         self.txt_log.configure(state='disabled')
 
     def _process_logs(self):
-        """Poll the log queue and update the text widget."""
+        """Poll the log queue and update the text widget (Throttled)."""
         try:
-            while True:
+            processed = 0
+            while processed < 50: # Limit per cycle to keep UI fluid
                 msg = self.log_queue.get_nowait()
                 self._log(msg)
+                processed += 1
         except queue.Empty:
             pass
         self.root.after(100, self._process_logs)

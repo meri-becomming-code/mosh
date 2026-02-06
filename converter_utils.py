@@ -621,7 +621,7 @@ def update_links_in_directory(directory, old_filename, new_filename):
                     pass
     return count
 
-def unzip_course_package(zip_path, extract_to):
+def unzip_course_package(zip_path, extract_to, log_func=None):
     """
     Extracts a Canvas Export (.imscc) or Zip file to the target directory.
     Renames .imscc to .zip internally if needed.
@@ -631,9 +631,20 @@ def unzip_course_package(zip_path, extract_to):
             os.makedirs(extract_to)
             
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_to)
-            
-        return True, f"Successfully extracted to: {extract_to}"
+            members = zip_ref.namelist()
+            total = len(members)
+            for i, member in enumerate(members):
+                # Check for stop request via log_func
+                if log_func and hasattr(log_func, '__self__') and hasattr(log_func.__self__, 'stop_requested'):
+                    if log_func.__self__.stop_requested:
+                        return False, "Extraction stopped by user."
+                
+                zip_ref.extract(member, extract_to)
+                
+                if log_func and (i + 1) % 50 == 0:
+                    log_func(f"   ... Extracted {i + 1}/{total} files...")
+
+        return True, f"Success! Extracted to: {extract_to}"
     except Exception as e:
         return False, str(e)
 
@@ -662,6 +673,13 @@ def create_course_package(source_dir, output_path, log_func=None):
                 dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
                 
                 for file in files:
+                    # Check for stop request via log_func
+                    if log_func and hasattr(log_func, '__self__') and hasattr(log_func.__self__, 'stop_requested'):
+                        if log_func.__self__.stop_requested:
+                            # Close zip file and remove partial file if possible
+                            # zipf is closed by 'with' block
+                            return False, "Packaging stopped by user."
+
                     file_path = os.path.join(root, file)
                     abs_file = os.path.normpath(os.path.abspath(file_path)).lower()
                     
