@@ -1,20 +1,14 @@
 # MOSH ADA Toolkit - Release Notes (v1.1)
 
-This release focuses on improving the robustness of the IMSCC export process and streamlining the transition from remediation to Canvas upload.
+This release focuses on automation and improved visual fidelity for course remediation.
 
 ## 🚀 New Features
-- **🧹 Visual Marker Cleanup**: Added a new "Remove Visual Markers" button to the main dashboard. This tool strips all red `[ADA FIX]` labels and `[FIX_ME]` tags from your HTML files in one click, ensuring a clean, professional look for your students.
-- **🛠️ Automated Table Remediation**: The toolkit now automatically fixes invalid table structures by removing empty `<tbody>` tags and ensuring correct `<thead>` placement. This resolves the common "Table structure is invalid" error in Canvas.
+- **✨ Full Automation**: The toolkit now **automatically** removes all red `[ADA FIX]` labels and `[FIX_ME]` tags at the end of the Auto-Fix and Batch conversion processes. No manual cleanup button required!
+- **📸 Smart Image Alignment**: 
+    - **Word & PDF**: Images now retain their natural sizing and positioning using CSS floats.
+    - **PowerPoint**: Enhanced alignment detection (left, right, or center) ensuring lecture notes follow the original slide layout.
+- **🛠️ Table Structure Sanitizer**: Automatically fixes "Invalid Table Structure" errors in Canvas by cleaning up out-of-order tags and empty content.
+- **🔄 Sync-on-Convert**: Individual conversion buttons (Word, PPT, PDF) now automatically synchronize with the `imsmanifest.xml` for seamless Canvas imports.
 
-## 🔧 Critical Fixes
-- **IMSCC Manifest Sync**: Fixed a major export error where `imsmanifest.xml` was not updated after file conversions. The toolkit now automatically synchronizes manifest references when you convert Word, PPT, or PDF files to HTML.
-- **Robust Image Resolution**: Enhanced the logic for finding course images, particularly for home pages (`home.html`) and resources using Canvas-specific tokens (`$IMS-CC-FILEBASE$`).
-- **Path Handling**: Improved support for nested folder structures within course packages, ensuring links remain stable after export and re-import.
-
-## 📦 Executable Update
-- The standalone Windows executable (**dist/MOSH_ADA_Toolkit.exe**) has been updated to include all version 1.1 features and fixes. No manual Python installation is required.
-
-## 🎯 Next Steps for Users
-1. Use the **🧹 Remove Visual Markers** tool before your final export.
-2. Click **📤 Repackage Course (.imscc)** to generate your updated course file.
-3. Import into a test course in Canvas to verify your accessible content!
+## 📦 Executable Updates
+- A fresh **MOSH_ADA_Toolkit.exe** has been bundled in the `dist/` folder with all version 1.1 features and new dependencies (`PyMuPDF`, `python-docx`).
