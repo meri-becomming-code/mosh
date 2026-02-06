@@ -255,15 +255,16 @@ def resolve_image_path(src, filepath, root_dir, io_handler):
         
         # 2. Handle Canvas Token (IMS-CC-FILEBASE)
         if "$IMS-CC-FILEBASE$" in clean_src:
-            # Replace token with empty string (assuming we are at project root or subfolder)
+            # Replace token with empty string
             expanded = clean_src.replace("$IMS-CC-FILEBASE$/", "").replace("$IMS-CC-FILEBASE$", "")
+            # Remove any query params (like ?canvas_download=1) for local resolution
+            expanded = expanded.split('?')[0]
             expanded = expanded.replace('/', os.sep).replace('\\', os.sep)
             if expanded.startswith(os.sep): expanded = expanded[1:]
             
             # Strategy A: Check relative to Root Dir (Primary)
             if root_dir:
                 candidate = os.path.join(root_dir, expanded)
-                # io_handler.log(f"    [Trace] Checking Root+Token: {candidate}")
                 if os.path.exists(candidate):
                     return candidate
             
@@ -274,12 +275,17 @@ def resolve_image_path(src, filepath, root_dir, io_handler):
             candidate_grp = os.path.abspath(os.path.join(parent, expanded))
             if os.path.exists(candidate_grp): return candidate_grp
             
-            # Try 2: Up one level (legacy/standard structure)
+            # Try 2: Up one level (standard structure for wiki_content vs web_resources)
             candidate_rel = os.path.abspath(os.path.join(parent, "..", expanded))
             if os.path.exists(candidate_rel): return candidate_rel
+            
+            # Try 3: Specifically check web_resources in root if expanded is just a filename
+            if root_dir:
+                candidate_wr = os.path.join(root_dir, 'web_resources', os.path.basename(expanded))
+                if os.path.exists(candidate_wr): return candidate_wr
 
             # Strategy C: Token expansion failed to find file.
-            io_handler.log(f"    [Info] Token path not found. Checking elsewhere...")
+            io_handler.log(f"    [Info] Token path '{expanded}' not found. Checking elsewhere...")
             clean_src = os.path.basename(clean_src)
 
     except Exception as e:

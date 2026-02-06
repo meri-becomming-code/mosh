@@ -174,6 +174,13 @@ def remediate_html_file(filepath):
 
     # --- Part 5: Tables (Toolkit 1 Logic) ---
     for table in soup.find_all('table'):
+        # 1. Cleanup empty TBODYs (Often cause Canvas 'Invalid Structure' errors)
+        for tb in table.find_all('tbody'):
+            if not tb.find('tr'):
+                fixes.append("Removed empty <tbody> tag")
+                tb.extract()
+
+        # 2. Caption
         if not table.find('caption'):
             caption = soup.new_tag('caption')
             caption['style'] = "text-align: left; font-weight: bold; margin-bottom: 10px;"
@@ -181,14 +188,27 @@ def remediate_html_file(filepath):
             table.insert(0, caption)
             fixes.append("Added 'Information Table' caption to table")
         
-        # Scope and Header Logic
+        # 3. Scope and Header Logic
+        # Canvas is picky about THEAD coming before TBODY
+        thead = table.find('thead')
         first_row = table.find('tr')
-        if first_row and not table.find('thead'):
-            # If explicit THs, wrap in THEAD
+        
+        if not thead and first_row:
+            # If explicit THs in first row, wrap in THEAD
             if all(cell.name == 'th' for cell in first_row.find_all(['td', 'th'])):
                 thead = soup.new_tag('thead')
                 first_row.wrap(thead)
+                fixes.append("Wrapped header row in <thead>")
+
+        # [RE-ORDER FIX] Move thead to top (after caption)
+        if thead:
+            caption = table.find('caption')
+            if caption:
+                caption.insert_after(thead)
+            else:
+                table.insert(0, thead)
         
+        # 4. Standardize Scopes
         for th in table.select('thead th'):
             th['scope'] = "col"
         for th in table.select('tbody th'):
@@ -401,21 +421,59 @@ def remediate_html_file(filepath):
     unique_fixes = list(set(fixes))
     return str(soup), unique_fixes
 
-def batch_remediate_v3(root_dir):
-    report = {}
-    for root, dirs, files in os.walk(root_dir):
+    return report
+
+def strip_ada_markers(html_content):
+    """
+    Removes all [ADA FIX] visual spans and [FIX_ME] text from HTML.
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+    stripped_count = 0
+    
+    # 1. Remove all <span> tags containing "ADA FIX"
+    for span in soup.find_all('span'):
+        if "ADA FIX" in span.get_text():
+            span.extract()
+            stripped_count += 1
+            
+    # 2. Clean alt attributes containing [FIX_ME]
+    for img in soup.find_all('img'):
+        alt = img.get('alt', '')
+        if "[FIX_ME]" in alt:
+             # Basic cleanup: remove the [FIX_ME] prefix and common reason phrases
+             new_alt = re.sub(r'\[FIX_ME\]:\s*.*?\.\s*', '', alt)
+             if not new_alt.strip():
+                 new_alt = "" # Reset to empty if nothing remains
+             img['alt'] = new_alt
+             stripped_count += 1
+             
+    # 3. Clean up comments (optional but good)
+    from bs4 import Comment
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment) and "ADA FIX" in text):
+        comment.extract()
+        stripped_count += 1
+
+    return str(soup), stripped_count
+
+def batch_strip_markers(directory):
+    """Walks directory and strips markers from all HTML files."""
+    results = {}
+    for root, dirs, files in os.walk(directory):
         for file in files:
             if file.endswith('.html'):
+                path = os.path.join(root, file)
                 try:
-                    path = os.path.join(root, file)
-                    remediated, fixes = remediate_html_file(path)
-                    if fixes:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    cleaned, count = strip_ada_markers(content)
+                    if count > 0:
                         with open(path, 'w', encoding='utf-8') as f:
-                            f.write(remediated)
-                        report[file] = fixes
+                            f.write(cleaned)
+                        results[file] = count
                 except Exception as e:
-                    print(f"Error checking {file}: {e}")
-    return report
+                    print(f"Error cleaning {file}: {e}")
+    return results
 
 if __name__ == "__main__":
     import sys
