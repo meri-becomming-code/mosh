@@ -343,10 +343,6 @@ and to all the other students struggling with their own challenges.
         
         self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Alt Tags, Links, File Names)", command=self._run_interactive, style="Action.TButton")
         self.btn_inter.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        
-        # New Cleanup Button
-        self.btn_clean = ttk.Button(frame_actions, text="🧹 Remove Visual Markers\n(Strip ADA Labels)", command=self._run_cleanup_markers, style="Action.TButton")
-        self.btn_clean.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
 
         # Row 2 (Audit)
         self.btn_audit = ttk.Button(frame_actions, text="Quick Report\n(Audit JSON)", command=self._run_audit, style="Action.TButton")
@@ -717,7 +713,8 @@ and to all the other students struggling with their own challenges.
                     self.gui_handler.log(f"   [{i+1}/{len(html_files)}] [FIXED] {os.path.basename(path)}:")
                     for fix in fixes:
                         self.gui_handler.log(f"    - {fix}")
-            # Estimate time saved: 1.5 minutes per fix seems reasonable for manual H1/Table/Tag fixing
+            
+            # Estimate time saved
             minutes_saved = total_fixes * 1.5
             hours = int(minutes_saved // 60)
             mins = int(minutes_saved % 60)
@@ -725,6 +722,13 @@ and to all the other students struggling with their own challenges.
             
             self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
             self.gui_handler.log(f"🏆 YOU SAVED APPROXIMATELY {time_str} OF TEDIOUS MANUAL LABOR!")
+
+            # [STRICT FIX] Always remove visual markers at the end
+            self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
+            import run_fixer
+            strip_results = run_fixer.batch_strip_markers(self.target_dir)
+            total_stripped = sum(strip_results.values())
+            self.gui_handler.log(f"   Done! Stripped {total_stripped} temporary [ADA FIX] markers.")
 
         self._run_task_in_thread(task, "Auto-Fixer")
 
@@ -1069,9 +1073,9 @@ YOUR WORKFLOW:
         if ext == "pdf":
              if not messagebox.askyesno("PDF Conversion (Beta)", 
                 "⚠️ PDF Conversion is extremely difficult to automate.\n\n"
-                "This tool will extract TEXT ONLY. It will likely lose:\n"
-                "- Math Equations\n- Images\n- Layout/Columns\n\n"
-                "Are you sure you want to proceed with a text extraction?"):
+                "This tool will attempt to extract Text, Images, and basic Layout.\n"
+                "It is NOT perfect for complex documents.\n\n"
+                "Are you sure you want to proceed?"):
                 return
 
         
@@ -1129,6 +1133,13 @@ YOUR WORKFLOW:
             if self.gui_handler.confirm(msg_link):
                 count = converter_utils.update_links_in_directory(self.target_dir, file_path, output_path)
                 self.gui_handler.log(f"   Updated links in {count} files.")
+
+                # [NEW] Update Manifest
+                rel_old = os.path.relpath(file_path, self.target_dir)
+                rel_new = os.path.relpath(output_path, self.target_dir)
+                m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
+                if m_success:
+                    self.gui_handler.log(f"   [MANIFEST] {m_msg}")
             
             # 6. Archive Original (NEW)
             msg_archive = (f"To maintain Canvas compliance, original files should not be uploaded to your course.\n\n"
@@ -1225,7 +1236,15 @@ YOUR WORKFLOW:
             self.gui_handler.log(f"\n--- Batch Complete. {success_count} files converted. ---")
             self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
             self.gui_handler.log(f"   (Estimate based on 20m/file vs manual source remediation + {total_auto_fixes} automatic HTML fixes)")
-            self.gui_handler.log("🛡️ Remember: Check the files in Canvas before publishing!")
+            
+            # [STRICT FIX] Always remove visual markers at the end
+            self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
+            import run_fixer
+            strip_results = run_fixer.batch_strip_markers(self.target_dir)
+            total_stripped = sum(strip_results.values())
+            self.gui_handler.log(f"   Done! Stripped {total_stripped} temporary [ADA FIX] markers.")
+            
+            self.gui_handler.log("\n🛡️ Remember: Check the files in Canvas before publishing!")
             messagebox.showinfo("Gamble Complete", f"Processed {len(found_files)} files.\nCheck the logs for details.")
 
         self._run_task_in_thread(task, "Batch Gamble")
