@@ -9,6 +9,7 @@ from datetime import datetime
 import zipfile
 import base64
 import uuid
+import xml.etree.ElementTree as ET
 
 # --- Constants ---
 ARCHIVE_FOLDER_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
@@ -713,4 +714,42 @@ def archive_source_file(file_path):
     except Exception as e:
         print(f"Error archiving {file_path}: {e}")
         return None
+
+def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
+    """
+    Updates imsmanifest.xml in the root_dir to reflect file changes.
+    Replaces all occurrences of old_rel_path with new_rel_path in href attributes.
+    """
+    manifest_path = os.path.join(root_dir, 'imsmanifest.xml')
+    if not os.path.exists(manifest_path):
+        return False, "imsmanifest.xml not found"
+
+    try:
+        # Standardize paths to forward slashes for XML
+        old_p = old_rel_path.replace("\\", "/").lower()
+        new_p = new_rel_path.replace("\\", "/")
+
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Find all href="..." and replace if they match old_p (case-insensitive comparison)
+        replacements = 0
+        def repl_func(match):
+            nonlocal replacements
+            href_val = match.group(1)
+            if href_val.replace("\\", "/").lower() == old_p:
+                replacements += 1
+                return f'href="{new_p}"'
+            return match.group(0)
+
+        new_content = re.sub(r'href="([^"]+)"', repl_func, content)
+
+        if replacements > 0:
+            with open(manifest_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            return True, f"Updated {replacements} references in imsmanifest.xml"
+        
+        return False, "No references found in imsmanifest.xml"
+    except Exception as e:
+        return False, f"Manifest update error: {str(e)}"
 

@@ -343,9 +343,14 @@ and to all the other students struggling with their own challenges.
         
         self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Alt Tags, Links, File Names)", command=self._run_interactive, style="Action.TButton")
         self.btn_inter.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        
+        # New Cleanup Button
+        self.btn_clean = ttk.Button(frame_actions, text="🧹 Remove Visual Markers\n(Strip ADA Labels)", command=self._run_cleanup_markers, style="Action.TButton")
+        self.btn_clean.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+
         # Row 2 (Audit)
         self.btn_audit = ttk.Button(frame_actions, text="Quick Report\n(Audit JSON)", command=self._run_audit, style="Action.TButton")
-        self.btn_audit.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
+        self.btn_audit.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
         frame_actions.columnconfigure(0, weight=1)
         frame_actions.columnconfigure(1, weight=1)
@@ -737,6 +742,28 @@ and to all the other students struggling with their own challenges.
                 interactive_fixer.scan_and_fix_file(filepath, self.gui_handler, self.target_dir)
                 
         self._run_task_in_thread(task, "Interactive Fixer")
+
+    def _run_cleanup_markers(self):
+        """Removes all [ADA FIX] visual labels from HTML files."""
+        if not messagebox.askyesno("Confirm Cleanup", 
+            "This will permanently REMOVE all red visual markers ([ADA FIX]) from your HTML files.\n\n"
+            "Use this only when you are satisfied with the remediation and ready to upload to Canvas.\n\n"
+            "Proceed?"):
+            return
+
+        def task():
+            self.gui_handler.log(f"--- 🧹 Cleaning Visual Markers: {os.path.basename(self.target_dir)} ---")
+            import run_fixer
+            results = run_fixer.batch_strip_markers(self.target_dir)
+            
+            total = sum(results.values())
+            self.gui_handler.log(f"   Done! Stripped {total} markers from {len(results)} files.")
+            for file, count in results.items():
+                self.gui_handler.log(f"    - {file}: {count}")
+            
+            self.root.after(0, lambda: messagebox.showinfo("Cleanup Complete", f"Successfully removed {total} visual markers from {len(results)} files."))
+
+        self._run_task_in_thread(task, "Marker Cleanup")
 
     def _run_audit(self):
         def task():
@@ -1175,6 +1202,14 @@ YOUR WORKFLOW:
                     
                     # Update Links (extensionless)
                     l_count = converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
+                    
+                    # [NEW] Update Manifest
+                    rel_old = os.path.relpath(fpath, self.target_dir)
+                    rel_new = os.path.relpath(output_path, self.target_dir)
+                    m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
+                    if m_success:
+                        self.gui_handler.log(f"   [MANIFEST] {m_msg}")
+                    
                     # Archive
                     converter_utils.archive_source_file(fpath)
                     self.gui_handler.log(f"   [DONE] Links updated in {l_count} files. Original archived.")
