@@ -432,6 +432,9 @@ and to all the other students struggling with their own challenges.
         self.btn_share = ttk.Button(sidebar, text="📣 SPREAD THE WORD", command=self._show_share_dialog, style="Action.TButton")
         self.btn_share.pack(pady=20, padx=10, fill="x")
 
+        # [NEW] Advanced Button
+        ttk.Button(sidebar, text="🛠️ Advanced Tasks", command=self._show_advanced_dialog).pack(pady=10, padx=10, fill="x")
+
         # 2. Main Content Area
         content = ttk.Frame(self.root, padding="20 20 20 20")
         content.pack(side="right", fill="both", expand=True)
@@ -460,36 +463,9 @@ and to all the other students struggling with their own challenges.
         )
         btn_canvas.pack(side="top", fill="x", pady=(0, 5))
         
-        # Row 1c: Export & Finalize (Grid for Barney-style buttons)
-        frame_final = ttk.Frame(frame_dir)
-        frame_final.pack(fill="x", pady=(0, 5))
-
-        btn_export = ttk.Button(
-            frame_final, 
-            text="📤 Repackage Course (.imscc)", 
-            command=self._export_package,
-            style="Action.TButton"
-        )
-        btn_export.pack(side="top", fill="x", pady=(0, 2))
-
-        # [NEW] Pre-Flight Check Button
-        self.btn_check = ttk.Button(
-            frame_final, 
-            text="🚥 Am I Ready to Upload? (Pre-Flight Check)", 
-            command=self._show_preflight_dialog,
-            style="Action.TButton"
-        )
-        self.btn_check.pack(side="top", fill="x", pady=(2, 2))
-
-        # [NEW] Push to Canvas Button
-        self.btn_push = ttk.Button(
-            frame_final, 
-            text="🚀 Push Whole Course to Canvas", 
-            command=self._push_to_canvas,
-            style="Action.TButton"
-        )
-        self.btn_push.pack(side="top", fill="x", pady=(2, 5))
-        self.btn_push.config(state='disabled') # Enabled only after packaging or check
+        # Row 2: Folder Browser
+        frame_browse = ttk.Frame(frame_dir)
+        frame_browse.pack(fill="x")
         
         # Row 2: Folder Browser
         frame_browse = ttk.Frame(frame_dir)
@@ -533,7 +509,7 @@ and to all the other students struggling with their own challenges.
         frame_convert = ttk.Frame(content)
         frame_convert.pack(fill="x", pady=(10, 20))
         
-        self.btn_wizard = ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> HTML)", command=self._show_conversion_wizard, style="Action.TButton")
+        self.btn_wizard = ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> Canvas WikiPages)", command=self._show_conversion_wizard, style="Action.TButton")
         self.btn_wizard.pack(fill="x", pady=5)
         
         frame_singles = ttk.Frame(frame_convert)
@@ -548,10 +524,31 @@ and to all the other students struggling with their own challenges.
         self.btn_pdf = ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf"))
         self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
 
-        # Batch Everything (Risky)
         self.btn_batch = ttk.Button(frame_convert, text="🎲 Roll the Dice: Convert Everything (Risky) 🎲", 
                                     command=self._run_batch_conversion, style="Action.TButton")
-        self.btn_batch.pack(fill="x", pady=(10, 0))
+        self.btn_batch.pack(fill="x", pady=(10, 5))
+
+        # [MOVED] Step 3.5: Launch & Upload
+        ttk.Label(content, text="4. Final Launch", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
+        frame_final = ttk.Frame(content)
+        frame_final.pack(fill="x", pady=5)
+
+        self.btn_check = ttk.Button(
+            frame_final, 
+            text="🚥 Am I Ready to Upload? (Pre-Flight Check)", 
+            command=self._show_preflight_dialog,
+            style="Action.TButton"
+        )
+        self.btn_check.pack(side="top", fill="x", pady=2)
+
+        self.btn_push = ttk.Button(
+            frame_final, 
+            text="🚀 Push Whole Course to Canvas", 
+            command=self._push_to_canvas,
+            style="Action.TButton"
+        )
+        self.btn_push.pack(side="top", fill="x", pady=2)
+        self.btn_push.config(state='disabled')
 
 
         # -- Logs --
@@ -1394,7 +1391,7 @@ YOUR WORKFLOW:
             # 2. Preview (Open both)
             try:
                 os.startfile(file_path) # Open Original
-                os.startfile(output_path) # Open New HTML
+                os.startfile(output_path) # Open New Page
             except Exception as e:
                 self.gui_handler.log(f"   [WARNING] Could not auto-open files: {e}")
             
@@ -1443,15 +1440,54 @@ YOUR WORKFLOW:
             
         self._run_task_in_thread(task, f"Convert {ext.upper()}")
 
+    def _get_canvas_api(self):
+        """Helper to instantiate CanvasAPI from config."""
+        config = self.config
+        url = config.get("canvas_url")
+        token = config.get("canvas_token")
+        cid = config.get("canvas_course")
+        if not url or not token or not cid:
+            return None
+        return canvas_utils.CanvasAPI(url, token, cid)
+
+    def _show_advanced_dialog(self):
+        """Displays advanced/manual tasks that users occasionally need."""
+        dialog = Toplevel(self.root)
+        dialog.title("🛠️ Advanced Tasks")
+        dialog.geometry("400x350")
+        dialog.transient(self.root)
+        
+        ttk.Label(dialog, text="🛠️ Advanced Tasks", style="Header.TLabel").pack(pady=10)
+        
+        frame = ttk.Frame(dialog, padding=20)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="These tools are for specific situations.\nIf you are using the Push button, you don't need these!", 
+                  wraplength=350, font=("Segoe UI", 9, "italic")).pack(pady=(0, 20))
+
+        # Repackage without Upload
+        ttk.Button(frame, text="📦 Repackage Course (.imscc) without Uploading", 
+                   command=self._export_package, style="TButton").pack(fill="x", pady=5)
+        
+        ttk.Label(frame, text="Creates a new .imscc file on your computer but does NOT send it to Canvas.", 
+                  wraplength=350, font=("Segoe UI", 8)).pack(pady=(0, 15))
+
+        # Clear Logs
+        ttk.Button(frame, text="🧹 Clear Activity Log", 
+                   command=lambda: [self.txt_log.configure(state='normal'), self.txt_log.delete(1.0, tk.END), self.txt_log.configure(state='disabled')],
+                   style="TButton").pack(fill="x", pady=5)
+
+        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
+
     def _run_batch_conversion(self):
         """Processes ALL convertible files in one go without per-file verification."""
         # 1. Scary Warning
         msg = ("🎲 ROLL THE DICE: BATCH CONVERSION 🎲\n\n"
-               "WARNING: This will convert EVERY Word, PPT, Excel, and PDF file in your project to HTML automatically.\n\n"
+               "WARNING: This will convert EVERY Word, PPT, Excel, and PDF file in your project to Canvas WikiPages automatically.\n\n"
                "- It is NOT perfect. Layouts may break.\n"
                "- Original files will be moved to the archive folder for safety.\n"
                "- Links will be updated throughout your project.\n\n"
-               "YOU are responsible for reviewing the resulting HTML pages. "
+               "YOU are responsible for reviewing the resulting Canvas pages. "
                "Are you sure you want to take this gamble?")
         
         if not messagebox.askyesno("🎲 Feeling Lucky?", msg):
@@ -1479,7 +1515,7 @@ YOUR WORKFLOW:
                 if self.gui_handler.is_stopped(): break
                 fname = os.path.basename(fpath)
                 ext = os.path.splitext(fpath)[1].lower().replace('.', '')
-                self.gui_handler.log(f"[{i+1}/{len(found_files)}] Converting: {fname}")
+                self.gui_handler.log(f"[{i+1}/{len(found_files)}] Preparing Canvas WikiPage: {fname}")
                 
                 output_path = None
                 err = None
@@ -1497,7 +1533,7 @@ YOUR WORKFLOW:
                     success_count += 1
                     
                     # Run Auto-Fixer on the document immediately
-                    self.gui_handler.log(f"   [FIXING] Running Auto-Fixer on new HTML...")
+                    self.gui_handler.log(f"   [FIXING] Checking Page for ADA compliance...")
                     success_fix, fixes = interactive_fixer.run_auto_fixer(output_path, self.gui_handler)
                     if success_fix and fixes:
                         total_auto_fixes += len(fixes)
@@ -1530,16 +1566,15 @@ YOUR WORKFLOW:
             self.gui_handler.log(f"   (Estimate based on 10m/file vs manual source remediation + {total_auto_fixes} automatic HTML fixes)")
             
             # [NEW] Integrated Interactive Checker
-            msg_review = ("Batch conversion is finished!\n\n"
-                         "Would you like to start the Guided Review (Interactive Checker) now?\n"
-                         "This will help you quickly fix image descriptions and check links.")
-            
-            # Use after() to show dialog on main thread
             def ask_review():
+                msg_review = ("Batch conversion is finished!\n\n"
+                             "Would you like to start the Guided Review (Interactive Checker) now?\n"
+                             "This will help you quickly fix image descriptions and check links.")
                 if messagebox.askyesno("Step 2: Guided Review", msg_review):
-                    self.btn_inter.invoke() # Trigger the existing Guided Review logic
+                    # Trigger the existing Guided Review logic
+                    self._run_interactive()
             
-            self.root.after(0, ask_review)
+            self.root.after(500, ask_review)
 
             # [STRICT FIX] Always remove visual markers at the end
             self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
@@ -1607,19 +1642,31 @@ YOUR WORKFLOW:
             for f in files:
                 if f.lower().endswith(('.docx', '.pptx', '.pdf', '.xlsx')): count += 1
         
-        if count == 0: return True, "All files converted to HTML."
-        return False, f"Found {count} original files in course. Convert them first!"
+        if count == 0: return True, "All files converted to Canvas WikiPages."
+        return False, f"Found {count} original files in course. Prepare them for Canvas first!"
 
     def _check_ada_issues(self):
-        """Scans for remaining ADA markers like [FIX_ME]."""
+        """Scans for remaining ADA markers like [FIX_ME] and runs Auto-Fixer one last time."""
         markers = 0
+        html_files = []
         for root, dirs, files in os.walk(self.target_dir):
+            if converter_utils.ARCHIVE_FOLDER_NAME in root: continue
             for f in files:
                 if f.endswith('.html'):
-                    try:
-                        with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as f_obj:
-                            if "[FIX_ME]" in f_obj.read().upper(): markers += 1
-                    except: pass
+                    html_files.append(os.path.join(root, f))
+        
+        # Proactive: Run Auto-Fixer on everything before checking markers
+        if html_files:
+            import interactive_fixer
+            for fp in html_files:
+                interactive_fixer.run_auto_fixer(fp, self.gui_handler)
+
+        # Now check for markers
+        for fp in html_files:
+            try:
+                with open(fp, 'r', encoding='utf-8', errors='ignore') as f_obj:
+                    if "[FIX_ME]" in f_obj.read().upper(): markers += 1
+            except: pass
         
         if markers == 0: return True, "No [FIX_ME] markers found. Looks great!"
         return False, f"Found {markers} issues needing Guided Review."
