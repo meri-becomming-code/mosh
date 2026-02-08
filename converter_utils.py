@@ -323,7 +323,21 @@ def convert_ppt_to_html(ppt_path):
                 html_parts.append(f'<h2 class="slide-title">{title_text}</h2>')
             
             # Content (Text & Images)
-            for shape in slide.shapes:
+            # [BARNEY FIX] Sort shapes by position to ensure reading order and side-by-side floating
+            # We round to nearest 10 pixels to group items that are roughly on the same vertical line
+            def shape_sort_key(s):
+                try:
+                    top = getattr(s, 'top', 0)
+                    left = getattr(s, 'left', 0)
+                    # Prioritize images slightly if they are on the same line to ensure they float correctly
+                    priority = 0 if s.shape_type == MSO_SHAPE_TYPE.PICTURE else 1
+                    return (round(top / 95250) * 10, priority, left)
+                except:
+                    return (0, 0, 0)
+
+            sorted_shapes = sorted(slide.shapes, key=shape_sort_key)
+            
+            for shape in sorted_shapes:
                 # Text
                 if shape.has_text_frame:
                     if shape == slide.shapes.title: continue 
@@ -800,13 +814,18 @@ def update_links_in_directory(directory, old_filename, new_filename):
     old_base = os.path.basename(old_filename)
     new_base = os.path.basename(new_filename)
     
-    # [CANVAS FIX] Remove extension for the NEW link as requested
-    # e.g. "syllabus.docx" -> "syllabus" (instead of "syllabus.html")
-    new_base_no_ext = os.path.splitext(new_base)[0]
+    # [CANVAS FIX] Handle live URLs vs local files
+    if new_filename.startswith('http'):
+        new_link = new_filename
+        new_link_enc = new_filename # Usually already encoded or safe
+    else:
+        # e.g. "syllabus.docx" -> "syllabus" (instead of "syllabus.html")
+        new_link = os.path.splitext(new_base)[0]
+        # URL encode spaces
+        new_link_enc = new_link.replace(' ', '%20')
     
-    # URL encode spaces
+    # URL encode spaces for old base
     old_base_enc = old_base.replace(' ', '%20')
-    new_base_no_ext_enc = new_base_no_ext.replace(' ', '%20')
 
     for root, dirs, files in os.walk(directory):
         for file in files:
@@ -817,9 +836,9 @@ def update_links_in_directory(directory, old_filename, new_filename):
                         content = f.read()
                     
                     if old_base in content or old_base_enc in content:
-                        # Replace with the extensionless version
-                        new_content = content.replace(old_base, new_base_no_ext)
-                        new_content = new_content.replace(old_base_enc, new_base_no_ext_enc)
+                        # Replace with the new version (URL or local extensionless)
+                        new_content = content.replace(old_base, new_link)
+                        new_content = new_content.replace(old_base_enc, new_link_enc)
                         
                         if new_content != content:
                             with open(filepath, 'w', encoding='utf-8') as f:
@@ -977,4 +996,31 @@ def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
         return False, "No references found in imsmanifest.xml"
     except Exception as e:
         return False, f"Manifest update error: {str(e)}"
+
+def run_janitor_cleanup(source_dir, log_func=None):
+    """
+    Scans the course for original source files (Word, PPT, PDF) that have been converted.
+    Moves them to the archive folder to keep the Canvas course clean.
+    """
+    if log_func: log_func("🧹 Janitor: Tidying up original files...")
+    
+    extensions_to_clean = ['.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.pdf']
+    cleaned_count = 0
+    
+    for root, dirs, files in os.walk(source_dir):
+        # Don't clean files already in the archive or hidden folders
+        if ARCHIVE_FOLDER_NAME in root or '.git' in root:
+            continue
+            
+        for file in files:
+            ext = os.path.splitext(file)[1].lower()
+            if ext in extensions_to_clean:
+                # If we find a source file, move it to its local archive folder
+                file_path = os.path.join(root, file)
+                new_path = archive_source_file(file_path)
+                if new_path:
+                    cleaned_count += 1
+                    
+    if log_func: log_func(f"🧹 Janitor: archived {cleaned_count} source files. (Safe for upload!)")
+    return cleaned_count
 

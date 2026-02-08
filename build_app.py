@@ -12,7 +12,8 @@ def build():
     datas = [
         f"GUIDE_STYLES.md{sep}.",
         f"GUIDE_COMMON_MISTAKES.md{sep}.",
-        f"GUIDE_MANUAL_FIXES.md{sep}."
+        f"GUIDE_MANUAL_FIXES.md{sep}.",
+        f"mosh_pilot.png{sep}."
     ]
 
     args = [
@@ -33,6 +34,8 @@ def build():
     args.append('--hidden-import=interactive_fixer')
     args.append('--hidden-import=run_fixer')
     args.append('--hidden-import=run_audit')
+    args.append('--hidden-import=canvas_utils')
+    args.append('--hidden-import=requests')
     
     # PDF Processing Libraries (Critical for table/image extraction)
     args.append('--hidden-import=fitz')  # PyMuPDF
