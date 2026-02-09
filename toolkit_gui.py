@@ -1222,23 +1222,8 @@ YOUR WORKFLOW:
                 
                 self.gui_handler.log(f"[{i+1}/{len(files)}] BUILDING PAGE: {fname}...")
                 
-                # 1. Convert to HTML
-                output_path = None
-                err = None
-                if ext == "docx":
-                    output_path, err = converter_utils.convert_docx_to_html(fpath, self.gui_handler)
-                elif ext == "xlsx":
-                    output_path, err = converter_utils.convert_excel_to_html(fpath)
-                elif ext == "pptx":
-                     output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler)
-                elif ext == "pdf":
-                     output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
-                
-                if err or not output_path:
-                    self.gui_handler.log(f"   [ERROR] Conversion failed: {err}")
-                    continue
-                
                 # 2. RUN AUTO-FIXER (Structural)
+
                 self.gui_handler.log(f"   [1/3] Running Auto-Fixer (Headings, Tables)...")
                 # Structural fixes only, no placeholders/markers added
                 interactive_fixer.run_auto_fixer(output_path, self.gui_handler)
@@ -1336,13 +1321,15 @@ YOUR WORKFLOW:
             
             if self.gui_handler.confirm(msg_link):
                 count = converter_utils.update_links_in_directory(self.target_dir, file_path, output_path)
-                self.gui_handler.log(f"   Updated links in {count} files.")
-
+                # [NEW] Explicitly archive original file upon confirmation
+                converter_utils.archive_source_file(file_path)
+                
                 # [NEW] Update Manifest
                 rel_old = os.path.relpath(file_path, self.target_dir)
                 rel_new = os.path.relpath(output_path, self.target_dir)
                 m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
-                self.gui_handler.log(f"   [DONE] Links updated in {l_count} files. Original archived.")
+                self.gui_handler.log(f"   [DONE] Links updated in {count} files. Original archived.")
+
                 
             self.gui_handler.log(f"--- {ext.upper()} Done ---")
             

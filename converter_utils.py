@@ -10,6 +10,9 @@ import zipfile
 import base64
 import uuid
 import xml.etree.ElementTree as ET
+import urllib.parse
+from bs4 import BeautifulSoup
+
 
 # --- Constants ---
 ARCHIVE_FOLDER_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
@@ -75,33 +78,35 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 16px;
             line-height: 1.6; 
             color: #333;
-            max-width: 900px; 
+            max-width: 1000px; 
             margin: 0 auto; 
             padding: 40px; 
+            background-color: #f4f7f9;
         }}
         h1 {{ 
             font-size: 2.25em; 
             font-weight: 700;
             color: #4b3190; 
-            border-bottom: 2px solid #e0e0e0; 
-            padding-bottom: 10px; 
-            margin-bottom: 30px;
+            border-bottom: 2px solid #4b3190; 
+            padding-bottom: 15px; 
+            margin-bottom: 40px;
+            text-align: center;
         }}
-        h2 {{ color: #2c3e50; margin-top: 40px; font-weight: 600; border-bottom: 1px solid #eee; padding-bottom: 5px; }}
+        h2 {{ color: #2c3e50; margin-top: 40px; font-weight: 600; border-bottom: 1px solid #dee2e6; padding-bottom: 5px; }}
         h3 {{ color: #444; margin-top: 30px; font-weight: 600; }}
-        a {{ color: #0056b3; text-decoration: none; }}
+        a {{ color: #0056b3; text-decoration: none; font-weight: 500; }}
         a:hover {{ text-decoration: underline; }}
         
         /* Table Styles */
-        table {{ border-collapse: collapse; width: 100%; margin: 25px 0; font-size: 0.95em; border: 1px solid #ddd; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 25px 0; font-size: 0.95em; border: 1px solid #ddd; background-color: #fff; }}
         th, td {{ border: 1px solid #ddd; padding: 12px 15px; text-align: left; }}
         th {{ background-color: #f8f9fa; font-weight: 600; color: #495057; }}
-        tr:nth-child(even) {{ background-color: #fcfcfc; }}
+        tr:nth-child(even) {{ background-color: #f9f9f9; }}
         .content-table {{ width: 100%; border-collapse: collapse; }}
         
         img {{ max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #eee; }}
-        .grading-note {{ background-color: #e8f5e9; padding: 10px; border-left: 4px solid #4caf50; font-style: italic; }}
-        .note {{ font-size: 0.9em; color: #666; background: #fff3cd; padding: 15px; border-radius: 4px; border: 1px solid #ffeeba; }}
+        .grading-note {{ background-color: #e8f5e9; padding: 15px; border-left: 5px solid #4caf50; font-style: italic; border-radius: 0 4px 4px 0; }}
+        .note {{ font-size: 0.95em; color: #555; background: #fff3cd; padding: 20px; border-radius: 8px; border: 1px solid #ffeeba; margin-bottom: 25px; }}
         
         /* Code Block Styles */
         code {{ background-color: #f1f3f5; padding: 2px 5px; border-radius: 4px; font-family: Consolas, 'Courier New', monospace; color: #d63384; }}
@@ -114,21 +119,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-family: Consolas, 'Courier New', monospace; 
             line-height: 1.4;
             margin: 20px 0;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
         }}
         .code-block {{ margin: 15px 0; }}
         
         .slide-container {{ 
             overflow: auto; 
             clear: both; 
-            margin-bottom: 30px; 
-            padding: 25px; 
-            border: 2px solid #ccc; 
-            border-radius: 12px; 
+            margin-bottom: 50px; 
+            padding: 40px; 
+            border: 1px solid #dee2e6;
+            border-top: 5px solid #4b3190;
+            border-radius: 8px; 
             background-color: #fff;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            position: relative;
         }}
         .slide-container::after {{ content: ""; display: table; clear: both; }}
-        .slide-image {{ border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+        .slide-title {{ margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #eee; margin-bottom: 25px; }}
+        .slide-num {{ position: absolute; top: 10px; right: 20px; font-size: 0.8em; color: #999; font-weight: bold; }}
+        .slide-image {{ border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #eee; }}
         
         /* Accounting & Excel Styles */
         .accounting-table {{ border-collapse: collapse; margin: 25px 0; font-family: 'Courier New', Courier, monospace; width: auto; min-width: 50%; }}
@@ -154,10 +164,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
     <h1>{title}</h1>
-    <p class="note">✅ Remediated content from {source_file}</p>
+    <div class="note">✅ Remediated content from <strong>{source_file}</strong></div>
     {content}
 </body>
 </html>
+
 """
 
 def _save_html(content, title, source_file, output_path, style_overrides=""):
@@ -472,8 +483,8 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
         light1 = theme['colors'].get('light1', '#fff')
         
         style_overrides += f"""
-            .slide-container {{ border-color: {accent1}; background-color: {light1}; }}
-            .slide-title {{ color: {accent1}; }}
+            .slide-container {{ border-top-color: {accent1}; background-color: {light1}; }}
+            .slide-title {{ color: {dark1}; border-bottom-color: {accent1}; }}
             h1 {{ color: {accent1}; border-bottom-color: {accent1}; }}
             h2 {{ border-bottom-color: {accent1}; }}
         """
@@ -483,7 +494,8 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
         for i, slide in enumerate(prs.slides):
             slide_num = i + 1
             html_parts.append(f'<div class="slide-container" id="slide-{slide_num}">')
-            html_parts.append(f'<p class="note">Slide {slide_num}</p>')
+            html_parts.append(f'<div class="slide-num">Slide {slide_num}</div>')
+
             
             # [NEW] Detect if slide has text content (for image sizing)
             has_text_content = False
@@ -997,27 +1009,28 @@ def _convert_pdf_fallback(pdf_path):
 
 
 def update_links_in_directory(directory, old_filename, new_filename):
-
     """
-    Scans all HTML files in directory and replaces links.
-    e.g. href="syllabus.docx" -> href="syllabus.html"
+    Scans all HTML files in directory and replaces links using BeautifulSoup.
+    e.g. <a href="syllabus.docx">Click Here</a> -> <a href="syllabus.html">Syllabus</a>
+    Replaces underscores with spaces in link text.
     """
     count = 0
     old_base = os.path.basename(old_filename)
     new_base = os.path.basename(new_filename)
     
-    # [CANVAS FIX] Handle live URLs vs local files
-    if new_filename.startswith('http'):
-        new_link = new_filename
-        new_link_enc = new_filename # Usually already encoded or safe
-    else:
-        # [INTEGRITY FIX] Keep extension for internal package links!
-        # Canvas IMSCC packages require full filenames in links to resolve correctly.
-        new_link = new_base
-        new_link_enc = new_base.replace(' ', '%20')
-    
-    # URL encode spaces for old base
+    # URL encoded version for comparison
     old_base_enc = old_base.replace(' ', '%20')
+    
+    # Generate new link text: replace underscores with spaces
+    # e.g. Object_Oriented.html -> Object Oriented
+    link_text_base = os.path.splitext(new_base)[0]
+    new_link_text = link_text_base.replace('_', ' ').strip()
+    
+    # Handle live URLs vs local files
+    if new_filename.startswith('http'):
+        new_href = new_filename
+    else:
+        new_href = new_base.replace(' ', '%20')
 
     for root, dirs, files in os.walk(directory):
         for file in files:
@@ -1025,20 +1038,36 @@ def update_links_in_directory(directory, old_filename, new_filename):
                 filepath = os.path.join(root, file)
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
-                        content = f.read()
+                        soup = BeautifulSoup(f.read(), 'html.parser')
                     
-                    if old_base in content or old_base_enc in content:
-                        # Replace with the new version (URL or local extensionless)
-                        new_content = content.replace(old_base, new_link)
-                        new_content = new_content.replace(old_base_enc, new_link_enc)
+                    modified = False
+                    # 1. Update Links (<a> tags)
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        # Standardize href for comparison
+                        clean_href = urllib.parse.unquote(href).replace('\\', '/')
                         
-                        if new_content != content:
-                            with open(filepath, 'w', encoding='utf-8') as f:
-                                f.write(new_content)
-                            count += 1
-                except:
-                    pass
+                        if clean_href.endswith(old_base.replace('\\', '/')) or href == old_base_enc:
+                            a['href'] = new_href
+                            # Update link text automatically per user request
+                            a.string = new_link_text
+                            modified = True
+                    
+                    # 2. Update Images (<img> tags)
+                    for img in soup.find_all('img', src=True):
+                        src = img['src']
+                        if src == old_base or src == old_base_enc:
+                            img['src'] = new_href
+                            modified = True
+
+                    if modified:
+                        with open(filepath, 'w', encoding='utf-8') as f:
+                            f.write(str(soup))
+                        count += 1
+                except Exception as e:
+                    print(f"Error updating links in {file}: {e}")
     return count
+
 
 def unzip_course_package(zip_path, extract_to, log_func=None):
     """
