@@ -819,10 +819,10 @@ def update_links_in_directory(directory, old_filename, new_filename):
         new_link = new_filename
         new_link_enc = new_filename # Usually already encoded or safe
     else:
-        # e.g. "syllabus.docx" -> "syllabus" (instead of "syllabus.html")
-        new_link = os.path.splitext(new_base)[0]
-        # URL encode spaces
-        new_link_enc = new_link.replace(' ', '%20')
+        # [INTEGRITY FIX] Keep extension for internal package links!
+        # Canvas IMSCC packages require full filenames in links to resolve correctly.
+        new_link = new_base
+        new_link_enc = new_base.replace(' ', '%20')
     
     # URL encode spaces for old base
     old_base_enc = old_base.replace(' ', '%20')
@@ -991,9 +991,9 @@ def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
         if replacements > 0:
             with open(manifest_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            return True, f"Updated {replacements} references in imsmanifest.xml"
+            return True, f"Manifest Updated: {replacements} resource(s) synchronized."
         
-        return False, "No references found in imsmanifest.xml"
+        return False, "No matching entries found in imsmanifest.xml."
     except Exception as e:
         return False, f"Manifest update error: {str(e)}"
 
@@ -1015,11 +1015,19 @@ def run_janitor_cleanup(source_dir, log_func=None):
         for file in files:
             ext = os.path.splitext(file)[1].lower()
             if ext in extensions_to_clean:
-                # If we find a source file, move it to its local archive folder
+                # [SAFETY FIX] Only archive if a converted version actually exists!
+                # This prevents deleting files that the user chose NOT to convert.
                 file_path = os.path.join(root, file)
-                new_path = archive_source_file(file_path)
-                if new_path:
-                    cleaned_count += 1
+                base_name = os.path.splitext(file)[0]
+                html_version = os.path.join(root, base_name + ".html")
+                
+                if os.path.exists(html_version):
+                    new_path = archive_source_file(file_path)
+                    if new_path:
+                        cleaned_count += 1
+                else:
+                    # Keep it in the course if not converted
+                    pass
                     
     if log_func: log_func(f"🧹 Janitor: archived {cleaned_count} source files. (Safe for upload!)")
     return cleaned_count

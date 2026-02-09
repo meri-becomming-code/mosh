@@ -113,9 +113,11 @@ class ToolkitGUI:
         self.root.geometry("900x650") # Slightly wider for sidebar
 
         # --- State ---
-        self.target_dir = os.getcwd()
+        self.target_dir = os.getcwd() # Default
         self.config = self._load_config()
+        self.api_key = ""
         self.is_running = False
+        self.deferred_review = False # [NEW] Flag for post-task review
         self.current_dialog = None
         
         # Check instructions
@@ -435,9 +437,35 @@ and to all the other students struggling with their own challenges.
         # [NEW] Advanced Button
         ttk.Button(sidebar, text="🛠️ Advanced Tasks", command=self._show_advanced_dialog).pack(pady=10, padx=10, fill="x")
 
-        # 2. Main Content Area
-        content = ttk.Frame(self.root, padding="20 20 20 20")
-        content.pack(side="right", fill="both", expand=True)
+        # 2. Main Content Area (Scrollable)
+        container = ttk.Frame(self.root)
+        container.pack(side="right", fill="both", expand=True)
+
+        self.canvas = tk.Canvas(container, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
+        # Create a frame inside the canvas for the actual content
+        content = ttk.Frame(self.canvas, padding="20 20 20 20")
+
+        # Configure scrolling
+        def on_frame_configure(event):
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+        # Make the inner frame width match the canvas width
+        def on_canvas_configure(event):
+            self.canvas.itemconfig(self.canvas_window, width=event.width)
+
+        self.canvas_window = self.canvas.create_window((0, 0), window=content, anchor="nw")
+        content.bind("<Configure>", on_frame_configure)
+        self.canvas.bind("<Configure>", on_canvas_configure)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Mousewheel support
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
         # -- Target Project Section --
         ttk.Label(content, text="1. Select Project", style="SubHeader.TLabel").pack(anchor="w")
@@ -477,8 +505,34 @@ and to all the other students struggling with their own challenges.
         ttk.Button(frame_browse, text="Browse Folder...", command=self._browse_folder).pack(side="right")
 
 
-        # -- Remediation Actions (Grid) --
-        ttk.Label(content, text="2. Fix & Review", style="SubHeader.TLabel").pack(anchor="w")
+        # -- Step 2: Converters --
+        ttk.Label(content, text="2. Convert Files", style="SubHeader.TLabel").pack(anchor="w")
+        
+        frame_convert = ttk.Frame(content)
+        frame_convert.pack(fill="x", pady=(10, 20))
+        
+        self.btn_wizard = ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> Canvas Pages)", command=self._show_conversion_wizard, style="Action.TButton")
+        self.btn_wizard.pack(fill="x", pady=5)
+        
+        frame_singles = ttk.Frame(frame_convert)
+        frame_singles.pack(fill="x")
+        
+        self.btn_word = ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx"))
+        self.btn_word.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_excel = ttk.Button(frame_singles, text="Excel", command=lambda: self._show_conversion_wizard("xlsx"))
+        self.btn_excel.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_ppt = ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx"))
+        self.btn_ppt.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_pdf = ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf"))
+        self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
+
+        self.btn_batch = ttk.Button(frame_convert, text="🎲 Roll the Dice: Convert Everything (Batch Mode) 🎲", 
+                                    command=self._run_batch_conversion, style="Action.TButton")
+        self.btn_batch.pack(fill="x", pady=(10, 5))
+
+
+        # -- Step 3: Remediation Actions (Grid) --
+        ttk.Label(content, text="3. Fix & Review", style="SubHeader.TLabel").pack(anchor="w")
         
         frame_actions = ttk.Frame(content)
         frame_actions.pack(fill="x", pady=(10, 20))
@@ -499,56 +553,22 @@ and to all the other students struggling with their own challenges.
         frame_actions.columnconfigure(2, weight=1)
 
 
-        # -- Converters --
-        ttk.Label(content, text="3. Convert Files", style="SubHeader.TLabel").pack(anchor="w")
-        
-        frame_convert = ttk.Frame(content)
-        frame_convert.pack(fill="x", pady=(10, 20))
-        
-        self.btn_wizard = ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> Canvas Pages)", command=self._show_conversion_wizard, style="Action.TButton")
-        self.btn_wizard.pack(fill="x", pady=5)
-        
-        frame_singles = ttk.Frame(frame_convert)
-        frame_singles.pack(fill="x")
-        
-        self.btn_word = ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx"))
-        self.btn_word.pack(side="left", fill="x", expand=True, padx=2)
-        self.btn_excel = ttk.Button(frame_singles, text="Excel", command=lambda: self._show_conversion_wizard("xlsx"))
-        self.btn_excel.pack(side="left", fill="x", expand=True, padx=2)
-        self.btn_ppt = ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx"))
-        self.btn_ppt.pack(side="left", fill="x", expand=True, padx=2)
-        self.btn_pdf = ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf"))
-        self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
-
-        self.btn_batch = ttk.Button(frame_convert, text="🪄 Convert All Original Files (Batch Mode)", 
-                                    command=self._run_batch_conversion, style="Action.TButton")
-        self.btn_batch.pack(fill="x", pady=(10, 5))
-
-        # [MOVED] Step 3.5: Launch & Upload
-        ttk.Label(content, text="4. Final Launch", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
+        # -- Step 4: Final Launch --
+        ttk.Label(content, text="4. Final Step", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
         frame_final = ttk.Frame(content)
         frame_final.pack(fill="x", pady=5)
 
         self.btn_check = ttk.Button(
             frame_final, 
-            text="🚥 Am I Ready to Upload? (Pre-Flight Check)", 
+            text="🚥 Am I Ready to Upload? (Run Pre-Flight Check)", 
             command=self._show_preflight_dialog,
             style="Action.TButton"
         )
-        self.btn_check.pack(side="top", fill="x", pady=2)
-
-        self.btn_push = ttk.Button(
-            frame_final, 
-            text="🚀 Send My Clean Course to Canvas", 
-            command=self._push_to_canvas,
-            style="Action.TButton"
-        )
-        self.btn_push.pack(side="top", fill="x", pady=2)
-        self.btn_push.config(state='disabled')
+        self.btn_check.pack(fill="x", pady=2)
 
 
         # -- Logs --
-        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w")
+        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
         self.txt_log = scrolledtext.ScrolledText(content, height=8, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
         self.txt_log.pack(fill="both", expand=True, pady=5)
 
@@ -864,6 +884,11 @@ and to all the other students struggling with their own challenges.
             except: pass
         self.btn_stop.config(state='disabled')
         self.is_running = False
+
+        # [NEW] Handle deferred review launch
+        if self.deferred_review:
+            self.deferred_review = False
+            self.root.after(100, self._run_interactive)
 
     def _request_stop(self):
         """Triggers a stop request."""
@@ -1254,85 +1279,35 @@ YOUR WORKFLOW:
                     count = converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
                     self.gui_handler.log(f"   Updated links in {count} files.")
 
+                # 5. Archive Original (Bugfix: define msg_archive)
+                msg_archive = (f"To keep Canvas clean, original files should be hidden.\n\n"
+                               f"Move '{fname}' to the safety archive folder?\n"
+                               f"(It stays on your computer but won't be sent to Canvas.)")
                 if self.gui_handler.confirm(msg_archive):
                     new_archive_path = converter_utils.archive_source_file(fpath)
                     if new_archive_path:
                         self.gui_handler.log(f"   Original moved to archive: {converter_utils.ARCHIVE_FOLDER_NAME}")
                 
-                # --- NEW: Canvas Page Upload (Safe & Barney Style) ---
-                if self.config.get("canvas_url") and self.config.get("canvas_token") and self.config.get("canvas_course_id"):
+                # --- Sync to Canvas ---
+                api = self._get_canvas_api()
+                if api:
                     msg_canvas = (f"Excellent! I've converted '{fname}' to a clean web page.\n\n"
                                   f"Would you like me to SAFELY UPLOAD this to your Canvas Playground now?\n"
                                   f"(This is the easiest way to check and fix it in Canvas.)")
                     
                     if self.gui_handler.confirm(msg_canvas):
-                        api = canvas_utils.CanvasAPI(
-                            self.config["canvas_url"],
-                            self.config["canvas_token"],
-                            self.config["canvas_course_id"]
-                        )
-                        
                         # [STRICT SAFETY] Double check if course is empty
-                        self.gui_handler.log(f"   🔒 Safety Check: Verifying playground '{self.config['canvas_course_id']}' is safe...")
+                        self.gui_handler.log(f"   🔒 Safety Check: Verifying playground safety...")
                         is_empty, safety_msg = api.is_course_empty()
                         if not is_empty:
-                            msg_stop = (f"🛑 WAIT! I found content in course {self.config['canvas_course_id']}.\n\n"
+                            msg_stop = (f"🛑 WAIT! I found content in your Canvas Playground.\n\n"
                                         f"{safety_msg}\n\n"
-                                        f"Are you SURE you want to upload here? (It's safer to use an empty course!)")
+                                        f"Are you SURE you want to upload here?")
                             if not self.gui_handler.confirm(msg_stop):
-                                self.gui_handler.log("   [CANCELLED] User chose to stay safe. No upload performed.")
+                                self.gui_handler.log("   [CANCELLED] Sync aborted for safety.")
                                 continue
 
-                        self.gui_handler.log(f"   Uploading to Canvas: {fname}...")
-                        
-                        # 1. Read HTML
-                        with open(output_path, 'r', encoding='utf-8') as f:
-                            html_content = f.read()
-                        
-                        # [STRICT FIX] 2. Handle Images properly
-                        from bs4 import BeautifulSoup
-                        soup = BeautifulSoup(html_content, 'html.parser')
-                        images = soup.find_all('img')
-                        
-                        image_map = {} # local_src -> canvas_url
-                        
-                        if images:
-                            self.gui_handler.log(f"   Found {len(images)} images. Uploading to Canvas course files...")
-                            for img in images:
-                                local_src = img.get('src')
-                                if not local_src or "http" in local_src: continue
-                                
-                                # Resolve absolute path
-                                img_abs_path = os.path.join(os.path.dirname(output_path), local_src)
-                                if os.path.exists(img_abs_path):
-                                    success_img, res_img = api.upload_file(img_abs_path, folder_path="remediated_images")
-                                    if success_img:
-                                        # Canvas relative links usually look like /courses/:id/files/:file_id/preview
-                                        canvas_img_url = f"/courses/{self.config['canvas_course_id']}/files/{res_img['id']}/preview"
-                                        img['src'] = canvas_img_url
-                                        self.gui_handler.log(f"      Uploaded Image: {os.path.basename(img_abs_path)}")
-                                    else:
-                                        self.gui_handler.log(f"      [WARNING] Image upload failed: {res_img}")
-                        
-                        # 3. Create Page
-                        page_title = os.path.splitext(fname)[0]
-                        success_page, res_page = api.create_page(page_title, str(soup))
-                        
-                        if success_page:
-                            canvas_page_url = res_page.get('html_url')
-                            self.gui_handler.log(f"   SUCCESS! Page created on Canvas.")
-                            self.gui_handler.log(f"   URL: {canvas_page_url}")
-                            
-                            # 4. Link update: Point ALL OTHER FILES to this live Canvas Page
-                            msg_live_link = (f"Page created on Canvas.\n\n"
-                                            f"Would you like to update all other files in this folder\n"
-                                            f"to point to the LIVE CANVAS PAGE instead of the local HTML?")
-                            
-                            if self.gui_handler.confirm(msg_live_link):
-                                count = converter_utils.update_links_in_directory(self.target_dir, fpath, canvas_page_url)
-                                self.gui_handler.log(f"   Updated links in {count} files to point to Canvas.")
-                        else:
-                            self.gui_handler.log(f"   [ERROR] Canvas Page creation failed: {res_page}")
+                        self._upload_page_to_canvas(output_path, fpath, api)
 
                 self.gui_handler.log("   Done.")
             
@@ -1428,26 +1403,82 @@ YOUR WORKFLOW:
                 rel_old = os.path.relpath(file_path, self.target_dir)
                 rel_new = os.path.relpath(output_path, self.target_dir)
                 m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
-                if m_success:
-                    self.gui_handler.log(f"   [MANIFEST] {m_msg}")
-            
-            # 6. Archive Original (NEW)
-            msg_archive = (f"To maintain Canvas compliance, original files should not be uploaded to your course.\n\n"
-                           f"Move '{os.path.basename(file_path)}' to the safety archive folder?\n"
-                           f"(It will be safe on your computer but hidden from Canvas.)")
-            if self.gui_handler.confirm(msg_archive):
-                converter_utils.archive_source_file(file_path)
-                self.gui_handler.log(f"Original moved to {converter_utils.ARCHIVE_FOLDER_NAME}")
-            
+                self.gui_handler.log(f"   [DONE] Links updated in {l_count} files. Original archived.")
+                
+            self.gui_handler.log(f"--- {ext.upper()} Done ---")
             
         self._run_task_in_thread(task, f"Convert {ext.upper()}")
+
+    def _upload_page_to_canvas(self, html_path, original_source_path, api, auto_confirm_links=False):
+        """Helper to upload a single HTML file as a Canvas Page with images."""
+        fname = os.path.basename(original_source_path)
+        self.gui_handler.log(f"   [Sync] Uploading to Canvas: {fname}...")
+        
+        try:
+            # 1. Read HTML
+            with open(html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            # 2. Handle Images properly
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+            images = soup.find_all('img')
+            
+            if images:
+                self.gui_handler.log(f"   [Sync] Found {len(images)} images. Uploading to course files...")
+                for img in images:
+                    local_src = img.get('src')
+                    if not local_src or "http" in local_src: continue
+                    
+                    # Resolve absolute path
+                    img_abs_path = os.path.join(os.path.dirname(html_path), local_src)
+                    if os.path.exists(img_abs_path):
+                        success_img, res_img = api.upload_file(img_abs_path, folder_path="remediated_images")
+                        if success_img:
+                            # Canvas relative links usually look like /courses/:id/files/:file_id/preview
+                            canvas_img_url = f"/courses/{self.config['canvas_course_id']}/files/{res_img['id']}/preview"
+                            img['src'] = canvas_img_url
+                            self.gui_handler.log(f"      Uploaded: {os.path.basename(img_abs_path)}")
+                        else:
+                            self.gui_handler.log(f"      [WARNING] Image upload failed: {res_img}")
+            
+            # 3. Create Page
+            page_title = os.path.splitext(fname)[0]
+            success_page, res_page = api.create_page(page_title, str(soup))
+            
+            if success_page:
+                canvas_page_url = res_page.get('html_url')
+                self.gui_handler.log(f"   [Sync] SUCCESS! Live Page: {canvas_page_url}")
+                
+                # 4. Link update: Point ALL OTHER FILES to this live Canvas Page
+                should_update = False
+                if auto_confirm_links:
+                    should_update = True
+                else:
+                    msg_live_link = (f"Page created on Canvas.\n\n"
+                                    f"Would you like to update all other files in this folder\n"
+                                    f"to point to the LIVE CANVAS PAGE instead of the local HTML?")
+                    if self.gui_handler.confirm(msg_live_link):
+                        should_update = True
+
+                if should_update:
+                    count = converter_utils.update_links_in_directory(self.target_dir, original_source_path, canvas_page_url)
+                    self.gui_handler.log(f"   [Sync] Updated links in {count} files to point to Canvas.")
+                return True
+            else:
+                self.gui_handler.log(f"   [ERROR] Page creation failed: {res_page}")
+                return False
+                
+        except Exception as e:
+            self.gui_handler.log(f"   [ERROR] Sync failed: {e}")
+            return False
 
     def _get_canvas_api(self):
         """Helper to instantiate CanvasAPI from config."""
         config = self.config
         url = config.get("canvas_url")
         token = config.get("canvas_token")
-        cid = config.get("canvas_course")
+        cid = config.get("canvas_course_id") # Corrected key
         if not url or not token or not cid:
             return None
         return canvas_utils.CanvasAPI(url, token, cid)
@@ -1494,6 +1525,14 @@ YOUR WORKFLOW:
         
         if not messagebox.askyesno("🎲 Feeling Lucky?", msg):
             return
+
+        # [NEW] Check if they want to sync to Canvas as they go
+        self.config["batch_sync_confirmed"] = False
+        api = self._get_canvas_api()
+        if api:
+            msg_sync = "🎲 Would you like me to SYNC these pages to Canvas as I convert them?\n\n(This creates live, editable Pages in your Canvas course immediately!)"
+            if messagebox.askyesno("Live Sync?", msg_sync):
+                self.config["batch_sync_confirmed"] = True
 
         def task():
             supported_exts = {'.docx', '.pptx', '.xlsx', '.pdf'}
@@ -1553,6 +1592,11 @@ YOUR WORKFLOW:
                     # Archive
                     converter_utils.archive_source_file(fpath)
                     self.gui_handler.log(f"   [DONE] Links updated in {l_count} files. Original archived.")
+                    
+                    # [NEW] Optional Live Sync for Batch
+                    sync_api = self._get_canvas_api()
+                    if sync_api and self.config.get("batch_sync_confirmed"):
+                        self._upload_page_to_canvas(output_path, fpath, sync_api, auto_confirm_links=True)
                 else:
                     self.gui_handler.log(f"   [FAILED] {err}")
             
@@ -1567,16 +1611,15 @@ YOUR WORKFLOW:
             self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
             self.gui_handler.log(f"   (Estimate based on 10m/file vs manual source remediation + {total_auto_fixes} automatic HTML fixes)")
             
-            # [NEW] Integrated Interactive Checker
+            # [NEW] Integrated Interactive Checker (Deferred)
             def ask_review():
                 msg_review = ("Batch conversion is finished!\n\n"
                              "Would you like to start the Guided Review (Interactive Checker) now?\n"
                              "This will help you quickly fix image descriptions and check links.")
                 if messagebox.askyesno("Step 2: Guided Review", msg_review):
-                    # Trigger the existing Guided Review logic
-                    self._run_interactive()
+                    self.deferred_review = True # Flag for _enable_buttons 
             
-            self.root.after(500, ask_review)
+            self.root.after(0, ask_review)
 
             # [STRICT FIX] Always remove visual markers at the end
             self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
@@ -1586,7 +1629,7 @@ YOUR WORKFLOW:
             self.gui_handler.log(f"   Done! Stripped {total_stripped} temporary [ADA FIX] markers.")
             
             self.gui_handler.log("\n🛡️ Remember: Check the files in Canvas before publishing!")
-            messagebox.showinfo("Gamble Complete", f"Processed {len(found_files)} files.\nCheck the logs for details.")
+            self.root.after(0, lambda: messagebox.showinfo("Gamble Complete", f"Processed {len(found_files)} files.\nCheck the logs for details."))
 
         self._run_task_in_thread(task, "Batch Gamble")
 
@@ -1632,6 +1675,11 @@ YOUR WORKFLOW:
             msg = "🚀 YOU ARE CLEAR FOR TAKEOFF!"
             color = "#2E7D32" # Forest Green
             advice = "Mosh: 'Great job! You've put in the work, now let's show Canvas how it's done.'"
+            
+            # [NEW] Push Button INSIDE Dialog
+            btn_push = ttk.Button(score_frame, text="🚀 Send My Clean Course to Canvas Now", 
+                                 command=lambda: [dialog.destroy(), self._push_to_canvas()], style="Action.TButton")
+            btn_push.pack(pady=10, fill="x")
         else:
             msg = "🛠️ Almost there! Finish the items above."
             color = "#d4a017"
@@ -1640,9 +1688,6 @@ YOUR WORKFLOW:
         tk.Label(score_frame, text=msg, font=("Segoe UI", 12, "bold"), foreground=color).pack()
         tk.Label(score_frame, text=advice, font=("Segoe UI", 10, "italic"), foreground=colors["fg"]).pack(pady=5)
 
-        if ready_count == len(checks):
-             self.btn_push.config(state='normal')
-        
         ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
 
     def _check_source_files(self):
@@ -1709,26 +1754,36 @@ YOUR WORKFLOW:
         def upload_task():
             # Run Janitor first!
             self.gui_handler.log("🧹 Mosh the Janitor is cleaning up...")
-            converter_utils.run_janitor_cleanup(self.target_dir, self.gui_handler.log)
+            cleaned = converter_utils.run_janitor_cleanup(self.target_dir, self.gui_handler.log)
+            self.gui_handler.log(f"✅ Cleanup complete. Removed {cleaned} messy files.")
             
             # Re-package if needed or just do it every time for safety
-            self.gui_handler.log("📦 Packaging final version...")
+            self.gui_handler.log(f"📦 Packaging final version: {default_package}...")
             success_pkg, msg_pkg = converter_utils.create_course_package(self.target_dir, package_path, self.gui_handler.log)
             if not success_pkg:
                 self.gui_handler.log(f"❌ Packaging Failed: {msg_pkg}")
                 return
+            self.gui_handler.log(f"✅ Packaging complete. ({os.path.getsize(package_path)/(1024*1024):.1f} MB)")
 
             self.gui_handler.log("🚀 PREPARING FOR TAKEOFF! 🦆💨")
+            self.gui_handler.log("   (This may take a minute for large courses...)")
             self.root.after(0, lambda: self._show_flight_animation("Mosh is flying your course to Canvas..."))
             
             api = self._get_canvas_api()
+            if not api:
+                self.gui_handler.log("❌ Authentication Error: Missing API settings.")
+                self.root.after(0, self._close_flight_animation)
+                return
+
+            self.gui_handler.log("📡 Connecting to Canvas API...")
             success, res = api.upload_imscc(package_path)
             
             self.root.after(0, self._close_flight_animation)
             
             if success:
-                self.gui_handler.log("✅ LANDING SUCCESSFUL! Course is importing.")
-                self.gui_handler.log(f"   (Migration ID: {res.get('id')})")
+                self.gui_handler.log("✅ LANDING SUCCESSFUL! Mosh has delivered the package.")
+                self.gui_handler.log(f"   Migration ID: {res.get('id')}")
+                self.gui_handler.log("   Canvas is now importing your files. check back in 1-2 minutes.")
                 self.root.after(0, lambda: messagebox.showinfo("Mosh Delivered!", 
                     "Mosh has delivered your course package to Canvas!\n\n"
                     "Check your Canvas course in a few minutes to see the result."))
