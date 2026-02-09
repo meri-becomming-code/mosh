@@ -873,6 +873,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
         html_parts = []
         html_parts.append('<div class="pdf-content">')
         
+        total_text_blocks = 0
         for i, page in enumerate(doc):
             page_num = i + 1
             html_parts.append(f'<div class="page-container" id="page-{page_num}" style="margin-bottom: 30px; border-bottom: 1px solid #ccc; padding-bottom: 20px;">')
@@ -1034,6 +1035,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
 
                 # Type 0 = Text
                 elif block['type'] == 0:
+                     total_text_blocks += 1
                      # [IMPROVED] Aggregate all text in this block first, then intelligently group
                      block_lines = []
                      
@@ -1164,6 +1166,21 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
 
         html_parts.append('</div>')
         
+        # [SCAN DETECTION] If total text blocks is very low relative to total pages, it's a scan.
+        avg_text_per_page = total_text_blocks / len(doc) if len(doc) > 0 else 0
+        if avg_text_per_page < 0.5: # Heuristic: less than 1 text block per 2 pages
+             scan_warning = (
+                 '<div class="note" style="background-color: #fee2e2; border: 2px solid #ef4444; color: #991b1b; padding: 20px; border-radius: 8px; margin-bottom: 25px;">'
+                 '<strong>⚠️ ACCESSIBILITY WARNING: POTENTIAL SCANNED IMAGE</strong><br>'
+                 'This PDF appears to be a scanned image of a document rather than a text-based file. '
+                 'Screen readers will NOT be able to read this content. We have extracted images of the pages, '
+                 'but we strongly recommend finding a text-based version or using an OCR tool (like Adobe Acrobat Pro or Microsoft Lens) '
+                 'before converting to HTML.'
+                 '</div>'
+             )
+             html_parts.insert(1, scan_warning)
+             print(f"    [WARNING] PDF '{filename}' appears to be a scanned image (text blocks: {total_text_blocks}, pages: {len(doc)}).")
+
         full_content = "\n".join(html_parts)
         
         # Logging

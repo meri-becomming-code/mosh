@@ -147,23 +147,20 @@ def check_viewport(soup):
         return "Viewport meta tag missing 'width=device-width'"
     return None
 
-def check_reflow_styles(tag):
-    """Checks for fixed width containers > 320px."""
-    style = tag.get('style', '').lower()
-    if not style: return None
+    return None
+
+def check_tables_mobile(table):
+    """Reflow Check: Monitors wide tables that break mobile."""
+    # Heuristic: more than 4 columns or fixed width style
+    first_row = table.find('tr')
+    if not first_row: return None
     
-    # Check 1: fixed width > 320px
-    # [FIX] Use negative lookbehind (?<!-) to ensure we don't match 'max-width' or 'min-width'
-    width_match = re.search(r'(?<!-)width:\s*(\d+)px', style)
-    if width_match:
-        px = int(width_match.group(1))
-        if px > 320:
-            return f"Fixed width {px}px (Risk of Reflow Fail on Mobile)"
+    col_count = len(first_row.find_all(['td', 'th']))
+    if col_count > 4:
+        # Check if already wrapped in overflow container
+        if not (table.parent.name == 'div' and 'overflow-x' in table.parent.get('style', '')):
+            return f"Wide table ({col_count} columns) lacks mobile scroll wrapper"
             
-    # Check 2: Justified text
-    if "text-align: justify" in style or "text-align:justify" in style:
-        return "Avoid 'text-align: justify' (Panorama/Dyslexia Issue)"
-        
     return None
 
 def audit_file(filepath):
@@ -204,6 +201,10 @@ def audit_file(filepath):
         # Check for LaTeX in alt text (Canvas convention is good, but just FYI)
         if re.search(r'\\\(|\\\[', alt):
             pass # This is likely a Canvas Math equation, which is safe.
+            
+        # [NEW] Math verification check
+        if img.has_attr('data-math-check'):
+             results["technical"].append(f"Potential Math Equation needs LaTeX verification: {img.get('src')}")
 
     # 4. Headings
     h_issues = check_headings(soup)
@@ -216,6 +217,11 @@ def audit_file(filepath):
         for th in table.find_all('th'):
             if not th.has_attr('scope'):
                 results["technical"].append("Header cell missing scope")
+        
+        # [NEW] Table Mobile/Reflow
+        t_issue = check_tables_mobile(table)
+        if t_issue:
+            results["technical"].append(t_issue)
 
     # 6. Contrast & Style Checks (Updated)
     for tag in soup.find_all(style=True):
@@ -278,6 +284,8 @@ def get_issue_summary(results):
             elif "scope" in lower: key = "Missing Header Scope"    # [NEW]
             elif "viewport" in lower: key = "Missing Viewport"      # [NEW]
             elif "fixed width" in lower or "justify" in lower: key = "Reflow/Mobile Issue" # [NEW] Reflow checks
+            elif "wide table" in lower: key = "Table Reflow Issue" # [NEW]
+            elif "math" in lower: key = "Potential Math"           # [NEW]
             else: 
                  # Fallback: Capture the actual issue text to help debug "Other"
                  # Truncate to keep log readable

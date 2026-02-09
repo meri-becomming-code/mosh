@@ -11,6 +11,7 @@ import re
 import base64
 import tempfile
 import hashlib
+import jeanie_ai
 
 # --- Configuration ---
 BAD_ALT_TEXT = ['image', 'photo', 'picture', 'spacer', 'undefined', 'null']
@@ -37,6 +38,7 @@ class FixerIO:
         # Use user's home directory for global memory
         self.alt_memory_file = os.path.join(os.path.expanduser("~"), ".mosh_alt_memory.json")
         self.memory = self._load_memory()
+        self.api_key = "" # Gemini API Key for Jeanie Magic
 
     def _load_memory(self):
         if os.path.exists(self.alt_memory_file):
@@ -461,6 +463,10 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         elif alt.lower() == img_filename.lower():
             issue = "Filename used as alt text"
         
+        # [NEW] Math Equation Check (Flagged by run_fixer)
+        if img.has_attr('data-math-check'):
+             issue = "Potential Math Equation (Needs Verification/LaTeX)"
+        
         # [SMART SILENCE] Only flag "Review suggested" if we DON'T have a memory for this image.
         # If we have a memory, even if it contains the word "image", we trust the user's previous choice.
         elif "image" in alt.lower() and len(alt) > 10:
@@ -497,7 +503,13 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             prompt_suffix = " (Type '!!' to skip all remaining): "
             initial_val = suggestion if suggestion else alt
             
-            prompt_text = (f"    > Enter Alt Text (Press Enter for '{initial_val}')" if initial_val else "    > Enter new Alt Text") + prompt_suffix
+            if img.has_attr('data-math-check'):
+                 if io_handler.api_key:
+                     prompt_text = "    > [JEANIE MAGIC] Verify: Is this Math? Enter LaTeX, or 'MAGIC' to auto-generate, or Alt Text if no: "
+                 else:
+                     prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX (e.g. \\frac{1}{2}). If no, enter Alt Text: "
+            else:
+                 prompt_text = (f"    > Enter Alt Text (Press Enter for '{initial_val}')" if initial_val else "    > Enter new Alt Text") + prompt_suffix
             
             if img_full_path and os.path.exists(img_full_path):
                  choice = io_handler.prompt_image(prompt_text, img_full_path, context=context).strip()
@@ -514,6 +526,18 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 return modified
             
             # If they enter text (or special token), save to memory
+            # [JEANIE MAGIC] Handle Auto-LaTeX
+            if choice.upper() == "MAGIC" and io_handler.api_key and img_full_path:
+                io_handler.log("    [JEANIE] Consulting the oracle for LaTeX...")
+                latex, msg = jeanie_ai.generate_latex_from_image(img_full_path, io_handler.api_key)
+                if latex:
+                    io_handler.log(f"    [JEANIE] Generated LaTeX: {latex}")
+                    choice = latex
+                else:
+                    io_handler.log(f"    [JEANIE] Error: {msg}")
+                    # Re-prompt
+                    choice = io_handler.prompt("    > Please enter LaTeX or Alt Text manually: ").strip()
+
             if choice:
                 # [DECORATIVE LOGIC]
                 if choice == "__DECORATIVE__":
@@ -535,8 +559,14 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 io_handler.save_memory()
                 
                 # Remove any warning spans/markers if they exist
-                next_node = img.find_next_sibling()
-                # [REMOVED] ADA FIX marker cleanup is no longer needed as they are not added.
+                if img.has_attr('data-math-check'):
+                    # If it was a math check, and they entered something, we can mark it as handled
+                    if choice:
+                        img['data-math'] = choice
+                        # Also put it in Alt so non-MathJax users can see it
+                        img['alt'] = f"Equation: {choice}"
+                        io_handler.memory[mem_key] = f"Equation: {choice}"
+                    del img['data-math-check']
                 pass
                 
                 modified = True

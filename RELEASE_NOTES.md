@@ -8,6 +8,7 @@ This release focuses on automation and improved visual fidelity for course remed
     - **Word & PDF**: Images now retain their natural sizing and positioning using CSS floats.
     - **PowerPoint**: Enhanced alignment detection (left, right, or center) ensuring lecture notes follow the original slide layout.
 - **🛠️ Table Structure Sanitizer**: Automatically fixes "Invalid Table Structure" errors in Canvas by cleaning up out-of-order tags and empty content.
+- **🧠 Jeanie Magic (AI-LaTeX Conversion)**: Integrated Gemini AI to automatically generate LaTeX code from math equations in images. Just add your free API key in settings and type `MAGIC` during guided review.
 - **🔄 Sync-on-Convert**: Individual conversion buttons (Word, PPT, PDF) now automatically synchronize with the `imsmanifest.xml` for seamless Canvas imports.
 
 ## 📦 Executable Updates

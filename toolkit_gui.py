@@ -81,28 +81,28 @@ class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
 # --- Themes ---
 THEMES = {
     "light": {
-        "bg": "#FFFFF0",       # Ivory
-        "fg": "#212121",       # Dark Grey
-        "sidebar": "#0D47A1",  # Mosh's Deep Blue
+        "bg": "#F5F3ED",       # Premium Warm Pebble (Off-Cream)
+        "fg": "#2D2924",       # Deep Obsidian Text
+        "sidebar": "#4B3190",  # Mosh Purple Brand
         "sidebar_fg": "#FFFFFF",
-        "primary": "#009688",  # Teal (Buttons)
-        "accent": "#FFD700",   # Yellow (Highlight)
-        "header": "#0D47A1",   # Blue Headers
-        "subheader": "#00796B",# Teal Subheaders
-        "button": "#E0F2F1",   # Very Light Teal
-        "button_fg": "#004D40",
+        "primary": "#6A4BB1",  # Soft Saturated Purple
+        "accent": "#F59E0B",   # Warm Amber
+        "header": "#4B3190",
+        "subheader": "#2D2924",
+        "button": "#E9E5DA",   # Stone Grey Button
+        "button_fg": "#2D2924",
     },
     "dark": {
-        "bg": "#263238",       # Dark Blue Grey
-        "fg": "#FFFFF0",       # Ivory Text
-        "sidebar": "#102027",  # Very Dark Blue
-        "sidebar_fg": "#E0E0E0",
-        "primary": "#4DB6AC",  # Light Teal
-        "accent": "#FFD700",   # Yellow
-        "header": "#81D4FA",   # Light Blue
-        "subheader": "#80CBC4",# Light Teal
-        "button": "#37474F",   # Dark Button
-        "button_fg": "#FFFFFF",
+        "bg": "#1A1B1E",       # Deep Charcoal / Obsidian
+        "fg": "#ECECEC",       # Soft Silver Text
+        "sidebar": "#111113",  # High-Contrast Black Sidebar
+        "sidebar_fg": "#FFFFFF",
+        "primary": "#8B5CF6",  # Electric Violet
+        "accent": "#FBBF24",   # Gold Accent
+        "header": "#FFFFFF",
+        "subheader": "#A1A1AA",# Zinc / Slate Grey
+        "button": "#2D2E32",   # Deep Grey Button
+        "button_fg": "#ECECEC",
     }
 }
 
@@ -155,6 +155,7 @@ class ToolkitGUI:
 
     def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id=""):
         self.config["api_key"] = key
+        self.gui_handler.api_key = key # Sync to handler immediately
         self.config["show_instructions"] = start_show
         self.config["theme"] = theme
         self.config["canvas_url"] = canvas_url
@@ -216,8 +217,8 @@ and to all the other students struggling with their own challenges.
 🚀 QUICK START WORKFLOW
 -----------------------
 1. Select Project: Click "Browse Folder" and select your exported course folder.
-2. Auto-Fix: Click "Auto-Fix Issues" to fix headings, tables, and contrast issues.
-3. Guided Review: Click "Guided Review" to write Alt Text for images and check links.
+2. Guided Review: Click "Guided Review" to write Alt Text for images and check links.
+3. Auto-Fix: Click "Auto-Fix Issues" to fix headings, tables, and contrast issues.
 4. Export: Click "Repackage Course (.imscc)" to create a new Canvas package.
 
 💡 TIPS FOR FACULTY
@@ -264,32 +265,43 @@ and to all the other students struggling with their own challenges.
         style.configure("TLabel", background=colors["bg"], foreground=colors["fg"])
         
         # Headers
-        style.configure("Header.TLabel", font=("Segoe UI", 18, "bold"), foreground=colors["header"])
-        style.configure("SubHeader.TLabel", font=("Segoe UI", 12, "bold"), foreground=colors["subheader"])
+        style.configure("Header.TLabel", font=("Segoe UI", 20, "bold"), foreground=colors["header"])
+        style.configure("SubHeader.TLabel", font=("Segoe UI", 13, "bold"), foreground=colors["subheader"])
         
         # Sidebar
         style.configure("Sidebar.TFrame", background=colors["sidebar"])
         style.configure("Sidebar.TLabel", background=colors["sidebar"], foreground=colors["sidebar_fg"], font=("Segoe UI", 10))
         
-        # Buttons
+        # Modern Card Frame
+        style.configure("Card.TFrame", background=colors["bg"], relief="solid", borderwidth=1)
+
+        # Buttons (Unified Modern Look - 3D Phone Inspired)
         style.configure("TButton", 
-            padding=6, 
-            relief="flat", 
+            padding=10, 
+            relief="raised", 
+            borderwidth=2,
             background=colors["button"], 
             foreground=colors["button_fg"],
-            font=("Segoe UI", 9)
+            font=("Segoe UI", 10, "bold")
         )
-        style.map("TButton", background=[('active', colors["accent"])], foreground=[('active', 'black')])
+        style.map("TButton", 
+            background=[('active', colors["accent"]), ('pressed', colors["primary"])],
+            foreground=[('active', '#000000'), ('pressed', '#FFFFFF')],
+            relief=[('pressed', 'sunken')]
+        )
 
-        # Action Buttons (Primary)
+        # Action Buttons (Primary - Vibrant)
         style.configure("Action.TButton", 
-            font=("Segoe UI", 10, "bold"), 
+            font=("Segoe UI", 11, "bold"), 
             background=colors["primary"], 
-            foreground="white"
+            foreground="white",
+            relief="raised",
+            borderwidth=3
         )
         style.map("Action.TButton", 
             background=[('active', colors["accent"]), ('!disabled', colors["primary"])],
-            foreground=[('active', 'black')]
+            foreground=[('active', '#000000')],
+            relief=[('pressed', 'sunken')]
         )
         
         # Force background update for root
@@ -341,6 +353,18 @@ and to all the other students struggling with their own challenges.
         ent_course.insert(0, self.config.get("canvas_course_id", ""))
         ent_course.pack(side="left", pady=5)
 
+        tk.Label(dialog, text="4. [OPTIONAL] Jeanie Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        tk.Label(dialog, text="Required for 'MAGIC' LaTeX generation. Get one for free at Google AI Studio.", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        ent_api = tk.Entry(dialog, width=60, show="*")
+        ent_api.insert(0, self.config.get("api_key", ""))
+        ent_api.pack(pady=5, padx=40)
+        
+        def open_api_help():
+            webbrowser.open("https://aistudio.google.com/app/apikey")
+            messagebox.showinfo("Gemini API", "I've opened Google AI Studio.\n\n1. Log in with your Google account.\n2. Click 'Create API key'.\n3. Copy the key and paste it into the 4th box here.")
+            
+        tk.Button(dialog, text="🔑 Get a Free Gemini Key", command=open_api_help, font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+
         def open_course_help():
             messagebox.showinfo("Finding Your Course ID", 
                                 "It's easy! \n\n"
@@ -356,14 +380,14 @@ and to all the other students struggling with their own challenges.
 
         def save():
             self._save_config(
-                self.config.get("api_key", ""),
+                ent_api.get().strip(),
                 self.config.get("show_instructions", True),
                 self.config.get("theme", "light"),
                 ent_url.get().strip(),
                 ent_token.get().strip(),
                 ent_course.get().strip()
             )
-            messagebox.showinfo("Saved", "Settings saved! You're ready to go.")
+            messagebox.showinfo("Saved", "Settings saved! Jeanie Magic is now active if you provided a key.")
             dialog.destroy()
 
         def test_safety():
@@ -470,10 +494,10 @@ and to all the other students struggling with their own challenges.
         scrollbar.pack(side="right", fill="y")
 
         # -- Target Project Section --
-        ttk.Label(content, text="1. Select Project", style="SubHeader.TLabel").pack(anchor="w")
+        ttk.Label(content, text="1. Select Project", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
-        frame_dir = ttk.Frame(content)
-        frame_dir.pack(fill="x", pady=(5, 15))
+        frame_dir = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_dir.pack(fill="x", pady=(0, 20))
         
         # Row 1: Import Button
         btn_import = ttk.Button(
@@ -482,7 +506,7 @@ and to all the other students struggling with their own challenges.
             command=self._import_package,
             style="Action.TButton"
         )
-        btn_import.pack(side="top", fill="x", pady=(0, 5))
+        btn_import.pack(side="top", fill="x", pady=(0, 8))
 
         # Row 1b: Connect to Canvas (Barney Mode)
         btn_canvas = ttk.Button(
@@ -491,7 +515,7 @@ and to all the other students struggling with their own challenges.
             command=self._show_canvas_settings,
             style="Action.TButton"
         )
-        btn_canvas.pack(side="top", fill="x", pady=(0, 5))
+        btn_canvas.pack(side="top", fill="x", pady=(0, 12))
         
         # Row 2: Folder Browser
         frame_browse = ttk.Frame(frame_dir)
@@ -509,25 +533,25 @@ and to all the other students struggling with their own challenges.
 
         # -- Step 2: Converters --
         # [NEW] BIG COPYRIGHT DISCLAIMER
-        disclaimer_frame = tk.Frame(content, bg="#fff9c4", padx=15, pady=15, highlightbackground="#fbc02d", highlightthickness=1)
-        disclaimer_frame.pack(fill="x", pady=(5, 15))
+        disclaimer_frame = tk.Frame(content, bg="#FEF3C7", padx=20, pady=20, highlightbackground="#FCD34D", highlightthickness=1)
+        disclaimer_frame.pack(fill="x", pady=(0, 25))
         
-        tk.Label(disclaimer_frame, text="⚠️ IMPORTANT: COPYRIGHT & USAGE", font=("Segoe UI", 10, "bold"), bg="#fff9c4", fg="#f57f17").pack(anchor="w")
+        tk.Label(disclaimer_frame, text="⚠️ IMPORTANT: COPYRIGHT & USAGE", font=("Segoe UI", 11, "bold"), bg="#FEF3C7", fg="#B45309").pack(anchor="w")
         disclaimer_text = (
             "ONLY use this tool for content YOU created or OER materials with a Creative Commons license allowing modifications. "
             "DO NOT convert publisher-provided materials (e.g. Pearson, McGraw Hill, Cengage) unless you have explicit written permission. "
             "Most publisher licenses prohibit creating derivative HTML versions of their proprietary files.\n\n"
             "Mosh says: 'Respect the work of others like you want yours respected!'"
         )
-        tk.Label(disclaimer_frame, text=disclaimer_text, wraplength=550, bg="#fff9c4", fg="#5f4339", justify="left", font=("Segoe UI", 9)).pack(pady=(5,0))
+        tk.Label(disclaimer_frame, text=disclaimer_text, wraplength=550, bg="#FEF3C7", fg="#78350F", justify="left", font=("Segoe UI", 10)).pack(pady=(8,0))
 
-        ttk.Label(content, text="2. Convert Files", style="SubHeader.TLabel").pack(anchor="w")
+        ttk.Label(content, text="2. Convert & Build Pages", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
-        frame_convert = ttk.Frame(content)
-        frame_convert.pack(fill="x", pady=(10, 20))
+        frame_convert = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_convert.pack(fill="x", pady=(0, 10))
         
-        self.btn_wizard = ttk.Button(frame_convert, text="🪄 Conversion Wizard (Word/PPT -> Canvas Pages)", command=self._show_conversion_wizard, style="Action.TButton")
-        self.btn_wizard.pack(fill="x", pady=5)
+        self.btn_wizard = ttk.Button(frame_convert, text="🪄 Select Specific Files to Convert", command=self._show_conversion_wizard, style="Action.TButton")
+        self.btn_wizard.pack(fill="x", pady=(0, 8))
         
         frame_singles = ttk.Frame(frame_convert)
         frame_singles.pack(fill="x")
@@ -541,23 +565,35 @@ and to all the other students struggling with their own challenges.
         self.btn_pdf = ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf"))
         self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
 
-        self.btn_batch = ttk.Button(frame_convert, text="🎲 Roll the Dice: Convert Everything (Batch Mode) 🎲", 
-                                    command=self._run_batch_conversion, style="Action.TButton")
-        self.btn_batch.pack(fill="x", pady=(10, 5))
+        self.btn_batch = ttk.Button(frame_convert, text="📂 Convert Everything (Batch Mode)", 
+                                     command=self._run_batch_conversion, style="Action.TButton")
+        self.btn_batch.pack(fill="x", pady=(12, 0))
+
+        # [NEW] Quick AI Setup 
+        frame_ai_easy = tk.Frame(content, bg=colors["bg"])
+        frame_ai_easy.pack(fill="x", pady=(0, 25))
+        
+        def open_ai_studio():
+             webbrowser.open("https://aistudio.google.com/app/apikey")
+             messagebox.showinfo("Jeanie AI", "I've opened the key page!\n\n1. Copy the key from your browser.\n2. Click 'Connect to Playground' (Step 1) here.\n3. Paste it into the 'Jeanie Magic' box.")
+
+        tk.Button(frame_ai_easy, text="✨ Enable Jeanie AI (Get Free Math Help Key)", 
+                  command=open_ai_studio, bg="#F0F9FF", fg="#0369A1", 
+                  relief="groove", font=("Segoe UI", 9, "bold"), padx=10).pack(pady=5)
 
 
         # -- Step 3: Remediation Actions (Grid) --
-        ttk.Label(content, text="3. Fix & Review", style="SubHeader.TLabel").pack(anchor="w")
+        ttk.Label(content, text="3. Fix & Review", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
-        frame_actions = ttk.Frame(content)
-        frame_actions.pack(fill="x", pady=(10, 20))
+        frame_actions = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_actions.pack(fill="x", pady=(0, 25))
         
         # Friendly Button Names
-        self.btn_auto = ttk.Button(frame_actions, text="Auto-Fix Issues\n(Headings, Tables, Contrast)", command=self._run_auto_fixer, style="Action.TButton")
-        self.btn_auto.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        
-        self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Image Descriptions & Links)", command=self._run_interactive, style="Action.TButton")
-        self.btn_inter.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Descriptions & Links)", command=self._run_interactive, style="Action.TButton")
+        self.btn_inter.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+        self.btn_auto = ttk.Button(frame_actions, text="Auto-Fix Issues\n(Headings & Contrast)", command=self._run_auto_fixer, style="Action.TButton")
+        self.btn_auto.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
         # Row 2 (Audit)
         self.btn_audit = ttk.Button(frame_actions, text="Quick Report\n(Is it Compliant?)", command=self._run_audit, style="Action.TButton")
@@ -565,13 +601,12 @@ and to all the other students struggling with their own challenges.
 
         frame_actions.columnconfigure(0, weight=1)
         frame_actions.columnconfigure(1, weight=1)
-        frame_actions.columnconfigure(2, weight=1)
 
 
         # -- Step 4: Final Launch --
-        ttk.Label(content, text="4. Final Step", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
-        frame_final = ttk.Frame(content)
-        frame_final.pack(fill="x", pady=5)
+        ttk.Label(content, text="4. Final Step", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        frame_final = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_final.pack(fill="x", pady=(0, 25))
 
         self.btn_check = ttk.Button(
             frame_final, 
@@ -579,7 +614,7 @@ and to all the other students struggling with their own challenges.
             command=self._show_preflight_dialog,
             style="Action.TButton"
         )
-        self.btn_check.pack(fill="x", pady=2)
+        self.btn_check.pack(fill="x")
 
 
         # -- Logs --
@@ -913,19 +948,11 @@ and to all the other students struggling with their own challenges.
             self.btn_stop.config(state='disabled')
 
 
-            def on_progress(curr, total, fname, result):
-                self.gui_handler.log(f"[{curr}/{total}] {fname} -> {result[:40]}...")
-
-            results = ai_helper.batch_generate_alt_text(found_images, self.api_key, on_progress)
-            self.gui_handler.log(f"Batch complete. {len(results)} images processed.")
-            messagebox.showinfo("Batch Complete", f"Processed {len(found_images)} images.\nResults are stored in Alt-Text Memory.")
-
-        self._run_task_in_thread(task, "Batch AI Alt-Text")
-
-
     def _run_task_in_thread(self, task_func, task_name):
         if self.is_running: return
         self._disable_buttons()
+        # [NEW] Sync API Key to handler before starting
+        self.gui_handler.api_key = self.config.get("api_key", "")
         self.target_dir = self.lbl_dir.get().strip()
         
         def worker():
@@ -1061,8 +1088,8 @@ and to all the other students struggling with their own challenges.
 
         🚀 QUICK START WORKFLOW:
         1. Select Project: Click "Browse Folder" and select your Canvas export folder.
-        2. Auto-Fix: Click "Auto-Fix Issues" to handle headings, tables, and contrast.
-        3. Guided Review: Click "Guided Review" to write Alt Text for images.
+        2. Guided Review: Click "Guided Review" to write Alt Text for images.
+        3. Auto-Fix: Click "Auto-Fix Issues" to handle headings, tables, and contrast.
         4. Repackage: Click "Repackage Course" to create a new file for Canvas.
 
         📦 SAFETY ARCHIVE:
@@ -1077,21 +1104,36 @@ and to all the other students struggling with their own challenges.
         🐛 Support: meredithkasprak@gmail.com
         """
         
-        lbl = tk.Label(dialog, text=intro, justify="left", font=("Segoe UI", 11), 
-                       wraplength=650, bg=colors["bg"], fg=colors["fg"])
-        lbl.pack(pady=20, padx=30)
+        # [NEW] Premium Intro Card
+        card = tk.Frame(dialog, bg=colors["bg"], highlightbackground=colors["primary"], highlightthickness=2, padx=20, pady=20)
+        card.pack(pady=40, padx=40, fill="both", expand=True)
+
+        lbl_title = tk.Label(card, text="MOSH'S TOOLKIT", font=("Segoe UI", 24, "bold"), bg=colors["bg"], fg=colors["header"])
+        lbl_title.pack(pady=(0, 10))
+
+        lbl = tk.Label(card, text=intro, justify="left", font=("Segoe UI", 11), 
+                       wraplength=550, bg=colors["bg"], fg=colors["fg"])
+        lbl.pack(pady=10, padx=10)
         
         # Checkbox
         var_show = tk.BooleanVar(value=True if force else self.config.get("show_instructions", True))
         
         def on_close():
-            self._save_config("", var_show.get())
+            # Keep existing API key/settings
+            self._save_config(
+                self.config.get("api_key", ""), 
+                var_show.get(), 
+                self.config.get("theme", "light"),
+                self.config.get("canvas_url", ""),
+                self.config.get("canvas_token", ""),
+                self.config.get("canvas_course_id", "")
+            )
             dialog.destroy()
             
-        chk = tk.Checkbutton(dialog, text="Show this message on startup", variable=var_show)
-        chk.pack(pady=10)
+        chk = tk.Checkbutton(dialog, text="Show this message on startup", variable=var_show, bg=colors["bg"], fg=colors["fg"], selectcolor=colors["bg"], activebackground=colors["bg"])
+        chk.pack(pady=5)
         
-        tk.Button(dialog, text="Get Started", command=on_close, bg="#4b3190", fg="white", font=("Arial", 10, "bold"), width=20).pack(pady=10)
+        tk.Button(dialog, text="Let's Get Started ▶", command=on_close, bg=colors["primary"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", padx=30, pady=10).pack(pady=(10, 30))
 
 
     def _show_math_guide(self):
@@ -1274,7 +1316,14 @@ YOUR WORKFLOW:
                 self.gui_handler.log(f"✅ {fname} Processed Successfully.")
             
             self.gui_handler.log("--- Page Builder Process Complete ---")
-            messagebox.showinfo("Done", "Your pages have been built, reviewed, and uploaded!")
+            
+            # [NEW] Open folder with user's original files
+            archive_path = os.path.join(self.target_dir, converter_utils.ARCHIVE_FOLDER_NAME)
+            if os.path.exists(archive_path):
+                self.gui_handler.log("📂 Opening archive folder with your original files for safekeeping...")
+                os.startfile(archive_path)
+
+            messagebox.showinfo("Done", "Your pages have been built, reviewed, and uploaded!\n\nI have opened the folder containing your original files so you can move them to a safe place.")
 
         self._run_task_in_thread(task, "Conversion Wizard")
 
@@ -1606,7 +1655,16 @@ YOUR WORKFLOW:
             self.root.after(0, ask_review)
 
             self.gui_handler.log("\n🛡️ Remember: Check the files in Canvas before publishing!")
-            self.root.after(0, lambda: messagebox.showinfo("Gamble Complete", f"Processed {len(found_files)} files.\nCheck the logs for details."))
+            
+            # [NEW] Open folder with user's original files
+            archive_path = os.path.join(self.target_dir, converter_utils.ARCHIVE_FOLDER_NAME)
+            if os.path.exists(archive_path):
+                self.gui_handler.log("📂 Opening archive folder with your original files for safekeeping...")
+                os.startfile(archive_path)
+
+            self.root.after(0, lambda: messagebox.showinfo("Gamble Complete", 
+                f"Processed {len(found_files)} files.\nCheck the logs for details.\n\n"
+                "I have opened the folder containing your original files so you can move them to a safe place."))
 
         self._run_task_in_thread(task, "Batch Gamble")
 

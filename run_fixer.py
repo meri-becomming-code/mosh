@@ -70,6 +70,51 @@ def adjust_color_for_contrast(fg_hex, bg_hex, target_ratio=4.5):
             
     return "#000000" if bg_lum > 0.5 else "#ffffff"
 
+def fix_emoji_accessibility(soup):
+    """Wraps emojis in spans with role='img' and aria-label."""
+    import unicodedata
+    # Emoji regex (broad range)
+    emoji_pattern = re.compile(r'[\U00010000-\U0010ffff]', flags=re.UNICODE)
+    
+    fixes = []
+    # Find text nodes containing emojis
+    for text_node in soup.find_all(string=True):
+        if text_node.parent.name in ['script', 'style']: continue
+        
+        matches = list(emoji_pattern.finditer(text_node))
+        if matches:
+            # We found emojis. We need to replace them with spans.
+            # This is tricky with BeautifulSoup strings. 
+            # We'll build a new content list.
+            new_contents = []
+            last_idx = 0
+            for match in matches:
+                # Add preceding text
+                new_contents.append(text_node[last_idx:match.start()])
+                # Create emoji span
+                emoji = match.group()
+                try:
+                    desc = unicodedata.name(emoji).title()
+                except:
+                    desc = "Emoji"
+                
+                span = soup.new_tag("span", attrs={"role": "img", "aria-label": desc})
+                span.string = emoji
+                new_contents.append(span)
+                last_idx = match.end()
+            
+            # Add remaining text
+            new_contents.append(text_node[last_idx:])
+            
+            # Replace text node with new contents
+            for content in reversed(new_contents):
+                if content: # Avoid empty strings
+                    text_node.insert_after(content)
+            text_node.extract()
+            fixes.append(f"Accessible-wrapped {len(matches)} emojis")
+            
+    return fixes
+
 def remediate_html_file(filepath):
     """
     MASTER REMEDIATION LOGIC (V3):
@@ -270,11 +315,23 @@ def remediate_html_file(filepath):
                     th['scope'] = "row"
                 fixes.append("Assigned WCAG scope to table header")
         
-        # 5. Canvas Style Fix
         if not table.has_attr('border'):
             table['border'] = "1"
         if 'border-collapse' not in table.get('style', ''):
             table['style'] = table.get('style', '') + " border-collapse: collapse; min-width: 50%;"
+        
+        # 6. Mobile Reflow Check (UX)
+        # If table has more than 5 columns or fixed width, warn or wrap
+        col_count = 0
+        first_row = table.find('tr')
+        if first_row: col_count = len(first_row.find_all(['td', 'th']))
+        
+        if col_count > 4:
+            # Wrap in a scrollable div for mobile
+            if not (table.parent.name == 'div' and 'overflow-x' in table.parent.get('style', '')):
+                wrapper = soup.new_tag('div', style="overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 20px; border: 1px solid #eee; padding: 5px;")
+                table.wrap(wrapper)
+                fixes.append(f"Added horizontal scroll wrapper for wide table ({col_count} columns)")
 
     # --- Part 6: Heading Hierarchy & Standardization (Toolkit 1 Logic + Style Standard) ---
     
@@ -368,6 +425,14 @@ def remediate_html_file(filepath):
         if needs_fix:
             # Note: Placeholders and markers removed per user request. Fixes are tracked in 'fixes' list only.
             fixes.append(f"Flagged image for review: {reason}")
+            
+        # 7c. POTENTIAL EQUATION DETECTION (Math Check)
+        # Heuristic: Small images with high contrast, or alt text containing math terms but no LaTeX
+        src = img.get('src', '').lower()
+        if not img.has_attr('data-math') and (any(term in alt_val.lower() or term in src for term in ['eq', 'formula', 'math', 'sigma', 'sqrt', 'frac'])):
+             # Mark for interactive review to suggest LaTeX
+             img['data-math-check'] = "true"
+             fixes.append(f"Flagged potential math equation for accessibility verification: {os.path.basename(src)}")
 
     # --- Part 8: Typography & Accessibility (Small Fonts / AUTO-CONTRAST) ---
     import run_audit # Use get_style_property for robust lookup
@@ -521,6 +586,10 @@ def remediate_html_file(filepath):
         for tag in soup.find_all(tag_name):
             tag.unwrap()
             fixes.append(f"Removed deprecated <{tag_name}> tag")
+
+    # --- Part 11: Final Polish & Special Checks ---
+    emoji_fixes = fix_emoji_accessibility(soup)
+    fixes.extend(emoji_fixes)
 
     # Deduplicate fixes
     unique_fixes = list(set(fixes))

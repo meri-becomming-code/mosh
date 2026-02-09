@@ -40,6 +40,7 @@ pip install -r requirements.txt
 2.  Select **Option 1 (Run Toolkit)**.
 3.  **Step 1:** It will ask if you want to auto-fix headings/tables. Type `Y`.
 4.  **Step 2:** It will then find any images missing descriptions and ask you to type them.
+5.  **✨ Jeanie Magic (New!)**: If you have math equations, you can now enter your Gemini API Key in settings. During Step 2, simply type `MAGIC` when prompted for an equation's LaTeX, and Jeanie will generate it for you!
 
 ### 3. Final Check
 Run **Option 2 (Audit Report)** if you want a final pass summary.
