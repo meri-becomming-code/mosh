@@ -506,6 +506,19 @@ and to all the other students struggling with their own challenges.
 
 
         # -- Step 2: Converters --
+        # [NEW] BIG COPYRIGHT DISCLAIMER
+        disclaimer_frame = tk.Frame(content, bg="#fff9c4", padx=15, pady=15, highlightbackground="#fbc02d", highlightthickness=1)
+        disclaimer_frame.pack(fill="x", pady=(5, 15))
+        
+        tk.Label(disclaimer_frame, text="⚠️ IMPORTANT: COPYRIGHT & USAGE", font=("Segoe UI", 10, "bold"), bg="#fff9c4", fg="#f57f17").pack(anchor="w")
+        disclaimer_text = (
+            "ONLY use this tool for content YOU created or OER materials with a Creative Commons license allowing modifications. "
+            "DO NOT convert publisher-provided materials (e.g. Pearson, McGraw Hill, Cengage) unless you have explicit written permission. "
+            "Most publisher licenses prohibit creating derivative HTML versions of their proprietary files.\n\n"
+            "Mosh says: 'Respect the work of others like you want yours respected!'"
+        )
+        tk.Label(disclaimer_frame, text=disclaimer_text, wraplength=550, bg="#fff9c4", fg="#5f4339", justify="left", font=("Segoe UI", 9)).pack(pady=(5,0))
+
         ttk.Label(content, text="2. Convert Files", style="SubHeader.TLabel").pack(anchor="w")
         
         frame_convert = ttk.Frame(content)
@@ -1140,8 +1153,13 @@ YOUR WORKFLOW:
         dialog.focus_force()
         dialog.grab_set()
         
-        tk.Label(dialog, text="Select Files to Convert", font=("Arial", 12, "bold"), fg="#4b3190").pack(pady=10)
-        tk.Label(dialog, text="We will process these one by one. You will preview each change.", font=("Arial", 10)).pack(pady=(0,10))
+        tk.Label(dialog, text="Select Files to Convert", font=("Segoe UI", 12, "bold"), fg="#4b3190").pack(pady=(10, 0))
+        
+        # [NEW] Wizard Disclaimer
+        wiz_disclaimer = "⚠️ DO NOT convert publisher content. Use only for YOUR materials or OER."
+        tk.Label(dialog, text=wiz_disclaimer, font=("Segoe UI", 9, "bold"), fg="#d32f2f").pack(pady=(2, 10))
+        
+        tk.Label(dialog, text="We will process these one by one. You will preview each change.", font=("Segoe UI", 10)).pack(pady=(0,10))
 
         # Scrollable Frame for Checkboxes
         frame_canvas = tk.Frame(dialog)
@@ -1260,6 +1278,16 @@ YOUR WORKFLOW:
 
     def _convert_file(self, ext):
         """Generic handler for file conversion."""
+        # [NEW] Copyright check
+        msg_copyright = (f"⚠️ COPYRIGHT AUDIT\n\n"
+                        f"Is this {ext.upper()} file one that YOU created or an OER resource?\n\n"
+                        f"If this is PUBLISHER MATERIAL (e.g. from a textbook), you should NOT convert it to HTML "
+                        f"unless your contract specifically allows creating derivative accessible versions.\n\n"
+                        f"Do you have the rights to convert this file?")
+        
+        if not messagebox.askyesno("Copyright Check", msg_copyright):
+            return
+
         file_path = filedialog.askopenfilename(filetypes=[(f"{ext.upper()} Files", f"*.{ext}")])
         if not file_path: return
         
@@ -1290,6 +1318,12 @@ YOUR WORKFLOW:
                  self.gui_handler.log(f"[ERROR] Conversion failed: {err}")
                  return
 
+            # [NEW] Mandatory ADA remediation
+            self.gui_handler.log(f"   [ADA] Running Auto-Fixer (Headings, Tables, Contrast)...")
+            interactive_fixer.run_auto_fixer(output_path, self.gui_handler)
+            
+            self.gui_handler.log(f"   [ADA] Launching Interactive Review...")
+            interactive_fixer.scan_and_fix_file(output_path, self.gui_handler, self.target_dir)
 
             self.gui_handler.log(f"[SUCCESS] Ready for Canvas: {os.path.basename(output_path)}")
             
@@ -1315,8 +1349,7 @@ YOUR WORKFLOW:
 
             # 4. Success / Info
             if ext == "pptx":
-                self.gui_handler.log("[INFO] Images extracted with [FIX_ME] tags.")
-                self.gui_handler.log("!!! IMPORTANT: Run '2. Interactive Fixer' now to fix image descriptions !!!")
+                self.gui_handler.log("[INFO] PowerPoint conversion and interactive review complete.")
 
             # 5. Link Updater
             msg_link = (f"Excellent. The original file is untouched.\n\n"
@@ -1358,6 +1391,10 @@ YOUR WORKFLOW:
         self.gui_handler.log(f"   [Sync] Uploading to Canvas: {fname}...")
         
         try:
+            # [NEW] Mandatory Final ADA Check before Upload
+            self.gui_handler.log(f"   [Sync] Running Final ADA Compliance Check...")
+            interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
+
             # 1. Read HTML
             with open(html_path, 'r', encoding='utf-8') as f:
                 html_content = f.read()
@@ -1459,6 +1496,8 @@ YOUR WORKFLOW:
         """Processes ALL convertible files in one go without per-file verification."""
         # 1. Scary Warning
         msg = ("🎲 ROLL THE DICE: BATCH CONVERSION 🎲\n\n"
+               "⚠️ IMPORTANT LEGAL CHECK: ONLY use this for content YOU created or OER materials with modification rights.\n"
+               "❌ DO NOT use on publisher content (Pearson, McGraw Hill, Cengage, etc.) without explicit permission.\n\n"
                "WARNING: This will convert EVERY Word, PPT, Excel, and PDF file in your project to Canvas WikiPages automatically.\n\n"
                "- It is NOT perfect. Layouts may break.\n"
                "- Original files will be moved to the archive folder for safety.\n"

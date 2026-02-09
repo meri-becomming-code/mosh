@@ -464,6 +464,74 @@ def convert_excel_to_html(xlsx_path):
         return None, str(e)
 
 
+def get_shape_text_styles(shape, theme=None):
+    """Extracts CSS styles (color, background-color, border, rotation) from a shape."""
+    styles = []
+    
+    # 1. Background Color (Shape Fill)
+    try:
+        if shape.fill.type == 1: # Solid fill
+            rgb = shape.fill.fore_color.rgb
+            if rgb: styles.append(f"background-color: #{rgb};")
+    except: pass
+    
+    # 2. Border / Line
+    try:
+        if shape.line.fill.type == 1: # Solid line
+            rgb = shape.line.color.rgb
+            width = int(shape.line.width / 12700) # CM to Px approx
+            if rgb: styles.append(f"border: {width}px solid #{rgb};")
+    except: pass
+
+    # 3. Rotation
+    try:
+        if shape.rotation != 0:
+            styles.append(f"transform: rotate({shape.rotation}deg);")
+    except: pass
+
+    # 4. Text Color (Looking at first paragraph/run)
+    try:
+        if shape.has_text_frame and shape.text_frame.paragraphs:
+            para = shape.text_frame.paragraphs[0]
+            if para.runs:
+                rgb = para.runs[0].font.color.rgb
+                if rgb: styles.append(f"color: #{rgb};")
+            elif para.font.color and para.font.color.rgb:
+                 styles.append(f"color: #{para.font.color.rgb};")
+    except: pass
+    
+    # 5. Padding/Border if background/border exists
+    if any(k in s for s in styles for k in ["background-color", "border"]):
+        styles.append("padding: 15px; border-radius: 8px; margin-bottom: 10px;")
+    
+    return " ".join(styles)
+
+def get_image_styles(shape):
+    """Specific styles for pictures like borders and rotation."""
+    styles = []
+    try:
+        if shape.rotation != 0:
+            styles.append(f"transform: rotate({shape.rotation}deg);")
+        
+        if shape.line.fill.type == 1:
+            rgb = shape.line.color.rgb
+            width = int(shape.line.width / 12700)
+            if rgb: styles.append(f"border: {width}px solid #{rgb};")
+    except: pass
+    return " ".join(styles)
+
+
+def extract_all_shapes_recursive(shapes):
+    """Recursively flattened list of shapes (handles groups)."""
+    flat_list = []
+    for shape in shapes:
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            flat_list.extend(extract_all_shapes_recursive(shape.shapes))
+        else:
+            flat_list.append(shape)
+    return flat_list
+
+
 def convert_ppt_to_html(ppt_path, io_handler=None):
     """Converts PPTX to HTML Lecture Notes + Extracts Images."""
     if not Presentation:
@@ -525,7 +593,10 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                 html_parts.append(f'<h2 class="slide-title">{title_text}</h2>')
             
             # Content (Text & Images)
-            # [BARNEY FIX] Sort shapes by position to ensure reading order and side-by-side floating
+            # [BARNEY FIX] Recursive extraction to catch text inside Groups
+            all_shapes = extract_all_shapes_recursive(slide.shapes)
+            
+            # Sort shapes by position to ensure reading order and side-by-side floating
             # We round to nearest 10 pixels to group items that are roughly on the same vertical line
             def shape_sort_key(s):
                 try:
@@ -537,7 +608,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                 except:
                     return (0, 0, 0)
 
-            sorted_shapes = sorted(slide.shapes, key=shape_sort_key)
+            sorted_shapes = sorted(all_shapes, key=shape_sort_key)
             
             for shape in sorted_shapes:
                 # Text
@@ -580,26 +651,51 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                         html_parts.append(f'<pre class="code-block" style="{style}">{safe_text}</pre>')
                         continue
 
-                    # [SMART FIX] 2. Improved Bullet Detection
-                    # Instead of assuming bullets, we check the actual paragraph level/bullet property
+                    # [NEW] Extract Text Box Styles (Colors/Backgrounds)
+                    box_style = get_shape_text_styles(shape, theme)
+                    if box_style:
+                        html_parts.append(f'<div class="text-box" style="{box_style}">')
+
+                    # [SMART FIX] 2. Improved Bullet Detection + Hyperlink Preservation
                     text_content = []
                     for paragraph in shape.text_frame.paragraphs:
-                        txt = paragraph.text.strip()
-                        if not txt: continue
+                        if not paragraph.text.strip(): continue
                         
+                        # Build paragraph content from runs to preserve links
+                        para_html_parts = []
+                        for run in paragraph.runs:
+                            run_text = run.text.replace("<", "&lt;").replace(">", "&gt;")
+                            if not run_text: continue
+                            
+                            # Check for Hyperlink
+                            hlink = run.hyperlink.address
+                            if hlink:
+                                para_html_parts.append(f'<a href="{hlink}">{run_text}</a>')
+                            else:
+                                # Preserving Bold/Italic if clear
+                                transformed = run_text
+                                try:
+                                    if run.font.bold: transformed = f"<strong>{transformed}</strong>"
+                                    if run.font.italic: transformed = f"<em>{transformed}</em>"
+                                except: pass
+                                para_html_parts.append(transformed)
+                        
+                        full_para_html = "".join(para_html_parts)
+                        if not full_para_html.strip(): continue
+
                         # Check if this paragraph is actually a bullet
                         is_bullet = False
                         try:
                             if paragraph.level > 0:
                                 is_bullet = True
-                            elif txt.startswith(('•', '-', '*', '◦', '▪')):
+                            elif paragraph.text.strip().startswith(('•', '-', '*', '◦', '▪')):
                                 is_bullet = True
                         except: pass
 
                         if is_bullet:
-                            text_content.append(f"<li>{txt}</li>")
+                            text_content.append(f"<li>{full_para_html}</li>")
                         else:
-                            text_content.append(f"<p>{txt}</p>")
+                            text_content.append(f"<p>{full_para_html}</p>")
                     
                     if text_content:
                         final_shape_html = ""
@@ -618,6 +714,9 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                         if in_list:
                             final_shape_html += "</ul>"
                         html_parts.append(final_shape_html)
+                    
+                    if box_style:
+                        html_parts.append('</div>')
 
                 # Tables
                 if shape.has_table:
@@ -672,6 +771,10 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                         else:
                             float_style = "float: right; margin: 0 0 15px 20px;"
                         
+                        # [NEW] Enhanced Image Styles (Borders/Rotation)
+                        extra_img_style = get_image_styles(shape)
+                        final_img_style = f"{float_style} {extra_img_style}".strip()
+                        
                         # [SMART FIX] Silent Memory and prompt
                         alt_text = "" # Default to decorative/empty if skipped
                         if io_handler:
@@ -691,9 +794,19 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                                     io_handler.memory[mem_key] = alt_text
                                     io_handler.save_memory()
 
-                        html_parts.append(f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{float_style}">')
+                        html_parts.append(f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}">')
                     except Exception as img_err:
                         print(f"Skipped image on slide {slide_num}: {img_err}")
+
+            # [NEW] Capture Speaker Notes (Essential context often missed)
+            try:
+                if slide.has_notes_slide:
+                    notes_text = slide.notes_slide.notes_text_frame.text.strip()
+                    if notes_text:
+                        html_parts.append('<div class="speaker-notes" style="margin-top: 30px; padding: 20px; background: #f9f9f9; border-left: 4px solid #4b3190; font-style: italic;">')
+                        html_parts.append(f'<strong>Speaker Notes:</strong><br>{notes_text.replace("\n", "<br>")}')
+                        html_parts.append('</div>')
+            except: pass
 
             html_parts.append('</div>')
 

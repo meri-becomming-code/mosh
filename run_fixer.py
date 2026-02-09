@@ -1,8 +1,6 @@
-# Created by Meri Kasprak with the assistance of Gemini.
-# Released freely under the GNU General Public License version 3. USE AT YOUR OWN RISK.
-
 import os
 import re
+import colorsys
 from bs4 import BeautifulSoup, Comment
 
 # --- Configuration: "Deep Obsidian" Code Theme ---
@@ -12,6 +10,65 @@ COLOR_COMMENT = "#8ecafc"  # Light Blue
 COLOR_STRING = "#a6e22e"   # Green
 COLOR_NUMBER = "#fd971f"   # Orange
 COLOR_BOOLEAN = "#ae81ff"  # Purple
+
+# --- WCAG 2.1 Contrast Math ---
+def hex_to_rgb(color_str):
+    color_str = color_str.lower().strip()
+    named_colors = {
+        'white': '#ffffff', 'black': '#000000', 'red': '#ff0000', 
+        'blue': '#0000ff', 'green': '#008000', 'yellow': '#ffff00',
+        'gray': '#808080', 'grey': '#808080', 'purple': '#800080',
+        'orange': '#ffa500', 'transparent': 'inherit'
+    }
+    if color_str in named_colors: color_str = named_colors[color_str]
+    if color_str == 'inherit' or not color_str: return None
+    
+    hex_color = color_str.lstrip('#')
+    if len(hex_color) == 3: hex_color = ''.join([c*2 for c in hex_color])
+    if len(hex_color) != 6: return None
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def get_luminance(rgb):
+    rgb_linear = []
+    for c in rgb:
+        c = c / 255.0
+        if c <= 0.03928: rgb_linear.append(c / 12.92)
+        else: rgb_linear.append(((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * rgb_linear[0] + 0.7152 * rgb_linear[1] + 0.0722 * rgb_linear[2]
+
+def get_contrast_ratio(hex1, hex2):
+    rgb1 = hex_to_rgb(hex1)
+    rgb2 = hex_to_rgb(hex2)
+    if not rgb1 or not rgb2: return None
+    lum1 = get_luminance(rgb1)
+    lum2 = get_luminance(rgb2)
+    return (max(lum1, lum2) + 0.05) / (min(lum1, lum2) + 0.05)
+
+def rgb_to_hex(rgb):
+    return '#{:02x}{:02x}{:02x}'.format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
+
+def adjust_color_for_contrast(fg_hex, bg_hex, target_ratio=4.5):
+    """Automatically darkens or lightens FG to meet target contrast against BG."""
+    fg_rgb = hex_to_rgb(fg_hex)
+    bg_rgb = hex_to_rgb(bg_hex)
+    if not fg_rgb or not bg_rgb: return fg_hex
+    
+    bg_lum = get_luminance(bg_rgb)
+    curr_fg_rgb = list(fg_rgb)
+    
+    # Decide direction: if BG is dark, lighten FG; if BG is light, darken FG
+    direction = -5 if bg_lum > 0.5 else 5 # Step size
+    
+    for _ in range(51): # Max 50 steps
+        ratio = get_contrast_ratio(rgb_to_hex(curr_fg_rgb), bg_hex)
+        if ratio and ratio >= target_ratio:
+            return rgb_to_hex(curr_fg_rgb)
+        
+        # Move RGB values
+        for i in range(3):
+            curr_fg_rgb[i] = max(0, min(255, curr_fg_rgb[i] + direction))
+            
+    return "#000000" if bg_lum > 0.5 else "#ffffff"
 
 def remediate_html_file(filepath):
     """
@@ -172,47 +229,52 @@ def remediate_html_file(filepath):
     # We will just ensure that standard LaTeX is not mangled.
     # The current script doesn't mangle brackets, so we are good.
 
-    # --- Part 5: Tables (Toolkit 1 Logic) ---
+    # --- Part 5: Tables (AGGRESSIVE REMEDIATION) ---
     for table in soup.find_all('table'):
-        # 1. Cleanup empty TBODYs (Often cause Canvas 'Invalid Structure' errors)
+        # 1. Cleanup empty TBODYs
         for tb in table.find_all('tbody'):
             if not tb.find('tr'):
                 fixes.append("Removed empty <tbody> tag")
                 tb.extract()
 
-        # 2. Caption
+        # 2. Caption (Mandatory for screen readers)
         if not table.find('caption'):
             caption = soup.new_tag('caption')
             caption['style'] = "text-align: left; font-weight: bold; margin-bottom: 10px;"
-            caption.string = "Information Table" 
+            caption.string = "Data Table" 
             table.insert(0, caption)
-            fixes.append("Added 'Information Table' caption to table")
+            fixes.append("Added 'Data Table' caption to table")
         
-        # 3. Scope and Header Logic
-        # Canvas is picky about THEAD coming before TBODY
+        # 3. FORCE HEADERS (The most common error)
         thead = table.find('thead')
-        first_row = table.find('tr')
-        
-        if not thead and first_row:
-            # If explicit THs in first row, wrap in THEAD
-            if all(cell.name == 'th' for cell in first_row.find_all(['td', 'th'])):
+        if not thead:
+            first_row = table.find('tr')
+            if first_row:
+                # Convert first row to a header row
                 thead = soup.new_tag('thead')
                 first_row.wrap(thead)
-                fixes.append("Wrapped header row in <thead>")
+                for cell in first_row.find_all('td'):
+                    cell.name = 'th'
+                    cell['scope'] = "col"
+                for th in first_row.find_all('th'):
+                    th['scope'] = "col"
+                fixes.append("Converted first row to proper <thead> header")
 
-        # [RE-ORDER FIX] Move thead to top (after caption)
-        if thead:
-            caption = table.find('caption')
-            if caption:
-                caption.insert_after(thead)
-            else:
-                table.insert(0, thead)
+        # 4. Standardize Scopes (Canvas requirement)
+        for th in table.find_all('th'):
+            if not th.has_attr('scope'):
+                # Heuristic: if it's in a thead, it's a col. If it's the first cell of a tr, it's a row.
+                if th.find_parent('thead'):
+                    th['scope'] = "col"
+                else:
+                    th['scope'] = "row"
+                fixes.append("Assigned WCAG scope to table header")
         
-        # 4. Standardize Scopes
-        for th in table.select('thead th'):
-            th['scope'] = "col"
-        for th in table.select('tbody th'):
-            th['scope'] = "row"
+        # 5. Canvas Style Fix
+        if not table.has_attr('border'):
+            table['border'] = "1"
+        if 'border-collapse' not in table.get('style', ''):
+            table['style'] = table.get('style', '') + " border-collapse: collapse; min-width: 50%;"
 
     # --- Part 6: Heading Hierarchy & Standardization (Toolkit 1 Logic + Style Standard) ---
     
@@ -307,56 +369,103 @@ def remediate_html_file(filepath):
             # Note: Placeholders and markers removed per user request. Fixes are tracked in 'fixes' list only.
             fixes.append(f"Flagged image for review: {reason}")
 
-    # --- Part 8: Typography & Accessibility (Small Fonts / Contrast) ---
+    # --- Part 8: Typography & Accessibility (Small Fonts / AUTO-CONTRAST) ---
+    import run_audit # Use get_style_property for robust lookup
+    
     for tag in soup.find_all(style=True):
         style = tag.get('style', '').lower()
         
         # A. Font Size Fix
-        # Match px, pt, em, rem
         size_match = re.search(r'font-size:\s*([0-9.]+)(px|pt|em|rem)', style)
         if size_match:
             val = float(size_match.group(1))
             unit = size_match.group(2)
-            
             needs_elevation = False
-            new_val = 12 # Default elevation
-            
+            new_val = 12
             if unit == 'px' and val <= 9: needs_elevation = True
             elif unit == 'pt' and val <= 7: needs_elevation = True; new_val = 9
             elif unit in ['em', 'rem'] and val <= 0.6: needs_elevation = True; new_val = 0.8
-            
             if needs_elevation:
-                # Replace in style string
                 tag['style'] = re.sub(rf'font-size:\s*[0-9.]+{unit}', f'font-size: {new_val}{unit}', tag['style'], flags=re.IGNORECASE)
                 fixes.append(f"Elevated small font size ({val}{unit} -> {new_val}{unit})")
 
-        # B. Contrast Flagging (Subjective/Review)
-        # We don't auto-fix contrast because color choice is aesthetic, but we flag it.
-        # Reuse logic from auditor (using smart property lookup)
-        import run_audit
-        
-        # Optimization: Only check tags that have text or are significant containers
+        # B. AUTO-CONTRAST CORRECTION
         if tag.get_text(strip=True):
             fg = run_audit.get_style_property(tag, 'color')
             bg = run_audit.get_style_property(tag, 'background-color')
             
             if fg and bg:
-                 ratio = run_audit.get_contrast_ratio(fg, bg)
-                 # We only flag if the tag ITSELF has some style, or if it's a primary text tag
+                 ratio = get_contrast_ratio(fg, bg)
                  if ratio and ratio < 4.5:
-                     fixes.append(f"Flagged low contrast ({ratio:.1f}:1)")
+                     # Calculate target
+                     # If it's large text, we only need 3.0, but 4.5 is safer
+                     new_fg = adjust_color_for_contrast(fg, bg)
+                     
+                     # Update the style string
+                     if 'color:' in tag['style'].lower():
+                         tag['style'] = re.sub(r'color:\s*#[0-9a-fA-F]{3,6}', f'color: {new_fg}', tag['style'], flags=re.IGNORECASE)
+                         tag['style'] = re.sub(r'color:\s*[a-zA-Z]+', f'color: {new_fg}', tag['style'], flags=re.IGNORECASE)
+                     else:
+                         tag['style'] = tag['style'].rstrip('; ') + f"; color: {new_fg};"
+                     
+                     fixes.append(f"Auto-corrected low contrast ({ratio:.1f}:1 -> 4.5:1)")
 
-    # --- Part 9: Links & Iframes ---
-    # Remove empty links
+    # --- Part 9: Links & Iframes (Vague Text Correction) ---
+    vague_terms = ['click here', 'read more', 'learn more', 'more', 'link', 'here', 'view']
     for a in soup.find_all('a'):
-        if not a.get_text(strip=True) and not a.find_all(True):
-            fixes.append(f"Removed empty link to '{a.get('href', 'unknown')}'")
+        href = a.get('href', '')
+        text = a.get_text(strip=True).lower()
+        
+        # 1. Remove empty links
+        if not text and not a.find_all(True):
+            fixes.append(f"Removed empty link to '{href}'")
             a.extract()
+            continue
+            
+        # 2. Fix Vague Text (e.g. "Click Here")
+        if text in vague_terms:
+            # Try to find context (previous text or heading)
+            context = "Information"
+            prev_tag = a.find_previous(['h2', 'h3', 'strong', 'b', 'p'])
+            if prev_tag:
+                context = prev_tag.get_text(strip=True)[:30]
+            
+            # If it's a file link (docx, pdf), use the filename
+            if any(ext in href.lower() for ext in ['.pdf', '.docx', '.pptx', '.xlsx']):
+                filename = os.path.basename(href).split('?')[0].replace('%20', ' ').replace('_', ' ')
+                a.string = f"Download {filename}"
+                fixes.append(f"Fixed vague link text '{text}' -> 'Download {filename}'")
+            else:
+                a.string = f"View {context}"
+                fixes.append(f"Fixed vague link text '{text}' -> 'View {context}'")
     
     for iframe in soup.find_all('iframe'):
         if not iframe.has_attr('title') or not iframe['title'].strip():
-            iframe['title'] = "Embedded Content"
-            fixes.append("Added title to embedded content (iframe)")
+            # Try to guess title from src
+            src = iframe.get('src', '').lower()
+            if 'youtube' in src: title = "Embedded YouTube Video"
+            elif 'panopto' in src: title = "Embedded Panopto Video"
+            elif 'vimeo' in src: title = "Embedded Vimeo Video"
+            else: title = "Embedded Content"
+            
+            iframe['title'] = title
+            fixes.append(f"Added title '{title}' to iframe")
+
+    # --- Part 10: SMART IMAGE ALIGNMENT (For Word/PDF) ---
+    for img in soup.find_all('img'):
+        parent = img.parent
+        # If image is alone in a paragraph, it might benefit from being floated
+        if parent.name == 'p' and len(parent.contents) == 1:
+            # Check image size (heuristic)
+            width = img.get('width', '800')
+            try:
+                w_val = int(width)
+                if w_val < 400:
+                    # Small image alone in a P? Let's make it look nice.
+                    # We'll float it right by default if it's small, to let text wrap
+                    img['style'] = img.get('style', '') + " float: right; margin: 10px 0 15px 20px; max-width: 40%;"
+                    fixes.append(f"Applied smart float-right to small image: {os.path.basename(img.get('src',''))}")
+            except: pass
 
     # --- Part 8: Deprecated Tags ---
     # Convert <b> to <strong>
