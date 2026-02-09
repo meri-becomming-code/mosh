@@ -1231,13 +1231,13 @@ YOUR WORKFLOW:
                 err = None
                 
                 if ext == "docx":
-                    output_path, err = converter_utils.convert_docx_to_html(fpath)
+                    output_path, err = converter_utils.convert_docx_to_html(fpath, self.gui_handler)
                 elif ext == "xlsx":
                     output_path, err = converter_utils.convert_excel_to_html(fpath)
                 elif ext == "pptx":
-                     output_path, err = converter_utils.convert_ppt_to_html(fpath)
+                     output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler)
                 elif ext == "pdf":
-                     output_path, err = converter_utils.convert_pdf_to_html(fpath)
+                     output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
                 
                 if err or not output_path:
                     self.gui_handler.log(f"   [ERROR] Failed to convert: {err}")
@@ -1350,13 +1350,13 @@ YOUR WORKFLOW:
             output_path, err = None, None
             
             if ext == "docx":
-                output_path, err = converter_utils.convert_docx_to_html(file_path)
+                output_path, err = converter_utils.convert_docx_to_html(file_path, self.gui_handler)
             elif ext == "xlsx":
                 output_path, err = converter_utils.convert_excel_to_html(file_path)
             elif ext == "pptx":
-                output_path, err = converter_utils.convert_ppt_to_html(file_path)
+                output_path, err = converter_utils.convert_ppt_to_html(file_path, self.gui_handler)
             elif ext == "pdf":
-                output_path, err = converter_utils.convert_pdf_to_html(file_path)
+                output_path, err = converter_utils.convert_pdf_to_html(file_path, self.gui_handler)
             
             if err:
                  self.gui_handler.log(f"[ERROR] Conversion failed: {err}")
@@ -1562,13 +1562,13 @@ YOUR WORKFLOW:
                 err = None
                 
                 if ext == "docx":
-                    output_path, err = converter_utils.convert_docx_to_html(fpath)
+                    output_path, err = converter_utils.convert_docx_to_html(fpath, self.gui_handler)
                 elif ext == "xlsx":
                     output_path, err = converter_utils.convert_excel_to_html(fpath)
                 elif ext == "pptx":
-                    output_path, err = converter_utils.convert_ppt_to_html(fpath)
+                    output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler)
                 elif ext == "pdf":
-                    output_path, err = converter_utils.convert_pdf_to_html(fpath)
+                    output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
                 
                 if output_path:
                     success_count += 1

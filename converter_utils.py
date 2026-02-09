@@ -117,7 +117,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
         .code-block {{ margin: 15px 0; }}
         
-        .slide-container {{ overflow: auto; clear: both; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 1px solid #eee; }}
+        .slide-container {{ 
+            overflow: auto; 
+            clear: both; 
+            margin-bottom: 30px; 
+            padding: 25px; 
+            border: 2px solid #ccc; 
+            border-radius: 12px; 
+            background-color: #fff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }}
         .slide-container::after {{ content: ""; display: table; clear: both; }}
         .slide-image {{ border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
     </style>
@@ -144,7 +153,7 @@ def _save_html(content, title, source_file, output_path):
 
 # --- Converters ---
 
-def convert_docx_to_html(docx_path):
+def convert_docx_to_html(docx_path, io_handler=None):
     """Converts DOCX to HTML using Mammoth (with style mapping)."""
     if not mammoth:
         return None, "Mammoth library not installed."
@@ -174,8 +183,8 @@ def convert_docx_to_html(docx_path):
             if not os.path.exists(res_dir):
                 os.makedirs(res_dir)
             
-            # 2. Extract description
-            alt_text = image.alt_text if image.alt_text else f"Image from {filename}"
+            # 2. Extract description (from original doc)
+            original_alt = image.alt_text if image.alt_text else f"Image from {filename}"
             
             # 3. Save Image File
             with image.open() as image_source:
@@ -200,19 +209,34 @@ def convert_docx_to_html(docx_path):
             try:
                 with PILImage.open(io.BytesIO(image_bytes)) as pil_img:
                     w, h = pil_img.size
-                    # If it's a small icon-like image, don't force full width
                     if w < 200:
                         width_attr = str(w)
                         style_attr = "" # Keep natural
                     else:
-                        # For medium/large images, cap at a reasonable width but allow relative scaling
                         width_attr = str(min(w, 800))
             except: pass
+
+            # [INTERACTIVE] Prompt for Alt Text
+            final_alt = original_alt
+            if io_handler:
+                import interactive_fixer
+                mem_key = interactive_fixer.normalize_image_key(img_name, img_path)
+                if mem_key in io_handler.memory:
+                    final_alt = io_handler.memory[mem_key]
+                else:
+                    choice = io_handler.prompt_image(f"   > Alt Text for {img_name} (or Enter to keep original): ", img_path, context=f"Context: {filename} (Word Document)").strip()
+                    if choice:
+                        if choice == "__DECORATIVE__":
+                            final_alt = ""
+                        else:
+                            final_alt = choice
+                        io_handler.memory[mem_key] = final_alt
+                        io_handler.save_memory()
 
             # 4. Return Tag with Standard Relative Path
             return {
                 "src": f"web_resources/{safe_filename}/{img_name}",
-                "alt": alt_text,
+                "alt": final_alt,
                 "width": width_attr,
                 "style": style_attr
             }
@@ -292,7 +316,7 @@ def convert_excel_to_html(xlsx_path):
         return None, str(e)
 
 
-def convert_ppt_to_html(ppt_path):
+def convert_ppt_to_html(ppt_path, io_handler=None):
     """Converts PPTX to HTML Lecture Notes + Extracts Images."""
     if not Presentation:
         return None, "python-pptx library not installed."
@@ -491,7 +515,26 @@ def convert_ppt_to_html(ppt_path):
                             # Right side
                             float_style = "float: right; margin: 0 0 15px 20px;"
                         
-                        html_parts.append(f'<img src="{rel_path}" alt="[FIX_ME] Image from Slide {slide_num}" width="{width_px}" class="slide-image" style="{float_style}">')
+                        # [INTERACTIVE] Prompt for Alt Text
+                        alt_text = f"[FIX_ME] Image from Slide {slide_num}"
+                        if io_handler:
+                            import interactive_fixer
+                            mem_key = interactive_fixer.normalize_image_key(rel_path, image_full_path)
+                            
+                            if mem_key in io_handler.memory:
+                                alt_text = io_handler.memory[mem_key]
+                            else:
+                                slide_title = slide.shapes.title.text_frame.text if slide.shapes.title else f"Slide {slide_num}"
+                                choice = io_handler.prompt_image(f"   > Alt Text for Slide {slide_num} image (or Enter to skip): ", image_full_path, context=f"Context: {slide_title}").strip()
+                                if choice:
+                                    if choice == "__DECORATIVE__":
+                                        alt_text = ""
+                                    else:
+                                        alt_text = choice
+                                    io_handler.memory[mem_key] = alt_text
+                                    io_handler.save_memory()
+
+                        html_parts.append(f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{float_style}">')
                     except Exception as img_err:
                         print(f"Skipped image on slide {slide_num}: {img_err}")
 
@@ -508,7 +551,7 @@ def convert_ppt_to_html(ppt_path):
         return None, str(e)
 
 
-def convert_pdf_to_html(pdf_path):
+def convert_pdf_to_html(pdf_path, io_handler=None):
     """Converts PDF to HTML using PyMuPDF (Images + Text)."""
     if not fitz:
         if not extract_text:
@@ -662,7 +705,25 @@ def convert_pdf_to_html(pdf_path):
                             f.write(image_bytes)
                             
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
-                        html_parts.append(f'\u003cimg src="{rel_path}" alt="" width="{width_attr}" class="content-image" style="{float_style}"\u003e')
+                        
+                        # [INTERACTIVE] Prompt for Alt Text
+                        alt_text = f"Image from Page {page_num}"
+                        if io_handler:
+                            import interactive_fixer
+                            mem_key = interactive_fixer.normalize_image_key(rel_path, image_full_path)
+                            if mem_key in io_handler.memory:
+                                alt_text = io_handler.memory[mem_key]
+                            else:
+                                choice = io_handler.prompt_image(f"   > Alt Text for Page {page_num} image (or Enter to skip): ", image_full_path, context=f"Context: PDF Page {page_num}").strip()
+                                if choice:
+                                    if choice == "__DECORATIVE__":
+                                        alt_text = ""
+                                    else:
+                                        alt_text = choice
+                                    io_handler.memory[mem_key] = alt_text
+                                    io_handler.save_memory()
+
+                        html_parts.append(f'\u003cimg src="{rel_path}" alt="{alt_text}" width="{width_attr}" class="content-image" style="{float_style}"\u003e')
                     except Exception as e:
                         print(f"Skipped PDF image: {e}")
 
