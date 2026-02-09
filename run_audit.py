@@ -184,9 +184,8 @@ def audit_file(filepath):
     if vp_issue:
         results["technical"].append(vp_issue)
 
-    # 2. Remediation Markers (from remediate_master_v3.py)
-    for element in soup.find_all(string=lambda t: "[ADA FIX" in str(t) or "[FIX_ME]" in str(t)):
-        results["subjective"].append(f"Remediation Tag Found: {element.strip()}")
+    # [REMOVED] Remediation Markers check per user request. 
+    # Logic for checking [ADA FIX] or [FIX_ME] is gone.
     
     # 3. Images
     for img in soup.find_all('img'):

@@ -231,7 +231,6 @@ def remediate_html_file(filepath):
                 
                 # Apply 13A Style (Dark Purple, Italic, Margin)
                 tagline['style'] = "margin-top: 10px; margin-left: 15px; font-style: italic; color: #4b3190;"
-                tagline.insert_after(Comment("ADA FIX: Refactored tagline to 13A Standard (High Contrast)"))
                 fixes.append("Refactored header tagline for better contrast and layout")
 
     # 1. Clear old warnings
@@ -247,7 +246,6 @@ def remediate_html_file(filepath):
         new_h2.string = title_text
         if main_div:
             main_div.insert(0, new_h2)
-            new_h2.insert_after(Comment("ADA FIX: Inserted H2 based on page title"))
             fixes.append(f"Inserted H2 header: '{title_text}'")
         headings = [new_h2]
     
@@ -271,7 +269,6 @@ def remediate_html_file(filepath):
                 new_level = last_level + 1
                 old_tag = h.name
                 h.name = f"h{new_level}"
-                h.insert_before(Comment(f"ADA FIX: Demoted {old_tag} to H{new_level}"))
                 fixes.append(f"Fixed heading gap: Demoted '{h.get_text()[:30]}' to H{new_level}")
             last_level = int(h.name[1])
 
@@ -307,17 +304,8 @@ def remediate_html_file(filepath):
             reason = "Filename used as Alt Text"
 
         if needs_fix:
-            # Check if we already flagged this
-            next_node = img.find_next_sibling()
-            already_flagged = next_node and next_node.name == 'span' and "ADA FIX" in next_node.get_text()
-            
-            if not already_flagged:
-                img['alt'] = f"[FIX_ME]: {reason}. Describe this image."
-                # Visual Marker
-                warning_span = soup.new_tag('span', style="color:red; font-weight:bold; border:1px solid red; padding:2px;")
-                warning_span.string = f"[ADA FIX: {reason}]"
-                img.insert_after(warning_span)
-                fixes.append(f"Flagged image for review: {reason}")
+            # Note: Placeholders and markers removed per user request. Fixes are tracked in 'fixes' list only.
+            fixes.append(f"Flagged image for review: {reason}")
 
     # --- Part 8: Typography & Accessibility (Small Fonts / Contrast) ---
     for tag in soup.find_all(style=True):
@@ -356,14 +344,7 @@ def remediate_html_file(filepath):
                  ratio = run_audit.get_contrast_ratio(fg, bg)
                  # We only flag if the tag ITSELF has some style, or if it's a primary text tag
                  if ratio and ratio < 4.5:
-                     # Check if already flagged
-                     next_node = tag.find_next_sibling()
-                     flagged = next_node and next_node.name == 'span' and "Contrast" in next_node.get_text()
-                     if not flagged:
-                         warning_span = soup.new_tag('span', style="color:red; font-weight:bold; border:1px solid red; padding:2px; margin-left:5px;")
-                         warning_span.string = f"[ADA FIX: Low Contrast {ratio:.1f}:1]"
-                         tag.insert_after(warning_span)
-                         fixes.append(f"Flagged low contrast ({ratio:.1f}:1)")
+                     fixes.append(f"Flagged low contrast ({ratio:.1f}:1)")
 
     # --- Part 9: Links & Iframes ---
     # Remove empty links
@@ -375,7 +356,6 @@ def remediate_html_file(filepath):
     for iframe in soup.find_all('iframe'):
         if not iframe.has_attr('title') or not iframe['title'].strip():
             iframe['title'] = "Embedded Content"
-            iframe.insert_after(Comment("ADA FIX: Added generic title to iframe"))
             fixes.append("Added title to embedded content (iframe)")
 
     # --- Part 8: Deprecated Tags ---
@@ -423,57 +403,8 @@ def remediate_html_file(filepath):
 
     return report
 
-def strip_ada_markers(html_content):
-    """
-    Removes all [ADA FIX] visual spans and [FIX_ME] text from HTML.
-    """
-    soup = BeautifulSoup(html_content, 'html.parser')
-    stripped_count = 0
-    
-    # 1. Remove all <span> tags containing "ADA FIX"
-    for span in soup.find_all('span'):
-        if "ADA FIX" in span.get_text():
-            span.extract()
-            stripped_count += 1
-            
-    # 2. Clean alt attributes containing [FIX_ME]
-    for img in soup.find_all('img'):
-        alt = img.get('alt', '')
-        if "[FIX_ME]" in alt:
-             # Basic cleanup: remove the [FIX_ME] prefix and common reason phrases
-             new_alt = re.sub(r'\[FIX_ME\]:\s*.*?\.\s*', '', alt)
-             if not new_alt.strip():
-                 new_alt = "" # Reset to empty if nothing remains
-             img['alt'] = new_alt
-             stripped_count += 1
-             
-    # 3. Clean up comments (optional but good)
-    from bs4 import Comment
-    for comment in soup.find_all(string=lambda text: isinstance(text, Comment) and "ADA FIX" in text):
-        comment.extract()
-        stripped_count += 1
-
-    return str(soup), stripped_count
-
-def batch_strip_markers(directory):
-    """Walks directory and strips markers from all HTML files."""
-    results = {}
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if file.endswith('.html'):
-                path = os.path.join(root, file)
-                try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    
-                    cleaned, count = strip_ada_markers(content)
-                    if count > 0:
-                        with open(path, 'w', encoding='utf-8') as f:
-                            f.write(cleaned)
-                        results[file] = count
-                except Exception as e:
-                    print(f"Error cleaning {file}: {e}")
-    return results
+# [REMOVED] strip_ada_markers and batch_strip_markers per user request. 
+# Markers are no longer added, so cleanup is unnecessary.
 
 if __name__ == "__main__":
     import sys

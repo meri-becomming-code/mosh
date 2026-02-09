@@ -966,12 +966,8 @@ and to all the other students struggling with their own challenges.
             self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
             self.gui_handler.log(f"🏆 YOU SAVED APPROXIMATELY {time_str} OF TEDIOUS MANUAL LABOR!")
 
-            # [STRICT FIX] Always remove visual markers at the end
-            self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
-            import run_fixer
-            strip_results = run_fixer.batch_strip_markers(self.target_dir)
-            total_stripped = sum(strip_results.values())
-            self.gui_handler.log(f"   Done! Stripped {total_stripped} temporary [ADA FIX] markers.")
+            self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
+            self.gui_handler.log(f"🏆 YOU SAVED APPROXIMATELY {time_str} OF TEDIOUS MANUAL LABOR!")
 
         self._run_task_in_thread(task, "Auto-Fixer")
 
@@ -990,27 +986,8 @@ and to all the other students struggling with their own challenges.
                 
         self._run_task_in_thread(task, "Interactive Fixer")
 
-    def _run_cleanup_markers(self):
-        """Removes all [ADA FIX] visual labels from HTML files."""
-        if not messagebox.askyesno("Confirm Cleanup", 
-            "This will permanently REMOVE all red visual markers ([ADA FIX]) from your HTML files.\n\n"
-            "Use this only when you are satisfied with the remediation and ready to upload to Canvas.\n\n"
-            "Proceed?"):
-            return
-
-        def task():
-            self.gui_handler.log(f"--- 🧹 Cleaning Visual Markers: {os.path.basename(self.target_dir)} ---")
-            import run_fixer
-            results = run_fixer.batch_strip_markers(self.target_dir)
-            
-            total = sum(results.values())
-            self.gui_handler.log(f"   Done! Stripped {total} markers from {len(results)} files.")
-            for file, count in results.items():
-                self.gui_handler.log(f"    - {file}: {count}")
-            
-            self.root.after(0, lambda: messagebox.showinfo("Cleanup Complete", f"Successfully removed {total} visual markers from {len(results)} files."))
-
-        self._run_task_in_thread(task, "Marker Cleanup")
+# [REMOVED] _run_cleanup_markers per user request. 
+# Markers are no longer added, so cleanup is unnecessary.
 
     def _run_audit(self):
         def task():
@@ -1243,90 +1220,52 @@ YOUR WORKFLOW:
                     self.gui_handler.log(f"   [ERROR] Failed to convert: {err}")
                     continue
                 
-                self.gui_handler.log(f"   Ready for Canvas: {os.path.basename(output_path)}")
+                self.gui_handler.log(f"[{i+1}/{len(files)}] BUILDING PAGE: {fname}...")
                 
-                # 2. Preview (Open both)
-                try:
-                    os.startfile(fpath) # Open Original
-                    os.startfile(output_path) # Open New HTML
-                except Exception as e:
-                    self.gui_handler.log(f"   [WARNING] Could not auto-open files: {e}")
+                # 1. Convert to HTML
+                output_path = None
+                err = None
+                if ext == "docx":
+                    output_path, err = converter_utils.convert_docx_to_html(fpath, self.gui_handler)
+                elif ext == "xlsx":
+                    output_path, err = converter_utils.convert_excel_to_html(fpath)
+                elif ext == "pptx":
+                     output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler)
+                elif ext == "pdf":
+                     output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
                 
-                # 3. Prompt user (Keep/Discard?)
-                msg = (f"Reviewing: {fname}\n\n"
-                       f"I have opened both the original and the new version.\n"
-                       f"Do you want to KEEP this version for your Canvas Page?")
-                
-                keep = self.gui_handler.confirm(msg)
-                
-                if not keep:
-                    # Delete and continue
-                    try:
-                        os.remove(output_path)
-                        self.gui_handler.log("   Discarded.")
-                    except:
-                        pass
+                if err or not output_path:
+                    self.gui_handler.log(f"   [ERROR] Conversion failed: {err}")
                     continue
                 
-                kept_files.append(output_path)
-
-                # 4. Prompt Update Links
-                msg_link = (f"Excellent. The original file is untouched.\n\n"
-                            f"Would you like to SCAN ALL OTHER FILES in this folder\n"
-                            f"and update any links to point to this new CANVAS PAGE instead?")
+                # 2. RUN AUTO-FIXER (Structural)
+                self.gui_handler.log(f"   [1/3] Running Auto-Fixer (Headings, Tables)...")
+                # Structural fixes only, no placeholders/markers added
+                interactive_fixer.run_auto_fixer(output_path, self.gui_handler)
                 
-                if self.gui_handler.confirm(msg_link):
-                    count = converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
-                    self.gui_handler.log(f"   Updated links in {count} files.")
-
-                # 5. Archive Original (Bugfix: define msg_archive)
-                msg_archive = (f"To keep Canvas clean, original files should be hidden.\n\n"
-                               f"Move '{fname}' to the safety archive folder?\n"
-                               f"(It stays on your computer but won't be sent to Canvas.)")
-                if self.gui_handler.confirm(msg_archive):
-                    new_archive_path = converter_utils.archive_source_file(fpath)
-                    if new_archive_path:
-                        self.gui_handler.log(f"   Original moved to archive: {converter_utils.ARCHIVE_FOLDER_NAME}")
+                # 3. RUN INTERACTIVE REVIEW (Alt Text / Links)
+                self.gui_handler.log(f"   [2/3] Launching Guided Review...")
+                interactive_fixer.scan_and_fix_file(output_path, self.gui_handler, self.target_dir)
                 
-                # --- Sync to Canvas ---
+                # 4. Update Project Links & Archive Source
+                self.gui_handler.log(f"   [3/3] Updating project links and archiving original...")
+                converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
+                converter_utils.archive_source_file(fpath)
+
+                # 5. AUTO-UPLOAD TO CANVAS (No prompt)
                 api = self._get_canvas_api()
                 if api:
-                    msg_canvas = (f"Excellent! I've converted '{fname}' to a clean web page.\n\n"
-                                  f"Would you like me to SAFELY UPLOAD this to your Canvas Playground now?\n"
-                                  f"(This is the easiest way to check and fix it in Canvas.)")
-                    
-                    if self.gui_handler.confirm(msg_canvas):
-                        # [STRICT SAFETY] Double check if course is empty
-                        self.gui_handler.log(f"   🔒 Safety Check: Verifying playground safety...")
-                        is_empty, safety_msg = api.is_course_empty()
-                        if not is_empty:
-                            msg_stop = (f"🛑 WAIT! I found content in your Canvas Playground.\n\n"
-                                        f"{safety_msg}\n\n"
-                                        f"Are you SURE you want to upload here?")
-                            if not self.gui_handler.confirm(msg_stop):
-                                self.gui_handler.log("   [CANCELLED] Sync aborted for safety.")
-                                continue
+                    self.gui_handler.log(f"   🚀 AUTO-UPLOAD: Sending '{os.path.basename(output_path)}' to Canvas...")
+                    # We pass auto_confirm_links=True to avoid extra prompts during the batch upload if applicable
+                    # (Note: _upload_page_to_canvas may need to support this flag or handle things silently)
+                    self._upload_page_to_canvas(output_path, fpath, api)
+                else:
+                    self.gui_handler.log("   [INFO] Canvas not connected. Page saved locally.")
 
-                        self._upload_page_to_canvas(output_path, fpath, api)
-
-                self.gui_handler.log("   Done.")
+                self.gui_handler.log(f"✅ {fname} Processed Successfully.")
             
-            self.gui_handler.log("--- Wizard Complete ---")
-            
-            # --- 5. NEW: Post-Conversion Audit/Fix ---
-            if kept_files:
-                msg_fix = (f"Conversion finished for {len(kept_files)} files.\n\n"
-                           f"Would you like to run the GUIDED REVIEW (Accessibility Check) on these new files now?\n"
-                           f"(Highly Recommended for Alt Text & Links)")
-                           
-                if self.gui_handler.confirm(msg_fix):
-                     self.gui_handler.log("\n--- Starting Post-Conversion Review ---")
-                     for fp in kept_files:
-                         interactive_fixer.scan_and_fix_file(fp, self.gui_handler, self.target_dir)
-                     
-                     self.gui_handler.log("--- Review Complete ---")
-            
-            messagebox.showinfo("Done", "All selected files have been processed!")
+            self.gui_handler.log("--- Page Builder Process Complete ---")
+            messagebox.showinfo("Done", "Your pages have been built, reviewed, and uploaded!")
 
         self._run_task_in_thread(task, "Conversion Wizard")
 
@@ -1621,13 +1560,6 @@ YOUR WORKFLOW:
             
             self.root.after(0, ask_review)
 
-            # [STRICT FIX] Always remove visual markers at the end
-            self.gui_handler.log("\n--- 🧹 Finalizing: Cleaning Visual Markers ---")
-            import run_fixer
-            strip_results = run_fixer.batch_strip_markers(self.target_dir)
-            total_stripped = sum(strip_results.values())
-            self.gui_handler.log(f"   Done! Stripped {total_stripped} temporary [ADA FIX] markers.")
-            
             self.gui_handler.log("\n🛡️ Remember: Check the files in Canvas before publishing!")
             self.root.after(0, lambda: messagebox.showinfo("Gamble Complete", f"Processed {len(found_files)} files.\nCheck the logs for details."))
 

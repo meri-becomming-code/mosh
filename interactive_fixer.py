@@ -415,8 +415,6 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             issue = f"Generic alt text ('{alt}')"
         elif alt.lower() == img_filename.lower():
             issue = "Filename used as alt text"
-        elif "[fix_me]" in alt.lower():
-             issue = "Marked as [FIX_ME]"
         
         # [NEW] Check for Mammoth-style placeholders or descriptions
         elif "image" in alt.lower() and len(alt) > 10:
@@ -480,8 +478,8 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 
                 # Remove any warning spans/markers if they exist
                 next_node = img.find_next_sibling()
-                if next_node and next_node.name == 'span' and "ADA FIX" in next_node.get_text():
-                     next_node.extract()
+                # [REMOVED] ADA FIX marker cleanup is no longer needed as they are not added.
+                pass
                 
                 modified = True
                 
@@ -513,9 +511,6 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         # Check for Vague Text
         elif text.lower() in BAD_LINK_TEXT:
             issue = f"Vague link text ('{text}')"
-        elif "[fix_me]" in text.lower():
-            issue = "Marked as [FIX_ME]"
-        
         # Check for Raw URL as Text or Filenames
         elif text.lower() == href.lower() or (text.lower().startswith('http') and len(text) > 20):
              issue = "Raw URL used as link text"
