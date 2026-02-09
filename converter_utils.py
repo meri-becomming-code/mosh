@@ -189,6 +189,36 @@ def _save_html(content, title, source_file, output_path, style_overrides=""):
         f.write(html)
     return output_path
 
+def optimize_image(image_path, max_width=1100, make_transparent=False):
+    """Resizes, compresses, and optionally removes white backgrounds from images."""
+    try:
+        from PIL import Image, ImageDraw
+        img = Image.open(image_path).convert("RGBA")
+        
+        # 1. Resize if too wide (prevent Canvas bloat)
+        w, h = img.size
+        if w > max_width:
+            ratio = max_width / float(w)
+            new_h = int(float(h) * ratio)
+            img = img.resize((max_width, new_h), Image.Resampling.LANCZOS)
+            w, h = max_width, new_h
+
+        # 2. Magic Background Removal (Optional)
+        if make_transparent:
+            # Check corners for white-ish color
+            for corner in [(0,0), (w-1, 0), (0, h-1), (w-1, h-1)]:
+                # If corner is purely white, floodfill transparency
+                p = img.getpixel(corner)
+                if p[0] > 240 and p[1] > 240 and p[2] > 240:
+                    ImageDraw.floodfill(img, xy=corner, value=(255, 255, 255, 0), thresh=15)
+        
+        # 3. Save optimized
+        img.save(image_path, "PNG", optimize=True)
+        return True
+    except Exception as e:
+        print(f"Image Optimization failed for {image_path}: {e}")
+        return False
+
 def extract_theme_info(prs):
     """
     Extracts theme colors and fonts from a PowerPoint presentation.
@@ -745,9 +775,14 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                         image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.{ext}"
                         image_full_path = os.path.join(res_dir, image_filename)
                         
+                        # 1. Save original bytes first
                         with open(image_full_path, 'wb') as img_f:
                             img_f.write(image_bytes)
-                            
+                        
+                        # 2. [NEW] Image Optimization & Magic Transparency
+                        # We save as PNG for transparency support
+                        optimize_image(image_full_path, max_width=400, make_transparent=True)
+                        
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
                         width_px = int(shape.width / 9525) if hasattr(shape, 'width') else 400
                         

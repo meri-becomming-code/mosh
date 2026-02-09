@@ -422,6 +422,21 @@ def remediate_html_file(filepath):
             a.extract()
             continue
             
+        # Link Text Cleanup (Strip extensions and underscores)
+        # Heuristic: If text looks like a filename (ends in extension or has underscores)
+        doc_exts = ['.pdf', '.docx', '.pptx', '.xlsx', '.zip', '.txt']
+        if any(text.endswith(ext) for ext in doc_exts) or '_' in text:
+            new_text = text
+            for ext in doc_exts:
+                if new_text.endswith(ext):
+                    new_text = new_text[:-len(ext)]
+                    break
+            new_text = new_text.replace('_', ' ').strip()
+            if new_text and new_text != text:
+                a.string = new_text
+                fixes.append(f"Cleaned link text: '{text}' -> '{new_text}'")
+                text = new_text.lower() # Update for next check
+
         # 2. Fix Vague Text (e.g. "Click Here")
         if text in vague_terms:
             # Try to find context (previous text or heading)
@@ -430,11 +445,12 @@ def remediate_html_file(filepath):
             if prev_tag:
                 context = prev_tag.get_text(strip=True)[:30]
             
-            # If it's a file link (docx, pdf), use the filename
-            if any(ext in href.lower() for ext in ['.pdf', '.docx', '.pptx', '.xlsx']):
-                filename = os.path.basename(href).split('?')[0].replace('%20', ' ').replace('_', ' ')
-                a.string = f"Download {filename}"
-                fixes.append(f"Fixed vague link text '{text}' -> 'Download {filename}'")
+            # If it's a file link, use the sanitized filename
+            if any(ext in href.lower() for ext in doc_exts):
+                filename = os.path.basename(href).split('?')[0]
+                name_only = os.path.splitext(filename)[0].replace('%20', ' ').replace('_', ' ').strip()
+                a.string = f"Download {name_only}"
+                fixes.append(f"Fixed vague link text '{text}' -> 'Download {name_only}'")
             else:
                 a.string = f"View {context}"
                 fixes.append(f"Fixed vague link text '{text}' -> 'View {context}'")

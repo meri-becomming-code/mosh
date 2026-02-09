@@ -175,6 +175,8 @@ class ToolkitGUI:
         advanced_menu.add_command(label="Canvas API Settings", command=self._show_canvas_settings)
         advanced_menu.add_command(label="Open Documentation", command=self._show_documentation)
         advanced_menu.add_separator()
+        advanced_menu.add_command(label="Course Health Check (Broken Links)", command=self._run_course_health_check)
+        advanced_menu.add_separator()
         advanced_menu.add_command(label="Toggle Theme (Light/Dark)", command=self._toggle_theme)
         
         help_menu = Menu(menubar, tearoff=0)
@@ -1156,8 +1158,8 @@ YOUR WORKFLOW:
         tk.Label(dialog, text="Select Files to Convert", font=("Segoe UI", 12, "bold"), fg="#4b3190").pack(pady=(10, 0))
         
         # [NEW] Wizard Disclaimer
-        wiz_disclaimer = "⚠️ DO NOT convert publisher content. Use only for YOUR materials or OER."
-        tk.Label(dialog, text=wiz_disclaimer, font=("Segoe UI", 9, "bold"), fg="#d32f2f").pack(pady=(2, 10))
+        wiz_disclaimer = "⚠️ DO NOT convert publisher content. Use the buttons below to select ONLY your specific materials or OER files so you can exclude publisher content."
+        tk.Label(dialog, text=wiz_disclaimer, font=("Segoe UI", 9, "bold"), fg="#d32f2f", wraplength=550).pack(pady=(2, 10))
         
         tk.Label(dialog, text="We will process these one by one. You will preview each change.", font=("Segoe UI", 10)).pack(pady=(0,10))
 
@@ -1281,8 +1283,8 @@ YOUR WORKFLOW:
         # [NEW] Copyright check
         msg_copyright = (f"⚠️ COPYRIGHT AUDIT\n\n"
                         f"Is this {ext.upper()} file one that YOU created or an OER resource?\n\n"
-                        f"If this is PUBLISHER MATERIAL (e.g. from a textbook), you should NOT convert it to HTML "
-                        f"unless your contract specifically allows creating derivative accessible versions.\n\n"
+                        f"❌ DO NOT convert publisher content (e.g. Pearson, Cengage). \n\n"
+                        f"TIP: Use the buttons to select only your specific files so you can exclude publisher materials.\n\n"
                         f"Do you have the rights to convert this file?")
         
         if not messagebox.askyesno("Copyright Check", msg_copyright):
@@ -1496,8 +1498,8 @@ YOUR WORKFLOW:
         """Processes ALL convertible files in one go without per-file verification."""
         # 1. Scary Warning
         msg = ("🎲 ROLL THE DICE: BATCH CONVERSION 🎲\n\n"
-               "⚠️ IMPORTANT LEGAL CHECK: ONLY use this for content YOU created or OER materials with modification rights.\n"
-               "❌ DO NOT use on publisher content (Pearson, McGraw Hill, Cengage, etc.) without explicit permission.\n\n"
+               "⚠️ IMPORTANT LEGAL CHECK: ONLY use this for content YOU created or OER materials.\n"
+               "❌ DO NOT use on publisher content. If you have publisher files in this folder, cancel this and use the selection buttons to exclude them.\n\n"
                "WARNING: This will convert EVERY Word, PPT, Excel, and PDF file in your project to Canvas WikiPages automatically.\n\n"
                "- It is NOT perfect. Layouts may break.\n"
                "- Original files will be moved to the archive folder for safety.\n"
@@ -1831,6 +1833,79 @@ YOUR WORKFLOW:
     def _close_flight_animation(self):
         if hasattr(self, 'flight_win'):
             self.flight_win.destroy()
+
+    def _run_course_health_check(self):
+        """Scans the entire project for broken links and missing images."""
+        self.gui_handler.log("\n🔍 [AUDIT] Starting Course-Wide Health Check...")
+        
+        html_files = []
+        for root, dirs, files in os.walk(self.target_dir):
+            if "_ORIGINALS_DO_NOT_UPLOAD_" in root: continue
+            for f in files:
+                if f.endswith(".html"): html_files.append(os.path.join(root, f))
+        
+        if not html_files:
+            messagebox.showinfo("Health Check", "No HTML files found to audit.")
+            return
+
+        broken_links = 0
+        missing_images = 0
+        total_links = 0
+        total_images = 0
+        
+        detailed_log = []
+        
+        # We'll use the interactive_fixer's resolution logic
+        import interactive_fixer
+        io_placeholder = interactive_fixer.FixerIO()
+        
+        for fp in html_files:
+            try:
+                with open(fp, 'r', encoding='utf-8') as f:
+                    soup = BeautifulSoup(f.read(), 'html.parser')
+                
+                # 1. Check Images
+                for img in soup.find_all('img'):
+                    total_images += 1
+                    src = img.get('src', '')
+                    if not src: continue
+                    if src.startswith(('http', 'data:')): continue # Skip web/embedded for now
+                    
+                    found_path = interactive_fixer.resolve_image_path(src, fp, self.target_dir, io_placeholder)
+                    if not found_path or not os.path.exists(found_path):
+                        missing_images += 1
+                        detailed_log.append(f"   [MISSING IMG] {os.path.basename(fp)} -> {src}")
+                
+                # 2. Check Links
+                for a in soup.find_all('a'):
+                    total_links += 1
+                    href = a.get('href', '')
+                    if not href or href.startswith(('#', 'http', 'mailto:')): continue
+                    
+                    # Resolve path
+                    link_path = interactive_fixer.resolve_image_path(href, fp, self.target_dir, io_placeholder)
+                    if not link_path or not os.path.exists(link_path):
+                        broken_links += 1
+                        detailed_log.append(f"   [BROKEN LINK] {os.path.basename(fp)} -> {href}")
+            except: pass
+
+        self.gui_handler.log(f"✅ Audit Complete: Scanned {len(html_files)} pages.")
+        self.gui_handler.log(f"   - Links: {total_links} total, {broken_links} broken.")
+        self.gui_handler.log(f"   - Images: {total_images} total, {missing_images} missing.")
+        
+        if broken_links > 0 or missing_images > 0:
+            result_msg = (
+                f"Course Health Report:\n\n"
+                f"⚠️ Broken Links: {broken_links}\n"
+                f"⚠️ Missing Images: {missing_images}\n\n"
+                f"Issues have been logged to the Activity Feed below.\n"
+                f"Tip: Try running 'Conversion Wizard' again if these were recently moved files."
+            )
+            for line in detailed_log:
+                self.gui_handler.log(line)
+            messagebox.showwarning("Health Report", result_msg)
+        else:
+            messagebox.showinfo("Health Report", "Your course is in peak physical condition! No broken links or missing images found.")
 
 if __name__ == "__main__":
     root = tk.Tk()

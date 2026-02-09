@@ -160,7 +160,8 @@ def get_link_suggestion(href):
         # Capitalize words
         suggestion = suggestion.title()
         # Add the extension hint
-        return f"{suggestion} ({ext.upper().strip('.')})"
+        # [CLEAN FIX] Return just the suggestion without the (EXT) hint.
+        return suggestion
 
     # 2. Handle Web Links
     if clean_href.lower().startswith('http'):
@@ -206,6 +207,31 @@ def get_link_suggestion(href):
             return None
             
     return None
+
+def get_image_suggestion(src, context=None):
+    """Generates a smart suggestion for alt text based on filename and context."""
+    if not src: return None
+    
+    # 1. Filename Strategy
+    filename = os.path.basename(src).split('?')[0]
+    name_only = os.path.splitext(filename)[0]
+    
+    # Clean up common junk (UUIDs, 'slide1', etc)
+    clean_name = re.sub(r'[0-9]{5,}', '', name_only) # Remove long numbers
+    clean_name = clean_name.replace('_', ' ').replace('-', ' ').replace('.', ' ')
+    
+    # 2. Context Strategy
+    # If the context is just a few words, it might be the label
+    if context and len(context) < 100:
+        return f"{clean_name.strip().title()} - {context.strip()}"
+    
+    # 3. Handle specific labels
+    if 'logo' in clean_name.lower(): return "Company Logo"
+    if 'icon' in clean_name.lower(): return "" # Suggest decorative for icons
+    
+    suggestion = clean_name.strip().title()
+    if len(suggestion) < 3: return None
+    return suggestion
 
 def fetch_youtube_title(url):
     """Fetches the title of a YouTube video from its URL."""
@@ -452,8 +478,9 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             io_handler.log(f"    Reason: {issue}")
             io_handler.log(f"    Current Alt: '{alt}'")
             
-            # Context and prompt (resolve_image_path already called above)
+            # context and prompt (resolve_image_path already called above)
             context = get_context(img)
+            suggestion = get_image_suggestion(src, context)
             
             # Final check of memory before prompting (in case it was just added in this session)
             if img_full_path:
@@ -468,12 +495,18 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                  io_handler.log(f"    [Warning] Could not find local image file.")
 
             prompt_suffix = " (Type '!!' to skip all remaining): "
+            initial_val = suggestion if suggestion else alt
+            
+            prompt_text = (f"    > Enter Alt Text (Press Enter for '{initial_val}')" if initial_val else "    > Enter new Alt Text") + prompt_suffix
+            
             if img_full_path and os.path.exists(img_full_path):
-                 prompt_text = (f"    > Enter new Alt Text (Press Enter to keep '{alt}')" if issue == "Review suggested alt text" else "    > Enter new Alt Text (or Press Enter to skip)") + prompt_suffix
                  choice = io_handler.prompt_image(prompt_text, img_full_path, context=context).strip()
             else:
-                 prompt_text = (f"    > Enter new Alt Text (Press Enter to keep '{alt}')" if issue == "Review suggested alt text" else "    > Enter new Alt Text (or Press Enter to skip)") + prompt_suffix
                  choice = io_handler.prompt(prompt_text).strip()
+            
+            # Use suggestion if Enter pressed and suggestion exists
+            if not choice and initial_val:
+                choice = initial_val
             
             # [OVERRIDE] Allow skipping all remaining items
             if choice == "!!":
