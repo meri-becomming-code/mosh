@@ -758,10 +758,13 @@ def main_interactive_mode(io_handler=None):
 
     # 2. Files Discovery
     html_files = []
+    archive_name = "_ORIGINALS_DO_NOT_UPLOAD_"
     for root, dirs, files in os.walk(root_dir):
+        if archive_name in root: continue
         for file in files:
             if file.endswith(".html"):
                 html_files.append(os.path.join(root, file))
+
     
     if not html_files:
          io_handler.log("No .html files found in this directory.")

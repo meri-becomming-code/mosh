@@ -935,10 +935,12 @@ and to all the other students struggling with their own challenges.
             
         html_files = []
         for root, dirs, files in os.walk(self.target_dir):
+            if converter_utils.ARCHIVE_FOLDER_NAME in root: continue
             for file in files:
                 if file.endswith('.html'):
                     html_files.append(os.path.join(root, file))
         return html_files
+
 
     def _run_auto_fixer(self):
         def task():
@@ -1117,12 +1119,14 @@ YOUR WORKFLOW:
             
         found_files = []
         for root, dirs, files in os.walk(self.target_dir):
+            if converter_utils.ARCHIVE_FOLDER_NAME in root: continue
             for file in files:
                 ext = os.path.splitext(file)[1].lower()
                 if ext in supported_exts:
                      # Ignore temp files (~$)
                      if not file.startswith('~$'):
                         found_files.append(os.path.join(root, file))
+
         
         if not found_files:
              messagebox.showinfo("No Files", f"No convertible files found matching {supported_exts} in the current folder.")
@@ -1241,11 +1245,11 @@ YOUR WORKFLOW:
                 api = self._get_canvas_api()
                 if api:
                     self.gui_handler.log(f"   🚀 AUTO-UPLOAD: Sending '{os.path.basename(output_path)}' to Canvas...")
-                    # We pass auto_confirm_links=True to avoid extra prompts during the batch upload if applicable
-                    # (Note: _upload_page_to_canvas may need to support this flag or handle things silently)
-                    self._upload_page_to_canvas(output_path, fpath, api)
+                    # We pass auto_confirm_links=True to avoid extra prompts during the batch upload
+                    self._upload_page_to_canvas(output_path, fpath, api, auto_confirm_links=True)
                 else:
                     self.gui_handler.log("   [INFO] Canvas not connected. Page saved locally.")
+
 
                 self.gui_handler.log(f"✅ {fname} Processed Successfully.")
             
@@ -1330,8 +1334,21 @@ YOUR WORKFLOW:
                 m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
                 self.gui_handler.log(f"   [DONE] Links updated in {count} files. Original archived.")
 
+            # 6. Canvas Upload (Optional)
+            api = self._get_canvas_api()
+            if api:
+                msg_upload = (f"Local conversion and linking complete.\n\n"
+                              f"Mosh: 'Great work! Before uploading, would you like to run the \n"
+                              f"ADA PRE-FLIGHT CHECK to ensure everything is perfect?'")
+                if self.gui_handler.confirm(msg_upload):
+                    self._show_preflight_dialog()
+                else:
+                    msg_direct = "Would you like to skip the check and upload directly to Canvas anyway?"
+                    if self.gui_handler.confirm(msg_direct):
+                         self._upload_page_to_canvas(output_path, file_path, api)
                 
             self.gui_handler.log(f"--- {ext.upper()} Done ---")
+
             
         self._run_task_in_thread(task, f"Convert {ext.upper()}")
 
@@ -1594,18 +1611,21 @@ YOUR WORKFLOW:
             msg = "🚀 YOU ARE CLEAR FOR TAKEOFF!"
             color = "#2E7D32" # Forest Green
             advice = "Mosh: 'Great job! You've put in the work, now let's show Canvas how it's done.'"
-            
-            # [NEW] Push Button INSIDE Dialog
-            btn_push = ttk.Button(score_frame, text="🚀 Send My Clean Course to Canvas Now", 
-                                 command=lambda: [dialog.destroy(), self._push_to_canvas()], style="Action.TButton")
-            btn_push.pack(pady=10, fill="x")
+            push_text = "🚀 Send My Clean Course to Canvas Now"
         else:
-            msg = "🛠️ Almost there! Finish the items above."
+            msg = "🛠️ Almost there! Some items need attention."
             color = "#d4a017"
-            advice = "Mosh: 'Remediation is tough, but you're doing great. Just a few more things to fix!'"
+            advice = "Mosh: 'Remediation is tough, but you're doing great. I recommend fixing the issues above, but you're the pilot!'"
+            push_text = "🚀 Upload to Canvas Anyway (Not Recommended)"
 
         tk.Label(score_frame, text=msg, font=("Segoe UI", 12, "bold"), foreground=color).pack()
-        tk.Label(score_frame, text=advice, font=("Segoe UI", 10, "italic"), foreground=colors["fg"]).pack(pady=5)
+        tk.Label(score_frame, text=advice, font=("Segoe UI", 10, "italic"), foreground=colors.get("fg", "#212121")).pack(pady=5)
+
+        # [NEW] Push Button NOW ALWAYS AVAILABLE
+        btn_push = ttk.Button(score_frame, text=push_text, 
+                             command=lambda: [dialog.destroy(), self._push_to_canvas()], style="Action.TButton")
+        btn_push.pack(pady=10, fill="x")
+
 
         ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
 

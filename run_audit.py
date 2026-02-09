@@ -301,10 +301,13 @@ def get_issue_summary(results):
 def run_audit_v3(directory):
     print(f"Auditing {directory}...")
     all_issues = {}
+    archive_name = "_ORIGINALS_DO_NOT_UPLOAD_"
     
     for root, dirs, files in os.walk(directory):
+        if archive_name in root: continue
         for file in files:
              if file.endswith('.html'):
+
                 path = os.path.join(root, file)
                 res = audit_file(path)
                 if res:

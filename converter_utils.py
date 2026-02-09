@@ -78,10 +78,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 16px;
             line-height: 1.6; 
             color: #333;
-            max-width: 1000px; 
-            margin: 0 auto; 
-            padding: 40px; 
+            max-width: none; 
+            margin: 0; 
+            padding: 0; 
             background-color: #f4f7f9;
+        }}
+        .main-content {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
         }}
         h1 {{ 
             font-size: 2.25em; 
@@ -126,18 +131,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .slide-container {{ 
             overflow: auto; 
             clear: both; 
-            margin-bottom: 50px; 
-            padding: 40px; 
-            border: 1px solid #dee2e6;
+            margin-bottom: 60px; 
+            padding: 60px; 
+            border: 2px solid #ccc;
             border-top: 5px solid #4b3190;
-            border-radius: 8px; 
+            border-radius: 12px; 
             background-color: #fff;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
             position: relative;
         }}
         .slide-container::after {{ content: ""; display: table; clear: both; }}
         .slide-title {{ margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #eee; margin-bottom: 25px; }}
-        .slide-num {{ position: absolute; top: 10px; right: 20px; font-size: 0.8em; color: #999; font-weight: bold; }}
+        .slide-num {{ position: absolute; top: 15px; right: 25px; font-size: 0.8em; color: #666; font-weight: bold; }}
         .slide-image {{ border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #eee; }}
         
         /* Accounting & Excel Styles */
@@ -163,20 +168,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>{title}</h1>
-    <div class="note">✅ Remediated content from <strong>{source_file}</strong></div>
-    {content}
+    <div class="main-content" style="max-width: 1200px; margin: 0 auto; padding: 40px;">
+        <h1>{title}</h1>
+        {content}
+    </div>
 </body>
 </html>
 
 """
 
+
 def _save_html(content, title, source_file, output_path, style_overrides=""):
     """Wraps content in template and saves file."""
     html = HTML_TEMPLATE.format(
         title=title,
-        source_file=os.path.basename(source_file),
-        date=datetime.now().strftime("%Y-%m-%d"),
         content=content,
         style_overrides=style_overrides
     )
@@ -483,18 +488,27 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
         light1 = theme['colors'].get('light1', '#fff')
         
         style_overrides += f"""
-            .slide-container {{ border-top-color: {accent1}; background-color: {light1}; }}
+            .slide-container {{ border-top-color: {accent1}; border-top-width: 5px; border-left: 2px solid #ccc; border-right: 2px solid #ccc; border-bottom: 2px solid #ccc; background-color: {light1}; }}
             .slide-title {{ color: {dark1}; border-bottom-color: {accent1}; }}
             h1 {{ color: {accent1}; border-bottom-color: {accent1}; }}
             h2 {{ border-bottom-color: {accent1}; }}
         """
 
+
         html_parts = []
         
         for i, slide in enumerate(prs.slides):
             slide_num = i + 1
-            html_parts.append(f'<div class="slide-container" id="slide-{slide_num}">')
-            html_parts.append(f'<div class="slide-num">Slide {slide_num}</div>')
+            
+            # [NEW] Inline style for slide container (Canvas survival)
+            slide_style = (
+                f"margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
+                f"border-top: 5px solid {accent1}; border-radius: 12px; "
+                f"background-color: {light1}; box-shadow: 0 8px 30px rgba(0,0,0,0.1); "
+                f"position: relative; overflow: auto; clear: both;"
+            )
+            html_parts.append(f'<div class="slide-container" id="slide-{slide_num}" style="{slide_style}">')
+            html_parts.append(f'<div class="slide-num" style="position: absolute; top: 15px; right: 25px; font-size: 0.8em; color: #666; font-weight: bold;">Slide {slide_num}</div>')
 
             
             # [NEW] Detect if slide has text content (for image sizing)
@@ -714,7 +728,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
         for i, page in enumerate(doc):
             page_num = i + 1
             html_parts.append(f'<div class="page-container" id="page-{page_num}" style="margin-bottom: 30px; border-bottom: 1px solid #ccc; padding-bottom: 20px;">')
-            html_parts.append(f'<p class="note">Page {page_num}</p>')
+            html_parts.append(f'<p class="note" style="font-size: 0.8em; color: #666; font-weight: bold;">Page {page_num}</p>')
             
             # [IMPROVED] Extract tables FIRST to know their positions
             table_regions = []
@@ -951,6 +965,42 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
                          
                          html_parts.append(f"<p>{' '.join(paragraph_lines)}</p>")
             
+            # [NEW] Fallback Image Extraction (Catch missed XObjects)
+            try:
+                img_list = page.get_images(full=True)
+                # Filter out images already found in the dict block loop
+                # (Simple heuristic: check if we've already saved images for this page in rel_path)
+                found_count = len([p for p in html_parts if "web_resources" in p and f"page{page_num}_img" in p])
+                
+                if len(img_list) > found_count:
+                    self.gui_handler.log(f"   [PDF] Pass 2: Found {len(img_list) - found_count} additional images...")
+                    for img_index, img in enumerate(img_list):
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        ext = base_image["ext"]
+                        
+                        # Use a unique name for fallback images
+                        fallback_name = f"page{page_num}_fallback_{xref}.{ext}"
+                        fallback_path = os.path.join(res_dir, fallback_name)
+                        
+                        if not os.path.exists(fallback_path):
+                            with open(fallback_path, "wb") as f:
+                                f.write(image_bytes)
+                                
+                            rel_path = f"web_resources/{safe_filename}/{fallback_name}"
+                            alt_text = f"Fallback Image from Page {page_num}"
+                            
+                            # Prompt for alt text if possible
+                            if io_handler:
+                                choice = io_handler.prompt_image(f"   > Missing Alt Text for PDF image on Page {page_num} (from fallback): ", fallback_path, context=f"Context: PDF Page {page_num}").strip()
+                                if choice:
+                                    alt_text = choice if choice != "__DECORATIVE__" else ""
+
+                            html_parts.append(f'\u003cimg src="{rel_path}" alt="{alt_text}" class="content-image" style="display: block; margin: 20px auto; max-width: 800px;"\u003e')
+            except Exception as e:
+                print(f"Fallback PDF image extraction failed: {e}")
+
             # Insert any remaining tables that weren't positioned
             for tr in table_regions:
                 if id(tr) not in inserted_tables:
