@@ -38,7 +38,7 @@ class FixerIO:
         # Use user's home directory for global memory
         self.alt_memory_file = os.path.join(os.path.expanduser("~"), ".mosh_alt_memory.json")
         self.memory = self._load_memory()
-        self.api_key = "" # Gemini API Key for Jeanie Magic
+        self.api_key = "" # Gemini API Key for MOSH Magic
 
     def _load_memory(self):
         if os.path.exists(self.alt_memory_file):
@@ -505,12 +505,12 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             
             if img.has_attr('data-math-check'):
                  if io_handler.api_key:
-                     prompt_text = "    > [JEANIE MAGIC] Verify: Is this Math? Enter LaTeX, or 'MAGIC' to auto-generate, or Alt Text if no: "
+                     prompt_text = "    > [MOSH MAGIC] Verify: Is this Math? Enter LaTeX, or 'MAGIC' to auto-generate, or Alt Text if no: "
                  else:
                      prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX (e.g. \\frac{1}{2}). If no, enter Alt Text: "
             else:
                  if io_handler.api_key:
-                     prompt_text = f"    > [JEANIE MAGIC] Enter Alt Text (Press Enter for '{initial_val}', or 'MAGIC' to auto-gen)" + prompt_suffix
+                     prompt_text = f"    > [MOSH MAGIC] Enter Alt Text (Press Enter for '{initial_val}', or 'MAGIC' to auto-gen)" + prompt_suffix
                  else:
                      prompt_text = (f"    > Enter Alt Text (Press Enter for '{initial_val}')" if initial_val else "    > Enter new Alt Text") + prompt_suffix
             
@@ -529,20 +529,20 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 return modified
             
             # If they enter text (or special token), save to memory
-            # [JEANIE MAGIC] Handle Auto-LaTeX / Auto-AltText
+            # [MOSH MAGIC] Handle Auto-LaTeX / Auto-AltText
             if choice.upper() == "MAGIC" and io_handler.api_key and img_full_path:
                 if img.has_attr('data-math-check'):
-                    io_handler.log("    [JEANIE] Consulting the oracle for LaTeX...")
+                    io_handler.log("    [MOSH MAGIC] Consulting the oracle for LaTeX...")
                     ai_suggestion, msg = jeanie_ai.generate_latex_from_image(img_full_path, io_handler.api_key)
                 else:
-                    io_handler.log("    [JEANIE] Consulting the oracle for Alt-Text...")
+                    io_handler.log("    [MOSH MAGIC] Consulting the oracle for Alt-Text...")
                     ai_suggestion, msg = jeanie_ai.generate_alt_text_from_image(img_full_path, io_handler.api_key, context=context)
                 
                 if ai_suggestion:
-                    io_handler.log(f"    [JEANIE] Generated: {ai_suggestion}")
+                    io_handler.log(f"    [MOSH MAGIC] Generated: {ai_suggestion}")
                     choice = ai_suggestion
                 else:
-                    io_handler.log(f"    [JEANIE] Error: {msg}")
+                    io_handler.log(f"    [MOSH MAGIC] Error: {msg}")
                     # Re-prompt
                     choice = io_handler.prompt("    > Please enter text manually: ").strip()
 

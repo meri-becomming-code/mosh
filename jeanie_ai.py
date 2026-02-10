@@ -65,7 +65,76 @@ def generate_latex_from_image(image_path, api_key):
             return None, f"Unexpected response format from Gemini: {res_json}"
 
     except Exception as e:
-        return None, f"Jeanie Error: {str(e)}"
+        return None, f"MOSH Magic Error: {str(e)}"
+
+def generate_text_from_scanned_image(image_path, api_key):
+    """
+    Uses Gemini 1.5 Flash to perform OCR on a scanned document image.
+    Returns extracted text formatted for HTML.
+    """
+    if not api_key:
+        return None, "Error: No Gemini API Key provided."
+
+    if not os.path.exists(image_path):
+        return None, f"Error: Image not found at {image_path}"
+
+    try:
+        # 1. Read and Encode Image
+        with open(image_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+        # 2. Prepare API Call
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        prompt = (
+            "You are a document OCR expert. Extract ALL text from this scanned document image. "
+            "Preserve the reading order. Do not include triple backticks or explanations. "
+            "Format the output as simple, clean text without any markdown symbols."
+        )
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": encoded_image
+                            }
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.1,
+                "topP": 0.95,
+                "topK": 40,
+                "maxOutputTokens": 2048,
+            }
+        }
+
+        # 3. Call Gemini
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        
+        if response.status_code != 200:
+            return None, f"Gemini API Error ({response.status_code}): {response.text}"
+
+        res_json = response.json()
+        
+        # 4. Extract Result
+        try:
+            extracted_text = res_json['candidates'][0]['content']['parts'][0]['text'].strip()
+            return extracted_text, "Success"
+        except (KeyError, IndexError):
+            return None, f"Unexpected response format from Gemini."
+
+    except Exception as e:
+        return None, f"MOSH Magic Error: {str(e)}"
 
 def generate_alt_text_from_image(image_path, api_key, context=None):
     """
@@ -132,7 +201,7 @@ def generate_alt_text_from_image(image_path, api_key, context=None):
             return None, f"Unexpected response format from Gemini."
 
     except Exception as e:
-        return None, f"Jeanie Error: {str(e)}"
+        return None, f"MOSH Magic Error: {str(e)}"
 
 def batch_generate_alt_text(image_paths, api_key, progress_callback=None):
     """

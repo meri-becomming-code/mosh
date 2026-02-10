@@ -110,7 +110,7 @@ class ToolkitGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("MOSH's Toolkit: Making Online Spaces Helpful")
-        self.root.geometry("900x650") # Slightly wider for sidebar
+        self.root.geometry("1150x850") # Wider and longer to prevent cutoff
 
         # --- State ---
         self.target_dir = os.getcwd() # Default
@@ -624,8 +624,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 
         # -- Logs --
         ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
-        self.txt_log = scrolledtext.ScrolledText(content, height=8, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
-        self.txt_log.pack(fill="both", expand=True, pady=5)
+        self.txt_log = scrolledtext.ScrolledText(content, height=12, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
+        self.txt_log.pack(fill="both", expand=True, pady=10)
 
     def _browse_folder(self):
         path = filedialog.askdirectory(initialdir=self.target_dir)
@@ -761,7 +761,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         """Custom dialog to show an image and prompt for alt text."""
         dialog = Toplevel(self.root)
         dialog.title("Image Review")
-        dialog.geometry("600x680") 
+        dialog.geometry("850x900") 
         dialog.transient(self.root)
         dialog.grab_set()
         
@@ -816,20 +816,39 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             
         def on_magic():
             if self.gui_handler.api_key:
-                result["text"] = "MAGIC"
-                dialog.destroy()
+                lbl_status.config(text="🪄 Consulting MOSH Magic...", fg="purple")
+                dialog.update()
+                import jeanie_ai
+                
+                # Check if it's a math equation or standard image
+                # (We can check the message or context for hints, or just try alt-text)
+                if "[JEANIE MAGIC]" in message or "Math" in message:
+                    ai_text, msg = jeanie_ai.generate_latex_from_image(image_path, self.gui_handler.api_key)
+                else:
+                    ai_text, msg = jeanie_ai.generate_alt_text_from_image(image_path, self.gui_handler.api_key, context=context)
+                
+                if ai_text:
+                    entry_var.set(ai_text)
+                    lbl_status.config(text="✅ Done! Review and click 'Update'", fg="green")
+                else:
+                    lbl_status.config(text=f"❌ Error: {msg}", fg="red")
             else:
-                messagebox.showwarning("AI Disabled", "MOSH Magic requires a Gemini API Key.\n\nClick 'Step 1: Select .imscc File' -> 'Enable MOSH Magic' to set it up!")
+                messagebox.showwarning("AI Disabled", "MOSH Magic requires a Gemini API Key.\n\nSet it in 'Step 1: Select .imscc File' -> 'Enable MOSH Magic'")
+
+        # Magic Button Frame (Top/Center)
+        magic_frame = tk.Frame(dialog)
+        magic_frame.pack(pady=(10, 5))
+        
+        tk.Button(magic_frame, text="🪄 CONSULT MOSH MAGIC (AI)", command=on_magic, 
+                  bg="#E3F2FD", fg="#0D47A1", font=("Segoe UI", 12, "bold"), 
+                  padx=20, pady=10).pack()
 
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=15)
         
-        # Primary Magic Button
-        tk.Button(btn_frame, text="🪄 MOSH Magic", command=on_magic, bg="#E3F2FD", fg="#0D47A1", font=("Segoe UI", 10, "bold"), width=15).pack(side="left", padx=5)
-        
-        tk.Button(btn_frame, text="Update Alt Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#fff9c4", width=15).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="✅ Update Alt Text", command=on_ok, bg="#dcedc8", width=18, font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="🎨 Mark Decorative", command=on_decorate, bg="#fff9c4", width=18).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="⏭️ Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
         
         dialog.bind('<Return>', on_ok)
         self.root.wait_window(dialog)
@@ -839,7 +858,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         """Custom dialog to show link details and prompt for text."""
         dialog = Toplevel(self.root)
         dialog.title("Link Review")
-        dialog.geometry("550x400")
+        dialog.geometry("750x550")
         dialog.transient(self.root)
         dialog.grab_set()
         
@@ -909,7 +928,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         share_text = ("Hi team,\n\n"
                      "I found a great free tool called the MOSH ADA Toolkit that automatically "
                      "remediates Canvas pages. It fixes headings, tables, and contrast issues in seconds. "
-                     "It even has an AI co-pilot called 'Jeanie Magic' that writes Math LaTeX and "
+                     "It even has an AI co-pilot called 'MOSH Magic' that writes Math LaTeX and "
                      "image descriptions for you! This makes the April 2026 deadline much easier.\n\n"
                      "It was built by a fellow educator and it's completely free. "
                      "Worth checking out to save hours of manual labor!\n\n"
@@ -1208,7 +1227,7 @@ YOUR WORKFLOW:
         # 2. Show Dialog
         dialog = Toplevel(self.root)
         dialog.title("Interactive Conversion Wizard")
-        dialog.geometry("600x600")
+        dialog.geometry("800x750")
         dialog.lift()
         dialog.focus_force()
         dialog.grab_set()

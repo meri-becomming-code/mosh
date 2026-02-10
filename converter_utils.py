@@ -205,11 +205,15 @@ def optimize_image(image_path, max_width=1100, make_transparent=False):
 
         # 2. Magic Background Removal (Optional)
         if make_transparent:
+            # Check if image already has significant transparency
+            # If more than 5% of pixels are transparent, maybe skip floodfill to avoid artifacts?
+            # For now, just ensure floodfill doesn't overwrite existing transparency with solid color
+            
             # Check corners for white-ish color
             for corner in [(0,0), (w-1, 0), (0, h-1), (w-1, h-1)]:
-                # If corner is purely white, floodfill transparency
                 p = img.getpixel(corner)
-                if p[0] > 240 and p[1] > 240 and p[2] > 240:
+                # Only floodfill if the pixel is opaque AND white-ish
+                if p[3] > 200 and p[0] > 240 and p[1] > 240 and p[2] > 240:
                     ImageDraw.floodfill(img, xy=corner, value=(255, 255, 255, 0), thresh=15)
         
         # 3. Save optimized
@@ -315,15 +319,16 @@ def convert_docx_to_html(docx_path, io_handler=None):
             with image.open() as image_source:
                 image_bytes = image_source.read()
             
-            # Generate unique name
-            ext_img = image.content_type.split('/')[-1]
-            if ext_img == 'jpeg': ext_img = 'jpg'
+            # Generate unique name (Force .png for transparency support)
             short_id = uuid.uuid4().hex[:8]
-            img_name = f"img_{short_id}.{ext_img}"
+            img_name = f"img_{short_id}.png"
             img_path = os.path.join(res_dir, img_name)
             
             with open(img_path, 'wb') as f:
                 f.write(image_bytes)
+
+            # [NEW] Image Optimization & Magic Transparency
+            optimize_image(img_path, max_width=600, make_transparent=True)
             
             # [ENHANCED] Get Natural Dimensions via Pillow
             from PIL import Image as PILImage
@@ -547,9 +552,19 @@ def get_shape_text_styles(shape, theme=None):
                  styles.append(f"color: #{para.font.color.rgb};")
     except: pass
     
-    # 5. Padding/Border if background/border exists
-    if any(k in s for s in styles for k in ["background-color", "border"]):
-        styles.append("padding: 15px; border-radius: 8px; margin-bottom: 10px;")
+    # 5. Padding/Border ONLY if it's a visually distinct box (colored bg or border)
+    # Check if bg color is not just white or transparent
+    has_bg = False
+    for s in styles:
+        if "background-color" in s:
+            # Skip if white or very light
+            if "#ffffff" not in s.lower() and "#fff" not in s.lower():
+                has_bg = True
+    
+    has_border = any("border:" in s for s in styles)
+    
+    if has_bg or has_border:
+        styles.append("padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ddd;")
     
     return " ".join(styles)
 
@@ -812,7 +827,8 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                         res_dir = os.path.join(output_dir, "web_resources", safe_filename)
                         if not os.path.exists(res_dir): os.makedirs(res_dir)
                         
-                        image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.{ext}"
+                        # [FIX] Always use .png for PPT images because we optimize/transparency them
+                        image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.png"
                         image_full_path = os.path.join(res_dir, image_filename)
                         
                         # 1. Save original bytes first
@@ -1044,12 +1060,15 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
                         res_dir = os.path.join(output_dir, "web_resources", safe_filename)
                         if not os.path.exists(res_dir): os.makedirs(res_dir)
 
-                        image_filename = f"page{page_num}_img_{uuid.uuid4().hex[:6]}.{ext}"
+                        # [FIX] Always use .png for PDF images because we optimize/transparency them
+                        image_filename = f"page{page_num}_img_{uuid.uuid4().hex[:6]}.png"
                         image_full_path = os.path.join(res_dir, image_filename)
                         
                         with open(image_full_path, "wb") as f:
                             f.write(image_bytes)
-                            
+                        
+                        # [NEW] Image Optimization & Magic Transparency
+                        optimize_image(image_full_path, max_width=500, make_transparent=True)
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
                         
                         # [INTERACTIVE] Prompt for Alt Text
@@ -1170,14 +1189,17 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
                         image_bytes = base_image["image"]
                         ext = base_image["ext"]
                         
-                        # Use a unique name for fallback images
-                        fallback_name = f"page{page_num}_fallback_{xref}.{ext}"
+                        # [FIX] Always use .png for PDF fallback images
+                        fallback_name = f"page{page_num}_fallback_{xref}.png"
                         fallback_path = os.path.join(res_dir, fallback_name)
                         
                         if not os.path.exists(fallback_path):
                             with open(fallback_path, "wb") as f:
                                 f.write(image_bytes)
-                                
+                            
+                            # [NEW] Image Optimization
+                            optimize_image(fallback_path, max_width=800, make_transparent=True)
+                            
                             rel_path = f"web_resources/{safe_filename}/{fallback_name}"
                             alt_text = f"Fallback Image from Page {page_num}"
                             
@@ -1220,6 +1242,35 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
              )
              html_parts.insert(1, scan_warning)
              print(f"    [WARNING] PDF '{filename}' appears to be a scanned image (text blocks: {total_text_blocks}, pages: {len(doc)}).")
+
+             # [NEW] MOSH Magic OCR Trigger
+             if io_handler and io_handler.config.get("api_key"):
+                 print(f"    [MOSH Magic] Attempting OCR for {len(doc)} pages...")
+                 import jeanie_ai
+                 ocr_parts = []
+                 for page_num_ocr in range(1, len(doc) + 1):
+                     # Find the page image we extracted earlier
+                     # (Heuristic: it's the largest image for that page in web_resources)
+                     # For simplicity, we'll try to OCR EVERY image on the page and combine?
+                     # No, let's just OCR the whole page if we can. 
+                     # Actually, we have extracted images. Let's find them.
+                     page_imgs = [p for p in html_parts if f"page{page_num_ocr}_img" in p]
+                     if page_imgs:
+                         # Extract src from the first img tag
+                         match = re.search(r'src="([^"]+)"', page_imgs[0])
+                         if match:
+                             src = match.group(1)
+                             # Convert relative path back to absolute
+                             img_abs_path = os.path.join(output_dir, src)
+                             text, status = jeanie_ai.generate_text_from_scanned_image(img_abs_path, io_handler.config["api_key"])
+                             if text:
+                                 ocr_parts.append(f'<div class="ocr-content" style="background: #fff; padding: 20px; border: 1px solid #eee; margin: 10px 0;">{text}</div>')
+                 
+                 if ocr_parts:
+                     html_parts.append('<div class="ocr-results" style="margin-top: 40px; border-top: 3px solid #4b3190; padding-top: 20px;">')
+                     html_parts.append('<h3>Extracted Text (MOSH Magic OCR)</h3>')
+                     html_parts.extend(ocr_parts)
+                     html_parts.append('</div>')
 
         full_content = "\n".join(html_parts)
         

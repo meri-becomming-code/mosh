@@ -365,9 +365,17 @@ def remediate_html_file(filepath):
             # Check if next sibling is a paragraph (the tagline)
             tagline = h2.find_next_sibling('p')
             if tagline:
-                # Move tagline OUT of the header div, to immediately after it
+                # [SAFETY FIX] Don't move tagline if it would exit its slide container
+                grandparent = parent.parent
+                is_in_slide = grandparent and 'slide-container' in grandparent.get('class', [])
+                
+                # Move tagline OUT of the small header div, but keep it in the slide
                 tagline.extract()
-                parent.insert_after(tagline)
+                if is_in_slide:
+                    # Insert at the end of the slide container instead of after the parent div
+                    grandparent.append(tagline)
+                else:
+                    parent.insert_after(tagline)
                 
                 # Apply 13A Style (Dark Purple, Italic, Margin)
                 tagline['style'] = "margin-top: 10px; margin-left: 15px; font-style: italic; color: #4b3190;"
