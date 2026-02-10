@@ -509,7 +509,10 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                  else:
                      prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX (e.g. \\frac{1}{2}). If no, enter Alt Text: "
             else:
-                 prompt_text = (f"    > Enter Alt Text (Press Enter for '{initial_val}')" if initial_val else "    > Enter new Alt Text") + prompt_suffix
+                 if io_handler.api_key:
+                     prompt_text = f"    > [JEANIE MAGIC] Enter Alt Text (Press Enter for '{initial_val}', or 'MAGIC' to auto-gen)" + prompt_suffix
+                 else:
+                     prompt_text = (f"    > Enter Alt Text (Press Enter for '{initial_val}')" if initial_val else "    > Enter new Alt Text") + prompt_suffix
             
             if img_full_path and os.path.exists(img_full_path):
                  choice = io_handler.prompt_image(prompt_text, img_full_path, context=context).strip()
@@ -526,17 +529,22 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 return modified
             
             # If they enter text (or special token), save to memory
-            # [JEANIE MAGIC] Handle Auto-LaTeX
+            # [JEANIE MAGIC] Handle Auto-LaTeX / Auto-AltText
             if choice.upper() == "MAGIC" and io_handler.api_key and img_full_path:
-                io_handler.log("    [JEANIE] Consulting the oracle for LaTeX...")
-                latex, msg = jeanie_ai.generate_latex_from_image(img_full_path, io_handler.api_key)
-                if latex:
-                    io_handler.log(f"    [JEANIE] Generated LaTeX: {latex}")
-                    choice = latex
+                if img.has_attr('data-math-check'):
+                    io_handler.log("    [JEANIE] Consulting the oracle for LaTeX...")
+                    ai_suggestion, msg = jeanie_ai.generate_latex_from_image(img_full_path, io_handler.api_key)
+                else:
+                    io_handler.log("    [JEANIE] Consulting the oracle for Alt-Text...")
+                    ai_suggestion, msg = jeanie_ai.generate_alt_text_from_image(img_full_path, io_handler.api_key, context=context)
+                
+                if ai_suggestion:
+                    io_handler.log(f"    [JEANIE] Generated: {ai_suggestion}")
+                    choice = ai_suggestion
                 else:
                     io_handler.log(f"    [JEANIE] Error: {msg}")
                     # Re-prompt
-                    choice = io_handler.prompt("    > Please enter LaTeX or Alt Text manually: ").strip()
+                    choice = io_handler.prompt("    > Please enter text manually: ").strip()
 
             if choice:
                 # [DECORATIVE LOGIC]

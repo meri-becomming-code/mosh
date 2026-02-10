@@ -216,10 +216,10 @@ and to all the other students struggling with their own challenges.
 
 🚀 QUICK START WORKFLOW
 -----------------------
-1. Select Project: Click "Browse Folder" and select your exported course folder.
-2. Guided Review: Click "Guided Review" to write Alt Text for images and check links.
-3. Auto-Fix: Click "Auto-Fix Issues" to fix headings, tables, and contrast issues.
-4. Export: Click "Repackage Course (.imscc)" to create a new Canvas package.
+Step 1: Click "Select .imscc File" and select your Canvas export.
+Step 2: Use the conversion buttons to build your Canvas Pages.
+Step 3: Run "Auto-Fix" followed by "Guided Review" for ADA compliance.
+Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 
 💡 TIPS FOR FACULTY
 -------------------
@@ -227,6 +227,7 @@ and to all the other students struggling with their own challenges.
 - Alt-Text Memory: The tool remembers descriptions you've entered. If you use the same logo in multiple files, it will suggest your previous text!
 - Context Review: When writing Alt Text, look at the "Found in Context" box. It shows you the paragraph around the image to help you write better descriptions.
 - Hard-Working Logs: Check the "Activity Log" at the bottom to see exactly what structural fixes were made to each file.
+- ✨ Jeanie AI Magic: If you have a Gemini API key (see Settings), you can type 'MAGIC' during Guided Review to have the AI write your Alt Tags or Math LaTeX for you!
 
 📦 FILE CONVERSION
 ------------------
@@ -361,9 +362,20 @@ and to all the other students struggling with their own challenges.
         
         def open_api_help():
             webbrowser.open("https://aistudio.google.com/app/apikey")
-            messagebox.showinfo("Gemini API", "I've opened Google AI Studio.\n\n1. Log in with your Google account.\n2. Click 'Create API key'.\n3. Copy the key and paste it into the 4th box here.")
+            msg_steps = (
+                "Jeanie Magic Setup Guide:\n\n"
+                "1. Click 'Create API key' in the window that just opened.\n"
+                "2. Click 'Create API key in new project'.\n"
+                "3. In the box that appears, name your key 'MOSH'.\n"
+                "4. If prompted to choose a project, click the down arrow and select 'Create project'.\n"
+                "5. Name the project 'MOSH' (or anything you like).\n"
+                "6. Click 'Create API key'.\n"
+                "7. Copy the long code and paste it into box #4 here!\n\n"
+                "✨ Once active, you can type 'MAGIC' for any image or equation during Step 3!"
+            )
+            messagebox.showinfo("Jeanie AI Magic", msg_steps)
             
-        tk.Button(dialog, text="🔑 Get a Free Gemini Key", command=open_api_help, font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        tk.Button(dialog, text="✨ Enable Jeanie AI (Get Free Math Help Key)", command=open_api_help, font=("Segoe UI", 9, "bold"), fg="#0369A1", bg="#F0F9FF").pack(anchor="w", padx=40)
 
         def open_course_help():
             messagebox.showinfo("Finding Your Course ID", 
@@ -447,14 +459,15 @@ and to all the other students struggling with their own challenges.
             pass
 
         lbl_logo = ttk.Label(sidebar, text="MOSH'S\nTOOLKIT", style="Sidebar.TLabel", font=("Segoe UI", 16, "bold"), justify="center")
-        lbl_logo.pack(pady=(5, 20), padx=10)
+        lbl_logo.pack(pady=(5, 5), padx=10)
+        
+        lbl_tagline = ttk.Label(sidebar, text="Built by a teacher with AI for teachers", 
+                                style="Sidebar.TLabel", font=("Segoe UI", 9, "italic"), 
+                                wraplength=180, justify="center")
+        lbl_tagline.pack(pady=(0, 20), padx=10)
         
         ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 20))
         
-        # Stop Button (Persistent)
-        self.btn_stop = ttk.Button(sidebar, text="🛑 STOP PROCESSING", command=self._request_stop, style="TButton")
-        self.btn_stop.pack(pady=5, padx=10, fill="x")
-        self.btn_stop.config(state='disabled')
 
         # [NEW] Viral/Mission Button
         self.btn_share = ttk.Button(sidebar, text="📣 SPREAD THE WORD", command=self._show_share_dialog, style="Action.TButton")
@@ -494,7 +507,7 @@ and to all the other students struggling with their own challenges.
         scrollbar.pack(side="right", fill="y")
 
         # -- Target Project Section --
-        ttk.Label(content, text="1. Select Project", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Step 1: Select .imscc File", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
         frame_dir = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_dir.pack(fill="x", pady=(0, 20))
@@ -502,7 +515,7 @@ and to all the other students struggling with their own challenges.
         # Row 1: Import Button
         btn_import = ttk.Button(
             frame_dir, 
-            text="📦 Import My Course (Canvas Export File)", 
+            text="📦 Step 1: Select .imscc File (Canvas Export)", 
             command=self._import_package,
             style="Action.TButton"
         )
@@ -545,7 +558,7 @@ and to all the other students struggling with their own challenges.
         )
         tk.Label(disclaimer_frame, text=disclaimer_text, wraplength=550, bg="#FEF3C7", fg="#78350F", justify="left", font=("Segoe UI", 10)).pack(pady=(8,0))
 
-        ttk.Label(content, text="2. Convert & Build Pages", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Step 2: Convert & Build Pages", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
         frame_convert = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_convert.pack(fill="x", pady=(0, 10))
@@ -569,21 +582,10 @@ and to all the other students struggling with their own challenges.
                                      command=self._run_batch_conversion, style="Action.TButton")
         self.btn_batch.pack(fill="x", pady=(12, 0))
 
-        # [NEW] Quick AI Setup 
-        frame_ai_easy = tk.Frame(content, bg=colors["bg"])
-        frame_ai_easy.pack(fill="x", pady=(0, 25))
-        
-        def open_ai_studio():
-             webbrowser.open("https://aistudio.google.com/app/apikey")
-             messagebox.showinfo("Jeanie AI", "I've opened the key page!\n\n1. Copy the key from your browser.\n2. Click 'Connect to Playground' (Step 1) here.\n3. Paste it into the 'Jeanie Magic' box.")
-
-        tk.Button(frame_ai_easy, text="✨ Enable Jeanie AI (Get Free Math Help Key)", 
-                  command=open_ai_studio, bg="#F0F9FF", fg="#0369A1", 
-                  relief="groove", font=("Segoe UI", 9, "bold"), padx=10).pack(pady=5)
 
 
         # -- Step 3: Remediation Actions (Grid) --
-        ttk.Label(content, text="3. Fix & Review", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Step 3: Fix & Review", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
         frame_actions = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_actions.pack(fill="x", pady=(0, 25))
@@ -604,13 +606,13 @@ and to all the other students struggling with their own challenges.
 
 
         # -- Step 4: Final Launch --
-        ttk.Label(content, text="4. Final Step", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Step 4: Final Step", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         frame_final = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_final.pack(fill="x", pady=(0, 25))
 
         self.btn_check = ttk.Button(
             frame_final, 
-            text="🚥 Am I Ready to Upload? (Run Pre-Flight Check)", 
+            text="🚥 Step 4: Am I Ready to Upload? (Run Pre-Flight Check)", 
             command=self._show_preflight_dialog,
             style="Action.TButton"
         )
@@ -809,8 +811,19 @@ and to all the other students struggling with their own challenges.
             result["text"] = "__DECORATIVE__"
             dialog.destroy()
             
+        def on_magic():
+            if self.gui_handler.api_key:
+                result["text"] = "MAGIC"
+                dialog.destroy()
+            else:
+                messagebox.showwarning("AI Disabled", "Jeanie Magic requires a Gemini API Key.\n\nClick 'Step 1: Select .imscc File' -> 'Enable Jeanie AI' to set it up!")
+
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=15)
+        
+        # Primary Magic Button
+        tk.Button(btn_frame, text="🪄 Jeanie Magic", command=on_magic, bg="#E3F2FD", fg="#0D47A1", font=("Segoe UI", 10, "bold"), width=15).pack(side="left", padx=5)
+        
         tk.Button(btn_frame, text="Update Alt Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#fff9c4", width=15).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
@@ -892,12 +905,12 @@ and to all the other students struggling with their own challenges.
 
         share_text = ("Hi team,\n\n"
                      "I found a great free tool called the MOSH ADA Toolkit that automatically "
-                     "remediates Canvas pages. It fixes headings, tables, and contrast issues in seconds, "
-                     "which makes the upcoming April 2026 deadline much more manageable.\n\n"
+                     "remediates Canvas pages. It fixes headings, tables, and contrast issues in seconds. "
+                     "It even has an AI co-pilot called 'Jeanie Magic' that writes Math LaTeX and "
+                     "image descriptions for you! This makes the April 2026 deadline much easier.\n\n"
                      "It was built by a fellow educator and it's completely free. "
-                     "Worth checking out to save some stress!\n\n"
-                     "GitHub: https://github.com/meri-becomming-code/mosh\n"
-                     "Download: https://meri-becomming-code.github.io/mosh/")
+                     "Worth checking out to save hours of manual labor!\n\n"
+                     "Download/GitHub: https://github.com/meri-becomming-code/mosh")
         
         txt = tk.Text(dialog, height=8, width=60, font=("Segoe UI", 9))
         txt.pack(pady=10, padx=20)
@@ -921,7 +934,6 @@ and to all the other students struggling with their own challenges.
                    self.btn_ppt, self.btn_pdf, self.btn_batch]:
             try: btn.config(state='disabled')
             except: pass
-        self.btn_stop.config(state='normal')
         self.gui_handler.stop_requested = False
         self.is_running = True
 
@@ -932,7 +944,6 @@ and to all the other students struggling with their own challenges.
                    self.btn_ppt, self.btn_pdf, self.btn_batch]:
             try: btn.config(state='normal')
             except: pass
-        self.btn_stop.config(state='disabled')
         self.is_running = False
 
         # [NEW] Handle deferred review launch
@@ -940,12 +951,6 @@ and to all the other students struggling with their own challenges.
             self.deferred_review = False
             self.root.after(100, self._run_interactive)
 
-    def _request_stop(self):
-        """Triggers a stop request."""
-        if self.is_running:
-            self.gui_handler.stop_requested = True
-            self.gui_handler.log("\n[STOP] Stop requested. Finishing current file and exiting...")
-            self.btn_stop.config(state='disabled')
 
 
     def _run_task_in_thread(self, task_func, task_name):
@@ -1087,10 +1092,10 @@ and to all the other students struggling with their own challenges.
         without spending hundreds of hours on manual labor.
 
         🚀 QUICK START WORKFLOW:
-        1. Select Project: Click "Browse Folder" and select your Canvas export folder.
-        2. Guided Review: Click "Guided Review" to write Alt Text for images.
-        3. Auto-Fix: Click "Auto-Fix Issues" to handle headings, tables, and contrast.
-        4. Repackage: Click "Repackage Course" to create a new file for Canvas.
+        Step 1: Select .imscc File - Click "Step 1: Select .imscc File" at the top.
+        Step 2: Convert Files - Use Section 2 buttons to build your Canvas Pages.
+        Step 3: Fix & Review - Run "Auto-Fix" and then "Guided Review" to check everything.
+        Step 4: Final Step - Click "Step 4: Am I Ready to Upload?" to Push to Canvas.
 
         📦 SAFETY ARCHIVE:
         Original files (Word, PPT, PDF) are automatically moved to a hidden 
@@ -1101,6 +1106,10 @@ and to all the other students struggling with their own challenges.
         Always test your remediated files in a NEW EMPTY CANVAS COURSE 
         before moving them into a live semester.
         
+        📦 JEANIE MAGIC (AI ASSISTANCE):
+        If you provide a Gemini API Key in Box #4, Jeanie can write your 
+        Alt Tags and Math LaTeX for you! Just type 'MAGIC' when prompted.
+
         🐛 Support: meredithkasprak@gmail.com
         """
         
@@ -1545,25 +1554,25 @@ YOUR WORKFLOW:
 
     def _run_batch_conversion(self):
         """Processes ALL convertible files in one go without per-file verification."""
-        # 1. Scary Warning
-        msg = ("🎲 ROLL THE DICE: BATCH CONVERSION 🎲\n\n"
+        # 1. Warning
+        msg = ("📂 BATCH CONVERSION 📂\n\n"
                "⚠️ IMPORTANT LEGAL CHECK: ONLY use this for content YOU created or OER materials.\n"
                "❌ DO NOT use on publisher content. If you have publisher files in this folder, cancel this and use the selection buttons to exclude them.\n\n"
-               "WARNING: This will convert EVERY Word, PPT, Excel, and PDF file in your project to Canvas WikiPages automatically.\n\n"
-               "- It is NOT perfect. Layouts may break.\n"
+               "This will convert EVERY Word, PPT, Excel, and PDF file in your project to Canvas Pages automatically.\n\n"
+               "- All documents will be turned into clean, accessible HTML.\n"
                "- Original files will be moved to the archive folder for safety.\n"
                "- Links will be updated throughout your project.\n\n"
-               "YOU are responsible for reviewing the resulting Canvas pages. "
-               "Are you sure you want to take this gamble?")
+               "You should review the resulting pages before publishing. "
+               "Do you want to proceed with the batch conversion?")
         
-        if not messagebox.askyesno("🎲 Feeling Lucky?", msg):
+        if not messagebox.askyesno("Batch conversion", msg):
             return
 
         # [NEW] Check if they want to sync to Canvas as they go
         self.config["batch_sync_confirmed"] = False
         api = self._get_canvas_api()
         if api:
-            msg_sync = "🎲 Would you like me to SYNC these pages to Canvas as I convert them?\n\n(This creates live, editable Pages in your Canvas course immediately!)"
+            msg_sync = "🚀 Would you like me to SYNC these pages to Canvas as I convert them?\n\n(This creates live, editable Pages in your Canvas course immediately!)"
             if messagebox.askyesno("Live Sync?", msg_sync):
                 self.config["batch_sync_confirmed"] = True
 
@@ -1581,7 +1590,7 @@ YOUR WORKFLOW:
                 self.gui_handler.log("No convertible files found.")
                 return
 
-            self.gui_handler.log(f"--- 🎲 Starting Batch Gamble on {len(found_files)} files ---")
+            self.gui_handler.log(f"--- Starting Batch Conversion on {len(found_files)} files ---")
             success_count = 0
             total_auto_fixes = 0
             
@@ -1662,11 +1671,11 @@ YOUR WORKFLOW:
                 self.gui_handler.log("📂 Opening archive folder with your original files for safekeeping...")
                 os.startfile(archive_path)
 
-            self.root.after(0, lambda: messagebox.showinfo("Gamble Complete", 
+            self.root.after(0, lambda: messagebox.showinfo("Conversion Complete", 
                 f"Processed {len(found_files)} files.\nCheck the logs for details.\n\n"
                 "I have opened the folder containing your original files so you can move them to a safe place."))
 
-        self._run_task_in_thread(task, "Batch Gamble")
+        self._run_task_in_thread(task, "Batch Conversion")
 
     # --- [NEW] Pre-Flight & Push Logic ---
 
