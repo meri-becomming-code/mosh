@@ -131,7 +131,8 @@ def remediate_html_file(filepath):
 
     # --- Part 1: Cleanup (Toolkit 1 Logic) ---
     # Strip <font> tags but keep content
-    html_content = re.sub(r'<font[^>]*>(.*?)</font>', r'\1', html_content, flags=re.IGNORECASE | re.DOTALL)
+    # [REMOVED] Destructive stripping. Handled in Part 8 via BeautifulSoup to preserve info.
+    # html_content = re.sub(r'<font[^>]*>(.*?)</font>', r'\1', html_content, flags=re.IGNORECASE | re.DOTALL)
     
     # REGEX REMOVED: Do not strip inline colors globally.
     # html_content = re.sub(r'(?:background-)?color:\s*#(?:000|fff|333|666|000000|ffffff|333333|666666);?', '', html_content, flags=re.IGNORECASE)
@@ -191,15 +192,22 @@ def remediate_html_file(filepath):
             head.append(new_meta)
             fixes.append("Added mobile viewport meta tag")
 
-    # Ensure main div has lang='en' (or inherits from doc)
-    # First, check if any top-level div already has lang attribute (idempotency)
-    main_div = soup.find('div', attrs={'lang': True})
+    # [NEW] Structural Integrity: Ensure the body contains exactly one main-content div,
+    # and all other content is moved inside it.
+    main_div = soup.find('div', class_='main-content')
     if not main_div:
-        main_div = soup.find('div')
+        main_div = soup.find('div', attrs={'lang': True})
     
-    if not main_div:
+    if main_div:
+        # Move any siblings of main_div into it (to prevent "leaking" outside)
+        siblings = [s for s in main_div.parent.contents if s != main_div]
+        for s in siblings:
+            if hasattr(s, 'name') and s.name in ['script', 'style', 'head', 'meta', 'link']:
+                continue
+            main_div.append(s.extract())
+    else:
         # Create a wrapper if none exists
-        new_div = soup.new_tag('div')
+        new_div = soup.new_tag('div', class_='main-content')
         if soup.body:
             for element in list(soup.body.contents):
                 new_div.append(element.extract())
@@ -276,6 +284,19 @@ def remediate_html_file(filepath):
 
     # --- Part 5: Tables (AGGRESSIVE REMEDIATION) ---
     for table in soup.find_all('table'):
+        # 0. [NEW] Remove completely empty tables (Accessibility & UI Cleanup)
+        # Check if the table has any meaningful text content or images
+        has_content = False
+        for cell in table.find_all(['td', 'th']):
+            if cell.get_text(strip=True) or cell.find('img'):
+                has_content = True
+                break
+        
+        if not has_content:
+            fixes.append("Removed empty data table (no text or images found)")
+            table.extract()
+            continue
+
         # 1. Cleanup empty TBODYs
         for tb in table.find_all('tbody'):
             if not tb.find('tr'):
@@ -447,9 +468,9 @@ def remediate_html_file(filepath):
             unit = size_match.group(2)
             needs_elevation = False
             new_val = 12
-            if unit == 'px' and val <= 9: needs_elevation = True
-            elif unit == 'pt' and val <= 7: needs_elevation = True; new_val = 9
-            elif unit in ['em', 'rem'] and val <= 0.6: needs_elevation = True; new_val = 0.8
+            if unit == 'px' and val < 10: needs_elevation = True
+            elif unit == 'pt' and val < 8: needs_elevation = True; new_val = 9
+            elif unit in ['em', 'rem'] and val < 0.7: needs_elevation = True; new_val = 0.8
             if needs_elevation:
                 tag['style'] = re.sub(rf'font-size:\s*[0-9.]+{unit}', f'font-size: {new_val}{unit}', tag['style'], flags=re.IGNORECASE)
                 fixes.append(f"Elevated small font size ({val}{unit} -> {new_val}{unit})")
@@ -571,15 +592,21 @@ def remediate_html_file(filepath):
     
     # Unwrap <font> (preserve content, remove tag)
     for tag in soup.find_all('font'):
-        # Try to preserve color as a span with inline style
+        # Try to preserve color and face as a span with inline style
         color = tag.get('color')
-        if color:
-            new_span = soup.new_tag('span', style=f"color: {color};")
+        font = tag.get('face')
+        
+        style_parts = []
+        if color: style_parts.append(f"color: {color};")
+        if font: style_parts.append(f"font-family: {font}, sans-serif;")
+        
+        if style_parts:
+            new_span = soup.new_tag('span', style=" ".join(style_parts))
             new_span.extend(tag.contents[:])
             tag.replace_with(new_span)
         else:
             tag.unwrap()
-        fixes.append("Removed deprecated <font> tag")
+        fixes.append("Replaced deprecated <font> tag with styled <span>")
     
     # Unwrap <blink> and <marquee> (just remove the tag, keep content)
     for tag_name in ['blink', 'marquee']:

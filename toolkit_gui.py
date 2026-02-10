@@ -208,11 +208,16 @@ class ToolkitGUI:
         doc_content = """MOSH Faculty ADA Toolkit (2026 Edition)
 =====================================
 
-DEDICATION
-----------
+DEDICATION & PARTNERSHIP
+-----------------------
 This software is dedicated to my son, Michael Joshua (Mosh) Albright, 
 who deals with diabetic retinopathy and spent three years blind, 
 and to all the other students struggling with their own challenges.
+
+BUILDING WITH AI:
+MOSH's Toolkit was built as a human-AI collaboration. Dr. Meri Kasprak 
+worked alongside Antigravity, an advanced coding AI from Google DeepMind, 
+to ensure this toolkit remains free, powerful, and accessible for teachers.
 
 🚀 QUICK START WORKFLOW
 -----------------------
@@ -224,10 +229,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 💡 TIPS FOR FACULTY
 -------------------
 - Always use a NEW, EMPTY Canvas course for testing your remediated files.
-- Alt-Text Memory: The tool remembers descriptions you've entered. If you use the same logo in multiple files, it will suggest your previous text!
-- Context Review: When writing Alt Text, look at the "Found in Context" box. It shows you the paragraph around the image to help you write better descriptions.
 - Hard-Working Logs: Check the "Activity Log" at the bottom to see exactly what structural fixes were made to each file.
-- ✨ Jeanie AI Magic: If you have a Gemini API key (see Settings), you can type 'MAGIC' during Guided Review to have the AI write your Alt Tags or Math LaTeX for you!
+- ✨ MOSH Magic: If you have a Gemini API key (see Settings), you can click the Magic Wand (🪄) during Guided Review to have our AI write your Alt Tags or Math LaTeX for you!
 
 📦 FILE CONVERSION
 ------------------
@@ -327,7 +330,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 
         # Fields
         tk.Label(dialog, text="1. Your School's Canvas Website:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(dialog, text="(e.g. https://canvas.your-school.edu)", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        tk.Label(dialog, text="(e.g. https://yourschool.instructure.com or https://canvas.your-school.edu)", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
         ent_url = tk.Entry(dialog, width=60)
         ent_url.insert(0, self.config.get("canvas_url", ""))
         ent_url.pack(pady=5, padx=40)
@@ -354,8 +357,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         ent_course.insert(0, self.config.get("canvas_course_id", ""))
         ent_course.pack(side="left", pady=5)
 
-        tk.Label(dialog, text="4. [OPTIONAL] Jeanie Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(dialog, text="Required for 'MAGIC' LaTeX generation. Get one for free at Google AI Studio.", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        tk.Label(dialog, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        tk.Label(dialog, text="Required for '🪄 Magic' auto-generation. Get one for free at Google AI Studio.", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
         ent_api = tk.Entry(dialog, width=60, show="*")
         ent_api.insert(0, self.config.get("api_key", ""))
         ent_api.pack(pady=5, padx=40)
@@ -363,7 +366,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         def open_api_help():
             webbrowser.open("https://aistudio.google.com/app/apikey")
             msg_steps = (
-                "Jeanie Magic Setup Guide:\n\n"
+                "MOSH Magic Setup Guide:\n\n"
                 "1. Click 'Create API key' in the window that just opened.\n"
                 "2. Click 'Create API key in new project'.\n"
                 "3. In the box that appears, name your key 'MOSH'.\n"
@@ -371,11 +374,11 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
                 "5. Name the project 'MOSH' (or anything you like).\n"
                 "6. Click 'Create API key'.\n"
                 "7. Copy the long code and paste it into box #4 here!\n\n"
-                "✨ Once active, you can type 'MAGIC' for any image or equation during Step 3!"
+                "✨ Once active, you can use the 🪄 Magic Wand during Step 3!"
             )
-            messagebox.showinfo("Jeanie AI Magic", msg_steps)
+            messagebox.showinfo("MOSH Magic Help", msg_steps)
             
-        tk.Button(dialog, text="✨ Enable Jeanie AI (Get Free Math Help Key)", command=open_api_help, font=("Segoe UI", 9, "bold"), fg="#0369A1", bg="#F0F9FF").pack(anchor="w", padx=40)
+        tk.Button(dialog, text="✨ Enable MOSH Magic (Get Free Math Help Key)", command=open_api_help, font=("Segoe UI", 9, "bold"), fg="#0369A1", bg="#F0F9FF").pack(anchor="w", padx=40)
 
         def open_course_help():
             messagebox.showinfo("Finding Your Course ID", 
@@ -399,7 +402,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
                 ent_token.get().strip(),
                 ent_course.get().strip()
             )
-            messagebox.showinfo("Saved", "Settings saved! Jeanie Magic is now active if you provided a key.")
+            messagebox.showinfo("Saved", "Settings saved! MOSH Magic is now active if you provided a key.")
             dialog.destroy()
 
         def test_safety():
@@ -816,13 +819,13 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
                 result["text"] = "MAGIC"
                 dialog.destroy()
             else:
-                messagebox.showwarning("AI Disabled", "Jeanie Magic requires a Gemini API Key.\n\nClick 'Step 1: Select .imscc File' -> 'Enable Jeanie AI' to set it up!")
+                messagebox.showwarning("AI Disabled", "MOSH Magic requires a Gemini API Key.\n\nClick 'Step 1: Select .imscc File' -> 'Enable MOSH Magic' to set it up!")
 
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=15)
         
         # Primary Magic Button
-        tk.Button(btn_frame, text="🪄 Jeanie Magic", command=on_magic, bg="#E3F2FD", fg="#0D47A1", font=("Segoe UI", 10, "bold"), width=15).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="🪄 MOSH Magic", command=on_magic, bg="#E3F2FD", fg="#0D47A1", font=("Segoe UI", 10, "bold"), width=15).pack(side="left", padx=5)
         
         tk.Button(btn_frame, text="Update Alt Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
         tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#fff9c4", width=15).pack(side="left", padx=5)
@@ -1106,9 +1109,13 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         Always test your remediated files in a NEW EMPTY CANVAS COURSE 
         before moving them into a live semester.
         
-        📦 JEANIE MAGIC (AI ASSISTANCE):
-        If you provide a Gemini API Key in Box #4, Jeanie can write your 
-        Alt Tags and Math LaTeX for you! Just type 'MAGIC' when prompted.
+        📦 MOSH MAGIC (AI ASSISTANCE):
+        If you provide a Gemini API Key in Box #4, MOSH Magic can write your 
+        Alt Tags and Math LaTeX for you! Just click the magic wand (🪄).
+
+        🤖 AI COLLABORATOR:
+        This toolkit was co-authored by Antigravity, an advanced coding AI 
+        from Google DeepMind. Together, we are making education accessible.
 
         🐛 Support: meredithkasprak@gmail.com
         """

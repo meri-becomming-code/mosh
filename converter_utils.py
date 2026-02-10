@@ -381,6 +381,23 @@ def convert_docx_to_html(docx_path, io_handler=None):
         
         # Ensure tables have some basic class for our CSS
         html_content = html_content.replace("<table>", '<table class="content-table">')
+        
+        # [NEW] Remove empty tables that often come from Word formatting
+        temp_soup = BeautifulSoup(html_content, 'html.parser')
+        tables_removed = 0
+        for table in temp_soup.find_all('table'):
+            has_content = False
+            for cell in table.find_all(['td', 'th']):
+                if cell.get_text(strip=True) or cell.find('img'):
+                    has_content = True
+                    break
+            if not has_content:
+                table.extract()
+                tables_removed += 1
+        
+        if tables_removed > 0:
+            print(f"    [LOG] Removed {tables_removed} empty tables from Word document.")
+            html_content = str(temp_soup)
 
         s_filename = sanitize_filename(filename)
         output_path = os.path.join(output_dir, f"{s_filename}.html")
@@ -702,9 +719,23 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                             if hlink:
                                 para_html_parts.append(f'<a href="{hlink}">{run_text}</a>')
                             else:
-                                # Preserving Bold/Italic if clear
+                                # Preserving Styles (Bold, Italic, Color, Font)
                                 transformed = run_text
                                 try:
+                                    inline_styles = []
+                                    if run.font.color and run.font.color.rgb:
+                                        inline_styles.append(f"color: #{run.font.color.rgb};")
+                                    if run.font.name:
+                                        inline_styles.append(f"font-family: '{run.font.name}', sans-serif;")
+                                    if run.font.size:
+                                        size_pt = int(run.font.size / 12700)
+                                        # Only keep if >= 10pt per user request for readability
+                                        if size_pt >= 10:
+                                            inline_styles.append(f"font-size: {size_pt}pt;")
+                                    
+                                    if inline_styles:
+                                        transformed = f'<span style="{" ".join(inline_styles)}">{transformed}</span>'
+                                    
                                     if run.font.bold: transformed = f"<strong>{transformed}</strong>"
                                     if run.font.italic: transformed = f"<em>{transformed}</em>"
                                 except: pass
@@ -750,17 +781,26 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
 
                 # Tables
                 if shape.has_table:
-                    html_parts.append('<table class="content-table" border="1">')
+                    # [NEW] Check if table is empty
+                    is_empty = True
                     for row in shape.table.rows:
-                        html_parts.append('<tr>')
                         for cell in row.cells:
-                            # Extract text from cell
-                            cell_text = ""
-                            if cell.text_frame:
-                                cell_text = cell.text_frame.text.strip()
-                            html_parts.append(f'<td>{cell_text}</td>')
-                        html_parts.append('</tr>')
-                    html_parts.append('</table>')
+                            if cell.text_frame and cell.text_frame.text.strip():
+                                is_empty = False
+                                break
+                    
+                    if not is_empty:
+                        html_parts.append('<table class="content-table" border="1">')
+                        for row in shape.table.rows:
+                            html_parts.append('<tr>')
+                            for cell in row.cells:
+                                # Extract text from cell
+                                cell_text = ""
+                                if cell.text_frame:
+                                    cell_text = cell.text_frame.text.strip()
+                                html_parts.append(f'<td>{cell_text}</td>')
+                            html_parts.append('</tr>')
+                        html_parts.append('</table>')
 
                 # Images (Alt Text prompts only if no Silent Memory)
                 if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
