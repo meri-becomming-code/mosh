@@ -36,6 +36,7 @@ def build():
     args.append('--hidden-import=run_audit')
     args.append('--hidden-import=canvas_utils')
     args.append('--hidden-import=requests')
+    args.append('--hidden-import=jeanie_ai')
     
     # PDF Processing Libraries (Critical for table/image extraction)
     args.append('--hidden-import=fitz')  # PyMuPDF

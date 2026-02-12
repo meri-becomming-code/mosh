@@ -70,8 +70,10 @@ class FixerIO:
         """Check if skip or stop was requested."""
         return self.stop_requested
         
-    def prompt_image(self, message, image_path, context=None):
+    def prompt_image(self, message, image_path, context=None, suggestion=None):
         """Ask user for input while showing an image and context."""
+        if suggestion:
+            print(f"Suggestion: {suggestion}")
         print(f"Context: {context}")
         return input(message)
 
@@ -500,28 +502,43 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             if not img_full_path:
                  io_handler.log(f"    [Warning] Could not find local image file.")
 
-            prompt_suffix = " (Type '!!' to skip all remaining): "
-            initial_val = suggestion if suggestion else alt
+            # [JEANIE MAGIC] Auto-Generate Suggestion if API Key exists
+            ai_suggestion = None
+            choice = None # [FIX] Initialize choice to avoid UnboundLocalError
             
+            if io_handler.api_key and img_full_path:
+                if img.has_attr('data-math-check'):
+                    io_handler.log("    [JEANIE] Consulting the oracle for LaTeX (Auto)...")
+                    ai_suggestion, msg = jeanie_ai.generate_latex_from_image(img_full_path, io_handler.api_key)
+                else:
+                    io_handler.log("    [JEANIE] Consulting the oracle for Alt-Text (Auto)...")
+                    ai_suggestion, msg = jeanie_ai.generate_alt_text_from_image(img_full_path, io_handler.api_key, context=context)
+                
+                if ai_suggestion:
+                    io_handler.log(f"    [JEANIE] Suggestion: {ai_suggestion}")
+                else:
+                    io_handler.log(f"    [JEANIE] Error: {msg}")
+
+            # Define prompt_suffix to avoid UnboundLocalError
+            prompt_suffix = ""
+            if ai_suggestion:
+                prompt_suffix = f" (Default: {ai_suggestion[:20]}...)"
+
             if img.has_attr('data-math-check'):
-                 if io_handler.api_key:
-                     prompt_text = "    > [JEANIE MAGIC] Verify: Is this Math? Enter LaTeX, or 'MAGIC' to auto-generate, or Alt Text if no: "
-                 else:
-                     prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX (e.g. \\frac{1}{2}). If no, enter Alt Text: "
+                 prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX. If no, enter Alt Text: "
             else:
-                 if io_handler.api_key:
-                     prompt_text = f"    > [JEANIE MAGIC] Enter Alt Text (Press Enter for '{initial_val}', or 'MAGIC' to auto-gen)" + prompt_suffix
-                 else:
-                     prompt_text = (f"    > Enter Alt Text (Press Enter for '{initial_val}')" if initial_val else "    > Enter new Alt Text") + prompt_suffix
+                 prompt_text = "    > Enter Alt Text (Press Enter to accept suggestion): " + prompt_suffix
             
             if img_full_path and os.path.exists(img_full_path):
-                 choice = io_handler.prompt_image(prompt_text, img_full_path, context=context).strip()
+                 # Pass the AI suggestion (or filename based on if no AI) to the UI
+                 display_suggestion = ai_suggestion if ai_suggestion else initial_val
+                 choice = io_handler.prompt_image(prompt_text, img_full_path, context=context, suggestion=display_suggestion).strip()
             else:
                  choice = io_handler.prompt(prompt_text).strip()
             
-            # Use suggestion if Enter pressed and suggestion exists
-            if not choice and initial_val:
-                choice = initial_val
+            # Use suggestion if Enter pressed
+            if not choice and (ai_suggestion or initial_val):
+                choice = ai_suggestion if ai_suggestion else initial_val
             
             # [OVERRIDE] Allow skipping all remaining items
             if choice == "!!":
@@ -529,22 +546,6 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 return modified
             
             # If they enter text (or special token), save to memory
-            # [JEANIE MAGIC] Handle Auto-LaTeX / Auto-AltText
-            if choice.upper() == "MAGIC" and io_handler.api_key and img_full_path:
-                if img.has_attr('data-math-check'):
-                    io_handler.log("    [JEANIE] Consulting the oracle for LaTeX...")
-                    ai_suggestion, msg = jeanie_ai.generate_latex_from_image(img_full_path, io_handler.api_key)
-                else:
-                    io_handler.log("    [JEANIE] Consulting the oracle for Alt-Text...")
-                    ai_suggestion, msg = jeanie_ai.generate_alt_text_from_image(img_full_path, io_handler.api_key, context=context)
-                
-                if ai_suggestion:
-                    io_handler.log(f"    [JEANIE] Generated: {ai_suggestion}")
-                    choice = ai_suggestion
-                else:
-                    io_handler.log(f"    [JEANIE] Error: {msg}")
-                    # Re-prompt
-                    choice = io_handler.prompt("    > Please enter text manually: ").strip()
 
             if choice:
                 # [DECORATIVE LOGIC]

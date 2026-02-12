@@ -129,7 +129,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .code-block {{ margin: 15px 0; }}
         
         .slide-container {{ 
-            overflow: auto; 
+            display: flow-root; 
             clear: both; 
             margin-bottom: 60px; 
             padding: 60px; 
@@ -620,7 +620,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                 f"margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
                 f"border-top: 5px solid {accent1}; border-radius: 12px; "
                 f"background-color: {light1}; box-shadow: 0 8px 30px rgba(0,0,0,0.1); "
-                f"position: relative; overflow: auto; clear: both;"
+                f"position: relative; display: flow-root; clear: both;"
             )
             html_parts.append(f'<div class="slide-container" id="slide-{slide_num}" style="{slide_style}">')
             html_parts.append(f'<div class="slide-num" style="position: absolute; top: 15px; right: 25px; font-size: 0.8em; color: #666; font-weight: bold;">Slide {slide_num}</div>')
@@ -861,14 +861,44 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
                                 alt_text = io_handler.memory[mem_key]
                             else:
                                 slide_title = slide.shapes.title.text_frame.text if slide.shapes.title else f"Slide {slide_num}"
-                                choice = io_handler.prompt_image(f"   > Alt Text for Slide {slide_num} image (or Enter to skip): ", image_full_path, context=f"Context: {slide_title}").strip()
-                                if choice:
-                                    if choice == "__DECORATIVE__":
-                                        alt_text = ""
-                                    else:
-                                        alt_text = choice
-                                    io_handler.memory[mem_key] = alt_text
-                                    io_handler.save_memory()
+                                
+                                # [FIX] ADD AI SUGGESTION LOGIC HERE
+                                ai_suggestion = None
+                                
+                                # Debug Logging
+                                if not io_handler.api_key:
+                                    io_handler.log(f"    [JEANIE] Skipped (No API Key found). Check Settings.")
+                                else:
+                                    # We need to import jeanie_ai (it might not be imported yet in this scope)
+                                    try:
+                                        import jeanie_ai
+                                        io_handler.log(f"    [JEANIE] Generating suggestion for Slide {slide_num}...")
+                                        ai_suggestion, error_msg = jeanie_ai.generate_alt_text_from_image(image_full_path, io_handler.api_key, context=slide_title)
+                                        
+                                        if ai_suggestion:
+                                            io_handler.log(f"    [JEANIE] Success: {ai_suggestion[:30]}...")
+                                        else:
+                                            io_handler.log(f"    [JEANIE] Failed: {error_msg}")
+                                            
+                                    except Exception as e:
+                                        io_handler.log(f"    [JEANIE] Critical Error: {e}")
+
+                                prompt_text = f"   > Alt Text for Slide {slide_num} image (Enter to accept suggestion): "
+                                if ai_suggestion:
+                                    prompt_text = f"   > Alt Text for Slide {slide_num} (Default: {ai_suggestion[:20]}...): "
+                                
+                                # Pass suggestion to the GUI prompt
+                                choice = io_handler.prompt_image(prompt_text, image_full_path, context=f"Context: {slide_title}", suggestion=ai_suggestion).strip()
+                                
+                                if not choice and ai_suggestion:
+                                    alt_text = ai_suggestion
+                                elif choice == "__DECORATIVE__":
+                                    alt_text = ""
+                                else:
+                                    alt_text = choice
+                                    
+                                io_handler.memory[mem_key] = alt_text
+                                io_handler.save_memory()
 
                         html_parts.append(f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}">')
                     except Exception as img_err:

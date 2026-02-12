@@ -1,10 +1,13 @@
 import requests
 import os
 import mimetypes
+from urllib.parse import urlparse
 
 class CanvasAPI:
     def __init__(self, base_url, token, course_id):
-        self.base_url = base_url.rstrip('/')
+        # [FIX] Strictly parse base URL to remove any path components (like /courses/xxx)
+        parsed = urlparse(base_url)
+        self.base_url = f"{parsed.scheme}://{parsed.netloc}"
         self.token = token
         self.course_id = course_id
         self.headers = {

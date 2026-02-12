@@ -361,7 +361,8 @@ def remediate_html_file(filepath):
     for h2 in soup.find_all('h2'):
         parent = h2.parent
         # Check if parent is the dark purple header container
-        if parent.name == 'div' and 'background-color' in parent.get('style', '').lower() and '#4b3190' in parent['style'].lower():
+        # [FIX] Explicitly ignore slide-container to prevent breaking PPT layout
+        if parent.name == 'div' and 'slide-container' not in parent.get('class', []) and 'background-color' in parent.get('style', '').lower() and '#4b3190' in parent['style'].lower():
             # Check if next sibling is a paragraph (the tagline)
             tagline = h2.find_next_sibling('p')
             if tagline:
