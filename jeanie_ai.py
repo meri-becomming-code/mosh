@@ -111,10 +111,11 @@ def generate_latex_from_image(image_path, api_key):
                 break
             elif response.status_code == 429:
                 if attempt < max_retries - 1:
-                    time.sleep(2 * (attempt + 1))
+                    wait_time = 3 * (attempt + 1)  # Backoff: 3s, 6s, 9s
+                    time.sleep(wait_time)
                     continue
                 else:
-                    return None, f"Quota Exceeded (429): Please wait a minute."
+                    return None, f"Quota Exceeded (429): You're hitting rate limits. Please wait 1-2 minutes."
             else:
                 return None, f"Gemini API Error ({response.status_code}): {response.text}"
         
@@ -129,6 +130,10 @@ def generate_latex_from_image(image_path, api_key):
             # Clean up potential markdown backticks if the model ignored instructions
             if latex.startswith("```"):
                 latex = latex.replace("```latex", "").replace("```", "").strip()
+            
+            # Add delay to prevent rate limiting on next request
+            time.sleep(1)  # Wait 1 second between successful requests
+            
             return latex, "Success"
         except (KeyError, IndexError):
             return None, f"Unexpected response format from Gemini: {res_json}"
@@ -264,10 +269,11 @@ def generate_alt_text_from_image(image_path, api_key, context=None):
                 break
             elif response.status_code == 429:
                 if attempt < max_retries - 1:
-                    time.sleep(2 * (attempt + 1)) # Backoff: 2s, 4s, 6s
+                    wait_time = 3 * (attempt + 1)  # Backoff: 3s, 6s, 9s
+                    time.sleep(wait_time)
                     continue
                 else:
-                    return None, f"Quota Exceeded (429): Please wait a minute and try again."
+                    return None, f"Quota Exceeded (429): You're hitting rate limits. Please wait 1-2 minutes before continuing."
             else:
                 return None, f"Gemini API Error ({response.status_code}): {response.text}"
 
@@ -279,6 +285,10 @@ def generate_alt_text_from_image(image_path, api_key, context=None):
         # 4. Extract Result
         try:
             alt_text = res_json['candidates'][0]['content']['parts'][0]['text'].strip()
+            
+            # Add delay to prevent rate limiting on next request
+            time.sleep(1)  # Wait 1 second between successful requests
+            
             return alt_text, "Success"
         except (KeyError, IndexError):
             return None, f"Unexpected response format from Gemini."
