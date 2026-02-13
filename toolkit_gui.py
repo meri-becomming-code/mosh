@@ -360,7 +360,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         ent_course.pack(side="left", pady=5)
 
         tk.Label(dialog, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(dialog, text="Required for '🪄 Magic' auto-generation. Get one for free at Google AI Studio.", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        tk.Label(dialog, text="Required for '🪄 Magic' auto-generation. Requires a PAID API key (free tier doesn't work).", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
         ent_api = tk.Entry(dialog, width=60, show="*")
         ent_api.insert(0, self.config.get("api_key", ""))
         ent_api.pack(pady=5, padx=40)
@@ -370,13 +370,15 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             webbrowser.open("https://aistudio.google.com/app/apikey")
             msg_steps = (
                 "MOSH Magic Setup Guide:\n\n"
+                "⚠️ IMPORTANT: You need a PAID Gemini API key. The free tier doesn't work.\n\n"
                 "1. Click 'Create API key' in the window that just opened.\n"
                 "2. Click 'Create API key in new project'.\n"
                 "3. In the box that appears, name your key 'MOSH'.\n"
-                "4. If prompted to choose a project, click the down arrow and select 'Create project'.\n"
+                "4. If prompted to choose a project, select 'Create project'.\n"
                 "5. Name the project 'MOSH' (or anything you like).\n"
                 "6. Click 'Create API key'.\n"
-                "7. Copy the long code and paste it into box #4 here!\n\n"
+                "7. SET UP BILLING: Go to Google Cloud Console and add a payment method.\n"
+                "8. Copy the long code and paste it into box #4 here!\n\n"
                 "✨ Once active, you can use the 🪄 Magic Wand during Step 3!"
             )
             messagebox.showinfo("MOSH Magic Help", msg_steps)
@@ -403,7 +405,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         btn_api_frame = tk.Frame(dialog, bg=colors["bg"])
         btn_api_frame.pack(anchor="w", padx=40)
         
-        tk.Button(btn_api_frame, text="✨ Get Free Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF").pack(side="left", padx=(0, 10))
+        tk.Button(btn_api_frame, text="💳 Get Paid API Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF").pack(side="left", padx=(0, 10))
         tk.Button(btn_api_frame, text="🧪 Test This Key", command=test_api_key, font=("Segoe UI", 9, "bold")).pack(side="left")
 
         def open_course_help():
@@ -1142,8 +1144,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         before moving them into a live semester.
         
         📦 MOSH MAGIC (AI ASSISTANCE):
-        If you provide a Gemini API Key in Box #4, MOSH Magic can write your 
-        Alt Tags and Math LaTeX for you! Just click the magic wand (🪄).
+        If you provide a PAID Gemini API Key in Box #4, MOSH Magic can write your 
+        Alt Tags and Math LaTeX for you! Note: Free tier API keys don't work.
 
         🤖 AI COLLABORATOR:
         This toolkit was co-authored by Antigravity, an advanced coding AI 
