@@ -14,9 +14,9 @@
 **TONE:** Friendly, conversational, empathetic
 
 **SCRIPT:**
-> "Hey educators! I'm Dr. Meri Kasprak, and like many of you, I was completely stressed about the April 2026 ADA deadline. I had 15 years of Canvas content, hundreds of pages, thousands of images... and NO idea where to start.
+> "Hey educators! I'm Dr. Meri Kasprak. I have a PhD in Instructional Design for online learning and a background in MIS and IT. Like many of you, I was looking at the April 2026 ADA deadline and feeling the stress. I had 15 years of Canvas content, hundreds of pages, thousands of images... and NO idea where to start.
 > 
-> So I partnered with AI to build a free tool that does 80% of the work automatically. And today I'm going to show you EXACTLY how to use it - in about 10 minutes of your time.
+> So I used my background in tech and design to build a free tool that does 80% of the work automatically. And today I'm going to show you EXACTLY how to use it - in about 10 minutes of your time.
 >
 > Whether you teach elementary, high school, or college - this works. And yes, it's completely free. Let's do this!"
 
@@ -223,7 +223,7 @@ DOWNLOAD THE TOOLKIT:
 🌐 https://meri-becomming-code.github.io/mosh/
 
 ABOUT ME:
-I'm Dr. Meri Kasprak, an educator who built this tool with AI for my son Mosh, who is visually impaired. I'm sharing it free with the education community to help ALL students have equal access to learning.
+I'm Dr. Meri Kasprak. I have a PhD in Instructional Design for Online Learning and a background in MIS and IT. I built this tool with AI for my son Mosh, who is visually impaired, but I'm sharing it free with the education community to help ALL students have equal access to learning.
 
 QUESTIONS? Email: meredithkasprak@gmail.com
 

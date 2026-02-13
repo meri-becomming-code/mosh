@@ -126,9 +126,7 @@ Subject: Free ADA Toolkit for Canvas (April 2026 Deadline)
 
 Hi [Name],
 
-I'm a [teacher/professor] who built a free, open-source toolkit to help 
-educators meet the April 2026 ADA deadline. It automatically fixes Canvas 
-course content and has already saved hundreds of hours for alpha testers.
+I'm Dr. Meri Kasprak. I have a PhD in Instructional Design for Online Learning and a background in MIS/IT. I've spent my career perfecting online course delivery, and I recently built a free, open-source toolkit to help educators meet the April 2026 ADA deadline. It automatically fixes Canvas course content and has already saved hundreds of hours for alpha testers.
 
 Since you're involved in [EdTech/accessibility/Canvas], I thought you 
 might find it interesting to share with your community.
@@ -139,7 +137,7 @@ Download: https://meri-becomming-code.github.io/mosh/
 Would love your thoughts!
 
 Best,
-Meri
+Dr. Meri Kasprak
 ```
 
 ---
@@ -310,11 +308,9 @@ Set up tracking for:
 **Title:** "Free ADA Toolkit I Built for April 2026 Deadline - Feedback Welcome"
 **Body:**
 ```
-Hi fellow teachers,
+Hi fellow educators,
 
-Like many of you, I was stressing about making 15 years of Canvas content 
-ADA-compliant by the April 2026 deadline. So I partnered with an AI to 
-build a free toolkit that does it automatically.
+I'm Dr. Meri Kasprak. I have a PhD in Instructional Design for Online Learning and a background in MIS/IT. Like many of you, I've spent years building Canvas content and was stressing about the April 2026 ADA deadline. So I used my background in tech and design to build a free toolkit that automates about 80% of the remediation process.
 
 Just released it as open-source. Would love feedback from this community!
 
@@ -330,7 +326,7 @@ Download: https://meri-becomming-code.github.io/mosh/
 Built this for my son Mosh, who is visually impaired. Every student 
 deserves accessible content.
 
--Meri
+-Dr. Meri Kasprak
 ```
 
 **Why this works:**
@@ -393,13 +389,11 @@ Try it: https://meri-becomming-code.github.io/mosh/
 
 ### **LinkedIn:**
 ```
-After spending 50+ hours making my courses ADA-compliant, I realized: 
-there has to be a better way.
+After years of designing online courses and seeing the struggle of meeting ADA compliance, I realized: there has to be a better way.
 
-So I partnered with AI to build a free, open-source toolkit that 
-automates 80% of the work.
+So I used my PhD in Instructional Design and my background in MIS to build a free, open-source toolkit that automates 80% of the work.
 
-Released it yesterday for the education community to use freely.
+Released it today for the education community to use freely.
 
 Perfect timing with the April 2026 federal deadline.
 
