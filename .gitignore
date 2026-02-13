@@ -12,6 +12,8 @@ __pycache__/
 toolkit_config.json
 *.key
 .env
+debug_*.py
+debug_*.txt
 
 # Output/Test Files
 build/
