@@ -503,7 +503,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         lbl_logo = ttk.Label(sidebar, text="MOSH'S\nTOOLKIT", style="Sidebar.TLabel", font=("Segoe UI", 16, "bold"), justify="center")
         lbl_logo.pack(pady=(5, 5), padx=10)
         
-        lbl_tagline = ttk.Label(sidebar, text="Built by a teacher with AI for teachers", 
+        lbl_tagline = ttk.Label(sidebar, text="Built by an Expert Instructional Designer (PhD) with AI", 
                                 style="Sidebar.TLabel", font=("Segoe UI", 9, "italic"), 
                                 wraplength=180, justify="center")
         lbl_tagline.pack(pady=(0, 20), padx=10)
@@ -1068,12 +1068,20 @@ A: Most courses: 10-30 minutes.
 
 ────────────────────────────────────────
 
-🎯 April 2026 Deadline
-The U.S. Department of Justice requires all public 
-institutions (K-12 and Higher Ed) to have accessible 
-digital content by April 2026.
+────────────────────────────────────────
 
-This toolkit helps you meet that deadline stress-free!
+🎯 A Note from the Developer
+I'm Dr. Meri Kasprak. I have a PhD in Instructional Design for Online 
+Learning from Capella University and a background in MIS and IT. 
+
+I built this toolkit to bridge the gap between complex federal 
+requirements and the busy reality of being an educator. I originally 
+coded this for my son Mosh, but I'm sharing it with you because 
+everyone deserves an accessible path to learning.
+
+Questions? Feedback? 
+Email: meredithkasprak@gmail.com
+Website: meri-becomming-code.github.io/mosh
 """
         
         txt.insert(tk.END, content)
