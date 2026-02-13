@@ -503,7 +503,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         lbl_logo = ttk.Label(sidebar, text="MOSH'S\nTOOLKIT", style="Sidebar.TLabel", font=("Segoe UI", 16, "bold"), justify="center")
         lbl_logo.pack(pady=(5, 5), padx=10)
         
-        lbl_tagline = ttk.Label(sidebar, text="Built by an Expert Instructional Designer (PhD) with AI", 
+        lbl_tagline = ttk.Label(sidebar, text="Built by a teacher with AI, for teachers", 
                                 style="Sidebar.TLabel", font=("Segoe UI", 9, "italic"), 
                                 wraplength=180, justify="center")
         lbl_tagline.pack(pady=(0, 20), padx=10)
@@ -1071,13 +1071,13 @@ A: Most courses: 10-30 minutes.
 ────────────────────────────────────────
 
 🎯 A Note from the Developer
-I'm Dr. Meri Kasprak. I have a PhD in Instructional Design for Online 
-Learning from Capella University and a background in MIS and IT. 
+I'm Dr. Meri Kasprak. I built this toolkit to bridge the gap between complex 
+federal requirements and the busy reality we face as educators. I've spent 
+my career in Instructional Design and IT, but I'm a teacher at heart. 
 
-I built this toolkit to bridge the gap between complex federal 
-requirements and the busy reality of being an educator. I originally 
-coded this for my son Mosh, but I'm sharing it with you because 
-everyone deserves an accessible path to learning.
+I originally coded this for my son Mosh, but I'm sharing it with you because 
+every student—and every teacher—deserves an accessible path to learning 
+that doesn't take forever.
 
 Questions? Feedback? 
 Email: meredithkasprak@gmail.com
