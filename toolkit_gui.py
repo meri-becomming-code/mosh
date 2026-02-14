@@ -850,7 +850,22 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         entry = tk.Entry(dialog, textvariable=entry_var, width=70, font=("Segoe UI", 11))
         entry.pack(pady=5)
         entry.focus_set()
-        entry.select_range(0, tk.END) # Select all so they can easily type over if they want
+        entry.select_range(0, tk.END)
+
+        # [NEW] Length Warning Label
+        warning_lbl = tk.Label(dialog, text="", fg="#D32F2F", bg="#F5F3ED", font=("Segoe UI", 9, "bold"))
+        warning_lbl.pack()
+
+        def update_warning(*args):
+            text = entry_var.get()
+            length = len(text)
+            if length > 100:
+                warning_lbl.config(text=f"⚠️ Long Alt Text ({length} chars). Panorama may flag this!")
+            else:
+                warning_lbl.config(text="")
+
+        entry_var.trace_add("write", update_warning)
+        if suggestion: update_warning() # Initial check
         
         result = {"text": ""}
 
@@ -882,15 +897,21 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             result["text"] = "__MATH_OCR__"
             dialog.destroy()
             
-        btn_frame = tk.Frame(dialog)
-        btn_frame.pack(pady=15)
+        # Row 1
+        btn_frame_1 = tk.Frame(dialog, bg="#F5F3ED")
+        btn_frame_1.pack(pady=(10, 0))
         
-        tk.Button(btn_frame, text="✅ Save / Next (Enter)", command=on_ok, bg="#dcedc8", font=("bold"), width=15, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="📐 Convert to Math (AI)", command=on_math_ocr, bg="#FFECB3", width=22, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="📊 Convert to Table (AI)", command=on_table_ocr, bg="#E1F5FE", width=22, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="📝 OCR Text (AI)", command=on_ocr, bg="#FFF9C4", width=15, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#F5F5F5", width=15, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame_1, text="✅ Save / Next (Enter)", command=on_ok, bg="#dcedc8", font=("bold"), width=18, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame_1, text="📐 Convert to Math (AI)", command=on_math_ocr, bg="#FFECB3", width=20, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame_1, text="📊 Convert to Table (AI)", command=on_table_ocr, bg="#E1F5FE", width=20, cursor="hand2").pack(side="left", padx=5)
+        
+        # Row 2
+        btn_frame_2 = tk.Frame(dialog, bg="#F5F3ED")
+        btn_frame_2.pack(pady=(10, 15))
+
+        tk.Button(btn_frame_2, text="📝 OCR Text (AI)", command=on_ocr, bg="#FFF9C4", width=18, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame_2, text="Mark Decorative", command=on_decorate, bg="#F5F5F5", width=20, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame_2, text="Skip / Ignore", command=on_skip, width=20, cursor="hand2").pack(side="left", padx=5)
         
         dialog.bind('<Return>', on_ok)
         self.root.wait_window(dialog)
@@ -1240,23 +1261,29 @@ Website: meri-becomming-code.github.io/mosh
 
             self.gui_handler.log(f"Auditing {len(html_files)} files...")
             all_issues = {}
+            total_score = 0
             
             for path in html_files:
                 res = run_audit.audit_file(path)
+                score = run_audit.calculate_accessibility_score(res)
+                total_score += score
+                
                 if res and (res["technical"] or res["subjective"]):
                      rel_path = os.path.relpath(path, self.target_dir)
                      all_issues[rel_path] = res
                      
-                     # [AUDIT FIX] Show summary directly in log
                      summary = run_audit.get_issue_summary(res)
-                     self.gui_handler.log(f"Issues in {os.path.basename(path)}: {summary}")
+                     self.gui_handler.log(f"[{score}%] {os.path.basename(path)}: {summary}")
+                else:
+                     self.gui_handler.log(f"[100%] {os.path.basename(path)}: Perfect Accessibility")
 
+            avg_score = round(total_score / len(html_files)) if html_files else 100
             out_file = os.path.join(self.target_dir, 'audit_report.json')
             with open(out_file, 'w', encoding='utf-8') as f:
                 json.dump(all_issues, f, indent=2)
             
-            self.gui_handler.log(f"Audit Complete. Issues found in {len(all_issues)} files.")
-            self.gui_handler.log(f"Report saved to {out_file}")
+            self.gui_handler.log(f"\n--- Audit Complete. Course Health Score: {avg_score}% ---")
+            self.gui_handler.log(f"Issues found in {len(all_issues)} files. Report saved to {out_file}")
 
         self._run_task_in_thread(task, "Audit")
 
@@ -1845,6 +1872,10 @@ YOUR WORKFLOW:
             success_count = 0
             total_auto_fixes = 0
             
+            # [TURBO] Collect mappings for single-pass updates
+            manifest_map = {}
+            link_map = {} # {old_basename: new_basename}
+            
             for i, fpath in enumerate(found_files):
                 if self.gui_handler.is_stopped(): break
                 fname = os.path.basename(fpath)
@@ -1863,15 +1894,6 @@ YOUR WORKFLOW:
                 elif ext == "pdf":
                     output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
                 
-                # Update links to the source file (all document types)
-                if output_path and ext in ["docx", "xlsx", "pptx", "pdf"]:
-                    converter_utils.update_doc_links_to_html(
-                        self.target_dir,
-                        os.path.basename(fpath),
-                        os.path.basename(output_path),
-                        log_func=self.gui_handler.log
-                    )
-                
                 if output_path:
                     success_count += 1
                     
@@ -1881,19 +1903,15 @@ YOUR WORKFLOW:
                     if success_fix and fixes:
                         total_auto_fixes += len(fixes)
                     
-                    # Update Links (extensionless)
-                    l_count = converter_utils.update_links_in_directory(self.target_dir, fpath, output_path)
-                    
-                    # [NEW] Update Manifest
+                    # Store mappings for [TURBO] pass
                     rel_old = os.path.relpath(fpath, self.target_dir)
                     rel_new = os.path.relpath(output_path, self.target_dir)
-                    m_success, m_msg = converter_utils.update_manifest_resource(self.target_dir, rel_old, rel_new)
-                    if m_success:
-                        self.gui_handler.log(f"   [MANIFEST] {m_msg}")
+                    manifest_map[rel_old] = rel_new
+                    link_map[os.path.basename(fpath)] = os.path.basename(output_path)
                     
                     # Archive
                     converter_utils.archive_source_file(fpath)
-                    self.gui_handler.log(f"   [DONE] Links updated in {l_count} files. Original archived.")
+                    self.gui_handler.log(f"   [DONE] Original archived. Queued for Turbo Link Repair.")
                     
                     # [NEW] Optional Live Sync for Batch
                     sync_api = self._get_canvas_api()
@@ -1901,6 +1919,16 @@ YOUR WORKFLOW:
                         self._upload_page_to_canvas(output_path, fpath, sync_api, auto_confirm_links=True)
                 else:
                     self.gui_handler.log(f"   [FAILED] {err}")
+
+            # --- [TURBO] PASS: Batch Updates ---
+            if manifest_map:
+                self.gui_handler.log("\n🔄 Synchronizing Course Manifest (Turbo)...")
+                m_success, m_msg = converter_utils.batch_update_manifest_resources(self.target_dir, manifest_map)
+                if m_success: self.gui_handler.log(f"   [MANIFEST] {m_msg}")
+            
+            if link_map:
+                self.gui_handler.log("🔗 Repairing Course Links (Turbo)...")
+                converter_utils.batch_update_links_in_directory(self.target_dir, link_map, log_func=self.gui_handler.log)
             
             # Estimation: 10 minutes per file vs manual remediation + auto-fixes
             # (Adjusted based on "fast techy user" feedback, though pottery teachers might take longer!)
@@ -2112,6 +2140,7 @@ YOUR WORKFLOW:
                 return
 
             self.gui_handler.log("📡 Connecting to Canvas API...")
+            self.gui_handler.log("📦 This is a large package. Please stay patient while Mosh flies it to the clouds...")
             success, res = api.upload_imscc(package_path)
             
             self.root.after(0, self._close_flight_animation)
@@ -2134,14 +2163,14 @@ YOUR WORKFLOW:
     def _show_flight_animation(self, message):
         """Shows a fun overlay with Mosh Pilot image (Flight mode)."""
         self.flight_win = Toplevel(self.root)
-        self.flight_win.title("Mosh is on it!")
+        self.flight_win.title("Mosh Pilot: Flying to Canvas...")
         self.flight_win.geometry("450x450")
-        self.flight_win.overrideredirect(True)
+        # [UX FIX] Avoid forcing to top or removing decorations so user can do other work
         # Center
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 225
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 225
         self.flight_win.geometry(f"+{x}+{y}")
-        self.flight_win.attributes("-topmost", True)
+        self.flight_win.transient(self.root)
         
         frame = tk.Frame(self.flight_win, bg="#4b3190", borderwidth=5, relief="raised")
         frame.pack(fill="both", expand=True)

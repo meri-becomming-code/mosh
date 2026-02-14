@@ -123,50 +123,57 @@ class CanvasAPI:
 
     def upload_imscc(self, file_path):
         """
-        Uploads and triggers a Content Migration for an .imscc file.
+        Uploads and triggers a Content Migration for an .imscc file using 
+        the integrated pre_attachment upload flow.
         Returns (success, migration_info_or_error)
         """
         if not os.path.exists(file_path):
             return False, "Package file not found."
 
-        # Step 1: Create the migration entry
-        # https://canvas.instructure.com/doc/api/content_migrations.html#method.content_migrations.create
+        file_size = os.path.getsize(file_path)
+        file_name = os.path.basename(file_path)
+        content_type = "application/zip"
+
+        # Step 1: Initiate the migration entry with pre_attachment request
         migration_url = f"{self.base_url}/api/v1/courses/{self.course_id}/content_migrations"
         
         payload = {
             "migration_type": "common_cartridge_importer",
-            "settings[file_url]": "", # Will be filled by file upload
+            "pre_attachment[name]": file_name,
+            "pre_attachment[size]": file_size,
+            "pre_attachment[content_type]": content_type,
         }
 
         try:
-            # First, we need to upload the file to get the attachment ID
-            # The migration API for file-based migration usually expects a multi-step upload
-            # specifically for the attachment.
-            
-            # Start file upload specifically for a migration
-            upload_init_url = f"{self.base_url}/api/v1/courses/{self.course_id}/content_migrations/get_upload_status"
-            # Actually, standard way is to upload to course files first, then pass that ID, 
-            # OR use the 'upload_file' mechanism for the migration.
-            
-            # Revised Barney Plan: Upload to course files in a 'hidden' folder, then trigger migration.
-            folder_name = "_MOSH_REMEDIATION_PACKAGES_"
-            success_up, res_up = self.upload_file(file_path, folder_path=folder_name)
-            
-            if not success_up:
-                return False, f"Failed to upload package file: {res_up}"
+            res1 = requests.post(migration_url, headers=self.headers, data=payload, timeout=60)
+            if res1.status_code not in [200, 201]:
+                return False, f"Migration Initiation Failed: {res1.status_code} - {res1.text}"
 
-            attachment_id = res_up.get("id")
+            res1_data = res1.json()
+            att_data = res1_data.get("pre_attachment", {})
+            upload_url = att_data.get("upload_url")
+            upload_params = att_data.get("upload_params")
+
+            if not upload_url or not upload_params:
+                return False, "Canvas did not provide migration upload URL/Params"
+
+            # Step 2: Upload the actual file data
+            # Use 15m timeout for large transfers
+            with open(file_path, 'rb') as f_obj:
+                files = {'file': f_obj}
+                res2 = requests.post(upload_url, data=upload_params, files=files, timeout=900)
             
-            payload = {
-                "migration_type": "common_cartridge_importer",
-                "pre_attachment_id": attachment_id
-            }
-            
-            res_mig = requests.post(migration_url, headers=self.headers, data=payload, timeout=60)
-            if res_mig.status_code in [200, 201, 202]: # 202 is common for long-running imports
-                return True, res_mig.json()
+            # Step 3: Handle Result (Redirect or Created)
+            if res2.status_code in [200, 201]:
+                return True, res1_data
+            elif res2.status_code in [301, 302, 303, 307, 308]:
+                # Follow redirect to finalize the upload status on Canvas
+                redirect_url = res2.headers.get("Location")
+                if redirect_url:
+                    requests.get(redirect_url, headers=self.headers, timeout=30)
+                return True, res1_data
             else:
-                return False, f"Migration Trigger Failed: {res_mig.status_code} - {res_mig.text}"
+                return False, f"Migration Upload Failed: {res2.status_code} - {res2.text}"
 
         except requests.exceptions.Timeout:
             return False, "Canvas migration request timed out. The file might still be processing on their end."

@@ -258,6 +258,18 @@ def audit_file(filepath):
 
     return results
 
+def calculate_accessibility_score(results):
+    """
+    Returns a score from 0-100 based on technical vs subjective issues.
+    Formula: 100 - (TechWeight * numTech) - (SubjWeight * numSubj)
+    Tech Issues = 5 pts, Subjective = 1.5 pts. Min 0.
+    """
+    tech_count = len(results.get("technical", []))
+    subj_count = len(results.get("subjective", []))
+    
+    score = 100 - (tech_count * 5) - (subj_count * 1.5)
+    return max(0, min(100, round(score)))
+
 def get_issue_summary(results):
     """Returns a detailed string summary of issues for logging."""
     if not results: return "None"

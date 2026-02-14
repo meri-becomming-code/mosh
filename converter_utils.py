@@ -1425,6 +1425,68 @@ def update_links_in_directory(directory, old_filename, new_filename):
                     print(f"Error updating links in {file}: {e}")
     return count
 
+def batch_update_links_in_directory(directory, filename_map, log_func=None):
+    """
+    Performance Fix: Updates all links in all HTML files in a single pass.
+    filename_map: dict of {old_basename: new_basename}
+    """
+    if not filename_map: return 0
+    import urllib.parse
+    
+    # Pre-process map for comparison (case-insensitive keys)
+    # Also prepare URL encoded versions
+    lookup = {}
+    for old, new in filename_map.items():
+        old_clean = old.strip().lower()
+        new_base = os.path.basename(new)
+        lookup[old_clean] = {
+            'new_href': new_base.replace(' ', '%20'),
+            'new_text': os.path.splitext(new_base)[0].replace('_', ' ').strip()
+        }
+
+    total_files_updated = 0
+    total_links_changed = 0
+
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.html'):
+                filepath = os.path.join(root, file)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        soup = BeautifulSoup(f.read(), 'html.parser')
+                    
+                    modified = False
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        clean_href = urllib.parse.unquote(href).replace('\\', '/')
+                        filename_part = clean_href.split('/')[-1].split('?')[0].lower()
+                        
+                        if filename_part in lookup:
+                            info = lookup[filename_part]
+                            # Preserving prefix logic
+                            prefix = href.rsplit('/', 1)[0] + '/' if '/' in href else ''
+                            a['href'] = prefix + info['new_href']
+                            
+                            # Update text if it's generic
+                            t = a.get_text(strip=True)
+                            if t.lower() in [filename_part, 'click here', 'link']:
+                                a.string = info['new_text']
+                            
+                            modified = True
+                            total_links_changed += 1
+                    
+                    if modified:
+                        with open(filepath, 'w', encoding='utf-8') as f:
+                            f.write(str(soup))
+                        total_files_updated += 1
+                except:
+                    pass
+    
+    if log_func:
+        log_func(f"🚀 Turbo Link Fixer: Updated {total_links_changed} links across {total_files_updated} files in one pass.")
+    return total_files_updated
+
+
 
 def update_doc_links_to_html(root_dir, old_filename, new_filename, log_func=None):
     """
@@ -1678,8 +1740,44 @@ def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
             return True, f"Manifest Updated: {replacements} resource(s) synchronized."
         
         return False, "No matching entries found in imsmanifest.xml."
-    except Exception as e:
         return False, f"Manifest update error: {str(e)}"
+
+def batch_update_manifest_resources(root_dir, path_map):
+    """
+    Performance Fix: Updates imsmanifest.xml in a single pass for all processed files.
+    path_map: dict of {old_rel_path: new_rel_path}
+    """
+    manifest_path = os.path.join(root_dir, 'imsmanifest.xml')
+    if not os.path.exists(manifest_path) or not path_map:
+        return False, "Skipping manifest (batch empty or missing)"
+
+    try:
+        # Standardize path_map keys for matching
+        lookup = {k.replace("\\", "/").lower(): v.replace("\\", "/") for k, v in path_map.items()}
+        
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        replacements = 0
+        def repl_func(match):
+            nonlocal replacements
+            href_val = match.group(1)
+            clean_href = href_val.replace("\\", "/").lower()
+            if clean_href in lookup:
+                replacements += 1
+                return f'href="{lookup[clean_href]}"'
+            return match.group(0)
+
+        new_content = re.sub(r'href="([^"]+)"', repl_func, content)
+
+        if replacements > 0:
+            with open(manifest_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            return True, f"Turbo Manifest: {replacements} entries synchronized in one pass."
+        
+        return False, "No matching entries found in manifest during turbo pass."
+    except Exception as e:
+        return False, f"Turbo Manifest error: {str(e)}"
 
 def run_janitor_cleanup(source_dir, log_func=None):
     """

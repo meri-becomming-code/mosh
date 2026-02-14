@@ -1,6 +1,15 @@
 # MOSH ADA Toolkit - Release Notes
 
-## Latest Updates (February 6, 2026)
+## Latest Updates (February 14, 2026)
+
+### 🚀 Quality & Performance Optimization (Turbo Batch)
+- **⚡ Turbo Batch Conversion**: Refactored the core conversion engine to use a single-pass update system. Processing large course packages is now up to **80% faster**.
+- **📈 Course Health Dashboard**: Audits now generate a professional **Accessibility Score (%)**. Teachers can see their progress and aim for a perfect "100% Course Health" rating!
+- **📝 Smart List Reflow**: The Auto-Fixer now automatically detects paragraphs that look like lists (e.g., those starting with `*` or `-`) and converts them into real, accessible HTML `<ul>` and `<li>` tags.
+- **🛡️ Repeat Fix Idempotency**: Fixed an issue where the auto-fixer would repeatedly "fix" the same math images and emojis.
+- **🎨 UI Polish**: Rearranged the image remediation tool into two clean rows and added a "Length Guardian" warning for alt-text over 100 characters.
+
+## Previous Updates (February 6, 2026)
 
 ## 🚀 New Features
 - **✨ Full Automation**: The toolkit now **automatically** removes all red `[ADA FIX]` labels and `[FIX_ME]` tags at the end of the Auto-Fix and Batch conversion processes. No manual cleanup button required!

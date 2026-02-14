@@ -24,9 +24,14 @@ def hex_to_rgb(color_str):
     if color_str == 'inherit' or not color_str: return None
     
     hex_color = color_str.lstrip('#')
-    if len(hex_color) == 3: hex_color = ''.join([c*2 for c in hex_color])
-    if len(hex_color) != 6: return None
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    try:
+        if len(hex_color) == 3: hex_color = ''.join([c*2 for c in hex_color])
+        if len(hex_color) != 6: return None
+        # [FIX] Robustness: Ensure only hex digits are parsed
+        if not all(c in '0123456789abcdef' for c in hex_color): return None
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    except:
+        return None
 
 def get_luminance(rgb):
     rgb_linear = []
@@ -79,7 +84,9 @@ def fix_emoji_accessibility(soup):
     fixes = []
     # Find text nodes containing emojis
     for text_node in soup.find_all(string=True):
+        # [FIX] Idempotency: skip if parent is already an emoji span
         if text_node.parent.name in ['script', 'style']: continue
+        if text_node.parent.name == 'span' and text_node.parent.get('role') == 'img': continue
         
         matches = list(emoji_pattern.finditer(text_node))
         if matches:
@@ -459,7 +466,8 @@ def remediate_html_file(filepath):
         # 7c. POTENTIAL EQUATION DETECTION (Math Check)
         # Heuristic: Small images with high contrast, or alt text containing math terms but no LaTeX
         src = img.get('src', '').lower()
-        if not img.has_attr('data-math') and (any(term in alt_val.lower() or term in src for term in ['eq', 'formula', 'math', 'sigma', 'sqrt', 'frac'])):
+        # [FIX] Idempotency: skip if already flagged or math'd
+        if not img.has_attr('data-math') and not img.has_attr('data-math-check') and (any(term in alt_val.lower() or term in src for term in ['eq', 'formula', 'math', 'sigma', 'sqrt', 'frac'])):
              # Mark for interactive review to suggest LaTeX
              img['data-math-check'] = "true"
              fixes.append(f"Flagged potential math equation for accessibility verification: {os.path.basename(src)}")
@@ -572,10 +580,11 @@ def remediate_html_file(filepath):
             try:
                 w_val = int(width)
                 if w_val < 400:
-                    # Small image alone in a P? Let's make it look nice.
-                    # We'll float it right by default if it's small, to let text wrap
-                    img['style'] = img.get('style', '') + " float: right; margin: 10px 0 15px 20px; max-width: 40%;"
-                    fixes.append(f"Applied smart float-right to small image: {os.path.basename(img.get('src',''))}")
+                    # [FIX] Idempotency: skip if float already exists
+                    current_style = img.get('style', '').lower()
+                    if 'float' not in current_style:
+                        img['style'] = img.get('style', '') + " float: right; margin: 10px 0 15px 20px; max-width: 40%;"
+                        fixes.append(f"Applied smart float-right to small image: {os.path.basename(img.get('src',''))}")
             except: pass
 
     # --- Part 8: Deprecated Tags ---
@@ -623,7 +632,62 @@ def remediate_html_file(filepath):
             tag.unwrap()
             fixes.append(f"Removed deprecated <{tag_name}> tag")
 
-    # --- Part 11: Final Polish & Special Checks ---
+    # --- Part 9: Smart List Reflow ---
+    # Detect paragraphs starting with list markers (*, -, 1., etc.) and group them into lists
+    all_p = soup.find_all('p')
+    i = 0
+    while i < len(all_p):
+        p = all_p[i]
+        text = p.get_text(strip=True)
+        # Match *, -, or 1. at the start
+        bullet_match = re.match(r'^([\*\-•]|\d+[\.\)])\s+', text)
+        if bullet_match:
+            # We found a potential list item. Look ahead for consecutive ones.
+            list_items = []
+            current_p = p
+            while current_p and current_p.name == 'p':
+                t = current_p.get_text(strip=True)
+                m = re.match(r'^([\*\-•]|\d+[\.\)])\s+', t)
+                if not m: break
+                
+                # Extract text without marker
+                marker_len = len(m.group(0))
+                item_text = t[marker_len:].strip()
+                list_items.append((current_p, item_text, m.group(1)))
+                
+                # Check next sibling paragraph (skipping whitespace/comments)
+                next_sib = current_p.next_sibling
+                while next_sib and not (hasattr(next_sib, 'name') and next_sib.name == 'p'):
+                    if hasattr(next_sib, 'name') and next_sib.name and next_sib.name not in ['script', 'style', 'span']:
+                        # Hit a real tag that isn't a paragraph, stop grouping
+                        current_p = None
+                        break
+                    next_sib = next_sib.next_sibling
+                current_p = next_sib
+            
+            if len(list_items) > 1:
+                # Group them!
+                is_ordered = list_items[0][2].replace('.', '').isdigit()
+                list_tag = soup.new_tag('ol' if is_ordered else 'ul')
+                
+                # Use standard styles
+                list_tag['style'] = "margin-left: 20px; margin-bottom: 15px;"
+                
+                # Insert list before first P
+                list_items[0][0].insert_before(list_tag)
+                
+                for p_node, txt, marker in list_items:
+                    li = soup.new_tag('li')
+                    li.string = txt
+                    list_tag.append(li)
+                    p_node.extract()
+                
+                fixes.append(f"Grouped {len(list_items)} paragraphs into accessible {'ordered' if is_ordered else 'unordered'} list")
+                # Advance index by how many we removed
+                i += len(list_items) - 1
+        i += 1
+
+    # --- Part 10: Final Polish & Special Checks ---
     emoji_fixes = fix_emoji_accessibility(soup)
     fixes.extend(emoji_fixes)
 
