@@ -1471,10 +1471,23 @@ def update_doc_links_to_html(root_dir, old_filename, new_filename, log_func=None
                     content = re.sub(pattern1, rf'href="\1{new_base}.html\2"', content, flags=re.IGNORECASE)
                     modified = True
                 
+                # Pattern 1b: Regular relative links (without token)
+                pattern1b = rf'href="([^"]*/)?{e_old_base}{e_old_ext}(\?[^"]*)?"'
+                # We only match if it doesn't already have the token (to avoid double match/mess)
+                if not re.search(pattern1, content, re.IGNORECASE) and re.search(pattern1b, content, re.IGNORECASE):
+                    content = re.sub(pattern1b, rf'href="\1{new_base}.html\2"', content, flags=re.IGNORECASE)
+                    modified = True
+
                 # Pattern 2: URL-encoded version
                 pattern2 = rf'href="(\$IMS-CC-FILEBASE\$/[^"]*){e_old_encoded}{e_old_ext}(\?[^"]*)?"'
                 if re.search(pattern2, content, re.IGNORECASE):
                     content = re.sub(pattern2, rf'href="\1{new_encoded}.html\2"', content, flags=re.IGNORECASE)
+                    modified = True
+                
+                # Pattern 2b: URL-encoded relative
+                pattern2b = rf'href="([^"]*/)?{e_old_encoded}{e_old_ext}(\?[^"]*)?"'
+                if not re.search(pattern2, content, re.IGNORECASE) and re.search(pattern2b, content, re.IGNORECASE):
+                    content = re.sub(pattern2b, rf'href="\1{new_encoded}.html\2"', content, flags=re.IGNORECASE)
                     modified = True
                 
                 # Pattern 3: title attributes
@@ -1485,8 +1498,8 @@ def update_doc_links_to_html(root_dir, old_filename, new_filename, log_func=None
                 
                 # Pattern 4: Link text with extension hint - make human-readable
                 # Replace: >Syllabus (DOCX)</a> -> >Syllabus (HTML)</a>
-                # Handle various formats: (PDF), (DOCX), (PPTX), (XLSX)
-                pattern4 = rf'>([^<]*?){e_old_base}([^<]*?)\({ext_hint}\)</a>'
+                # Handle various formats: (PDF), (DOCX), (PPTX), (XLSX), (DOC), (PPT), (XLS)
+                pattern4 = rf'>([^<]*?){e_old_base}([^<]*?)\((?:DOCX|PPTX|XLSX|PDF|DOC|PPT|XLS)\)</a>'
                 if re.search(pattern4, content, re.IGNORECASE):
                     readable_name = new_base.replace('_', ' ')
                     content = re.sub(pattern4, rf'>\1{readable_name}\2(HTML)</a>', content, flags=re.IGNORECASE)
