@@ -1092,8 +1092,9 @@ Website: meri-becomming-code.github.io/mosh
         """Gray out all action buttons while a task is running."""
         for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
                    self.btn_wizard, self.btn_word, self.btn_excel, 
-                   self.btn_ppt, self.btn_pdf, self.btn_batch]:
-            try: btn.config(state='disabled')
+                   self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check]:
+            try: 
+                if btn: btn.config(state='disabled')
             except: pass
         self.gui_handler.stop_requested = False
         self.is_running = True
@@ -1102,8 +1103,9 @@ Website: meri-becomming-code.github.io/mosh
         """Restore all action buttons."""
         for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
                    self.btn_wizard, self.btn_word, self.btn_excel, 
-                   self.btn_ppt, self.btn_pdf, self.btn_batch]:
-            try: btn.config(state='normal')
+                   self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check]:
+            try: 
+                if btn: btn.config(state='normal')
             except: pass
         self.is_running = False
 
@@ -1136,14 +1138,22 @@ Website: meri-becomming-code.github.io/mosh
         thread.start()
 
     def _get_all_html_files(self):
-        """Standardized helper to find all HTML files in the target directory."""
+        """Standardized helper to find all HTML files in the target directory (Optimized)."""
         if not os.path.isdir(self.target_dir):
             self.gui_handler.log(f"[ERROR] Invalid directory: {self.target_dir}")
             return []
             
+        # Heavy directories to skip for performance and relevance
+        skip_dirs = {
+            converter_utils.ARCHIVE_FOLDER_NAME,
+            '.git', '.github', 'venv', 'env', '__pycache__', 'node_modules', '.idea', '.vscode'
+        }
+        
         html_files = []
         for root, dirs, files in os.walk(self.target_dir):
-            if converter_utils.ARCHIVE_FOLDER_NAME in root: continue
+            # Prune directories in-place to prevent os.walk from descending into them
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            
             for file in files:
                 if file.endswith('.html'):
                     html_files.append(os.path.join(root, file))
@@ -1153,7 +1163,9 @@ Website: meri-becomming-code.github.io/mosh
     def _run_auto_fixer(self):
         def task():
             html_files = self._get_all_html_files()
-            if not html_files: return
+            if not html_files:
+                self.gui_handler.log("No HTML files found to fix.")
+                return
             
             self.gui_handler.log(f"Processing {len(html_files)} HTML files...")
             files_with_fixes = 0
@@ -1202,7 +1214,9 @@ Website: meri-becomming-code.github.io/mosh
     def _run_audit(self):
         def task():
             html_files = self._get_all_html_files()
-            if not html_files: return
+            if not html_files:
+                self.gui_handler.log("No HTML files found to audit.")
+                return
 
             self.gui_handler.log(f"Auditing {len(html_files)} files...")
             all_issues = {}
@@ -1746,9 +1760,21 @@ YOUR WORKFLOW:
 
         # Repackage without Upload
         ttk.Button(frame, text="📦 Repackage Course (.imscc) without Uploading", 
-                   command=self._export_package, style="TButton").pack(fill="x", pady=5)
+                   command=self._export_package).pack(fill="x", pady=5)
         
         ttk.Label(frame, text="Creates a new .imscc file on your computer but does NOT send it to Canvas.", 
+                  font=("Segoe UI", 8), foreground="#666666").pack(anchor="w", pady=(0, 10))
+
+        # Global Link Fix
+        ttk.Button(frame, text="🔗 Fix All Document-to-HTML Links", 
+                   command=self._run_all_links_fix).pack(fill="x", pady=5)
+        
+        ttk.Label(frame, text="Repairs broken links in your HTML files back to their new HTML versions.", 
+                  font=("Segoe UI", 8), foreground="#666666").pack(anchor="w", pady=(0, 10))
+        
+        # [NEW] Emergency Reset
+        ttk.Button(frame, text="🛡️ Emergency UI Reset (Fix Unclickable Buttons)", 
+                   command=self._enable_buttons).pack(fill="x", pady=20)
                   wraplength=350, font=("Segoe UI", 8)).pack(pady=(0, 15))
 
         # Clear Logs
@@ -2230,48 +2256,52 @@ YOUR WORKFLOW:
             messagebox.showinfo("Health Report", "Your course is in peak physical condition! No broken links or missing images found.")
 
     def _run_all_links_fix(self):
-        """Finds all document links and attempts to point them to matching HTML files if they exist."""
+        """Finds all document links and attempts to point them to matching HTML files (Optimized & Threaded)."""
         if not self.target_dir:
             messagebox.showwarning("Incomplete", "Please select a target directory first.")
             return
+
+        def task():
+            self.gui_handler.log("\n--- Starting Global Document Link Repair ---")
+            self.gui_handler.log(f"Scanning target: {self.target_dir}")
             
-        self.gui_handler.log("\n--- Starting Global Document Link Repair ---")
-        self.gui_handler.log(f"Scanning target: {self.target_dir}")
-        
-        # We need a map of Document -> HTML
-        # In Canvas, usually they have the same base name.
-        doc_map = {}
-        for root, dirs, files in os.walk(self.target_dir):
-            for file in files:
-                if file.lower().endswith(('.docx', '.pdf', '.pptx', '.xlsx', '.doc', '.ppt', '.xls')):
-                    base = os.path.splitext(file)[0].lower()
-                    doc_map[base] = file
-        
-        total_updated = 0
-        doc_count = 0
-        
-        for base, original_file in doc_map.items():
-            # Check if a matching .html file exists anywhere in target_dir
-            found_html = None
+            skip_dirs = {converter_utils.ARCHIVE_FOLDER_NAME, '.git', 'venv', 'node_modules'}
+            
+            # Step 1: Map all Documents AND HTML files in one pass O(N)
+            doc_map = {}
+            html_map = {} # basename -> filename
             for root, dirs, files in os.walk(self.target_dir):
-                html_name = f"{os.path.splitext(original_file)[0]}.html"
-                if html_name in files:
-                    found_html = html_name
-                    break
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in ('.docx', '.pdf', '.pptx', '.xlsx', '.doc', '.ppt', '.xls'):
+                        base = os.path.splitext(file)[0].lower()
+                        doc_map[base] = file
+                    elif ext == '.html':
+                        base = os.path.splitext(file)[0].lower()
+                        html_map[base] = file
             
-            if found_html:
-                doc_count += 1
-                updated = converter_utils.update_doc_links_to_html(
-                    self.target_dir, 
-                    original_file, 
-                    found_html, 
-                    log_func=self.gui_handler.log
-                )
-                total_updated += updated
-        
-        msg = f"Global Link Fix Complete.\nRepaired links for {doc_count} different documents across {total_updated} instances."
-        self.gui_handler.log(f"\n--- {msg} ---")
-        messagebox.showinfo("Complete", msg)
+            total_updated = 0
+            doc_count = 0
+            
+            # Step 2: Compare and Update O(M) where M is document count
+            for base, original_file in doc_map.items():
+                if base in html_map:
+                    found_html = html_map[base]
+                    doc_count += 1
+                    updated = converter_utils.update_doc_links_to_html(
+                        self.target_dir, 
+                        original_file, 
+                        found_html, 
+                        log_func=self.gui_handler.log
+                    )
+                    total_updated += updated
+            
+            msg = f"Global Link Fix Complete.\nRepaired links for {doc_count} different documents across {total_updated} instances."
+            self.gui_handler.log(f"\n--- {msg} ---")
+            self.root.after(0, lambda: messagebox.showinfo("Complete", msg))
+
+        self._run_task_in_thread(task, "Global Link Repair")
 
 if __name__ == "__main__":
     root = tk.Tk()
