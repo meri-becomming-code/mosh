@@ -66,7 +66,7 @@ class CanvasAPI:
 
         try:
             # Step 1: Notify Canvas
-            res1 = requests.post(notify_url, headers=self.headers, data=payload, timeout=20)
+            res1 = requests.post(notify_url, headers=self.headers, data=payload, timeout=60)
             if res1.status_code != 200:
                 return False, f"Step 1 (Notify) Failed: {res1.text}"
 
@@ -78,11 +78,11 @@ class CanvasAPI:
                 return False, "Canvas did not provide upload URL/Params"
 
             # Step 2: Upload file data
-            # Use a longer timeout for the data transfer (60s)
+            # Use a longer timeout for the data transfer (600s = 10 minutes for 800MB+)
             with open(file_path, 'rb') as f_obj:
                 files = {'file': f_obj}
-                # We use a 300s timeout for the transfer itself to handle large files on slow connections
-                res2 = requests.post(upload_url, data=upload_params, files=files, timeout=300)
+                # We use a 900s (15 min) timeout for the transfer itself to handle large files
+                res2 = requests.post(upload_url, data=upload_params, files=files, timeout=900)
             
             # Step 3: Handle Result
             # Canvas might return 201 Created directly, or a 3xx redirect to the file object

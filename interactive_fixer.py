@@ -546,6 +546,53 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             # If they enter text (or special token), save to memory
 
             if choice:
+                # [NEW] Table OCR Handling
+                if choice == "__TABLE_OCR__":
+                    io_handler.log("    [JEANIE] Converting image into an HTML table...")
+                    table_html, msg = jeanie_ai.generate_table_from_image(img_full_path, io_handler.api_key)
+                    if table_html:
+                         # Replace img tag with table html (wrapped in a div for style)
+                         table_soup = BeautifulSoup(table_html, 'html.parser')
+                         wrapper = soup.new_tag("div", attrs={"class": "table-ocr-result", "style": "margin: 20px 0;"})
+                         wrapper.append(table_soup)
+                         img.replace_with(wrapper)
+                         io_handler.log("    -> Success! Image replaced with accessible HTML table.")
+                         modified = True
+                    else:
+                         io_handler.log(f"    [Error] Table OCR failed: {msg}")
+                    continue
+
+                # [NEW] Regular OCR Handling
+                elif choice == "__OCR__":
+                    io_handler.log("    [JEANIE] Extracting text from image...")
+                    text, msg = jeanie_ai.generate_text_from_scanned_image(img_full_path, io_handler.api_key)
+                    if text:
+                         # Replace img tag with text
+                         ocr_tag = soup.new_tag("div", attrs={"class": "ocr-text-result", "style": "background: #f9f9f9; padding: 15px; border: 1px solid #ddd;"})
+                         ocr_tag.string = text
+                         img.replace_with(ocr_tag)
+                         io_handler.log("    -> Success! Image replaced with extracted text.")
+                         modified = True
+                    else:
+                         io_handler.log(f"    [Error] OCR failed: {msg}")
+                    continue
+
+                # [NEW] Math OCR Handling
+                elif choice == "__MATH_OCR__":
+                    io_handler.log("    [JEANIE] Converting image into LaTeX Math...")
+                    latex, msg = jeanie_ai.generate_latex_from_image(img_full_path, io_handler.api_key)
+                    if latex:
+                         # Replace img tag with LaTeX wrapped in delimiters
+                         # Canvas uses \( ... \) for standard rendering
+                         math_tag = soup.new_tag("span", attrs={"class": "math-ocr-result", "style": "font-size: 1.1em;"})
+                         math_tag.string = f"\\({latex}\\)"
+                         img.replace_with(math_tag)
+                         io_handler.log(f"    -> Success! Image replaced with LaTeX: \\({latex[:30]}...\\)")
+                         modified = True
+                    else:
+                         io_handler.log(f"    [Error] Math OCR failed: {msg}")
+                    continue
+
                 # [DECORATIVE LOGIC]
                 if choice == "__DECORATIVE__":
                     img['alt'] = ""

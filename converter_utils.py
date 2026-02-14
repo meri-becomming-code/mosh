@@ -944,7 +944,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None):
         return None, str(e)
 
 
-def convert_pdf_to_html(pdf_path, io_handler=None):
+def convert_pdf_to_html(pdf_path, io_handler=None, force_ocr=False):
     """Converts PDF to HTML using PyMuPDF (Images + Text)."""
     if not fitz:
         if not extract_text:
@@ -1262,7 +1262,9 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
         
         # [SCAN DETECTION] If total text blocks is very low relative to total pages, it's a scan.
         avg_text_per_page = total_text_blocks / len(doc) if len(doc) > 0 else 0
-        if avg_text_per_page < 0.5: # Heuristic: less than 1 text block per 2 pages
+        is_scan = avg_text_per_page < 0.5 or force_ocr
+        
+        if is_scan:
              scan_warning = (
                  '<div class="note" style="background-color: #fee2e2; border: 2px solid #ef4444; color: #991b1b; padding: 20px; border-radius: 8px; margin-bottom: 25px;">'
                  '<strong>⚠️ ACCESSIBILITY WARNING: POTENTIAL SCANNED IMAGE</strong><br>'
@@ -1315,9 +1317,16 @@ def convert_pdf_to_html(pdf_path, io_handler=None):
         output_path = os.path.join(output_dir, f"{s_filename}.html")
         
         _save_html(full_content, filename, pdf_path, output_path)
+        
+        # [FIX] Close the document to release the file handle
+        doc.close()
+        
         return output_path, None
 
     except Exception as e:
+        if 'doc' in locals() and doc:
+            try: doc.close()
+            except: pass
         return None, f"PyMuPDF Error: {str(e)}"
 
 def _convert_pdf_fallback(pdf_path):

@@ -869,14 +869,27 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         def on_decorate():
             result["text"] = "__DECORATIVE__"
             dialog.destroy()
+
+        def on_ocr():
+            result["text"] = "__OCR__"
+            dialog.destroy()
+
+        def on_table_ocr():
+            result["text"] = "__TABLE_OCR__"
+            dialog.destroy()
+
+        def on_math_ocr():
+            result["text"] = "__MATH_OCR__"
+            dialog.destroy()
             
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=15)
         
-        # Buttons
-        tk.Button(btn_frame, text="✅ Save / Next (Enter)", command=on_ok, bg="#dcedc8", font=("bold"), width=20, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Clear Text", command=on_clear, width=15, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#fff9c4", width=15, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="✅ Save / Next (Enter)", command=on_ok, bg="#dcedc8", font=("bold"), width=15, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="📐 Convert to Math (AI)", command=on_math_ocr, bg="#FFECB3", width=22, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="📊 Convert to Table (AI)", command=on_table_ocr, bg="#E1F5FE", width=22, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="📝 OCR Text (AI)", command=on_ocr, bg="#FFF9C4", width=15, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#F5F5F5", width=15, cursor="hand2").pack(side="left", padx=5)
         tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15, cursor="hand2").pack(side="left", padx=5)
         
         dialog.bind('<Return>', on_ok)
