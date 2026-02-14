@@ -1478,16 +1478,17 @@ YOUR WORKFLOW:
                     output_path, err = converter_utils.convert_excel_to_html(fpath)
                 elif ext == "pptx":
                      output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler)
-                     # Update links to the source file (all types)
-                     if output_path:
-                         converter_utils.update_doc_links_to_html(
-                             self.target_dir,
-                             os.path.basename(fpath),
-                             os.path.basename(output_path),
-                             log_func=self.gui_handler.log
-                         )
                 elif ext == "pdf":
                      output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
+
+                # Update links to the source file (all document types)
+                if output_path and ext in ["docx", "xlsx", "pptx", "pdf"]:
+                    converter_utils.update_doc_links_to_html(
+                        self.target_dir,
+                        os.path.basename(fpath),
+                        os.path.basename(output_path),
+                        log_func=self.gui_handler.log
+                    )
                 
                 if err or not output_path:
                     self.gui_handler.log(f"   [ERROR] Failed to convert: {err}")
@@ -1569,16 +1570,17 @@ YOUR WORKFLOW:
                 output_path, err = converter_utils.convert_excel_to_html(file_path)
             elif ext == "pptx":
                 output_path, err = converter_utils.convert_ppt_to_html(file_path, self.gui_handler)
-                # Update links to the source file (all types)
-                if output_path:
-                    converter_utils.update_doc_links_to_html(
-                        self.target_dir,
-                        os.path.basename(file_path),
-                        os.path.basename(output_path),
-                        log_func=self.gui_handler.log
-                    )
             elif ext == "pdf":
                 output_path, err = converter_utils.convert_pdf_to_html(file_path, self.gui_handler)
+
+            # Update links to the source file (all document types)
+            if output_path and ext in ["docx", "xlsx", "pptx", "pdf"]:
+                converter_utils.update_doc_links_to_html(
+                    self.target_dir,
+                    os.path.basename(file_path),
+                    os.path.basename(output_path),
+                    log_func=self.gui_handler.log
+                )
             
             if err:
                  self.gui_handler.log(f"[ERROR] Conversion failed: {err}")
@@ -1821,24 +1823,17 @@ YOUR WORKFLOW:
                     output_path, err = converter_utils.convert_excel_to_html(fpath)
                 elif ext == "pptx":
                     output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler)
-                    # Update links to the source file (all types)
-                    if output_path:
-                        converter_utils.update_doc_links_to_html(
-                            self.target_dir,
-                            os.path.basename(fpath),
-                            os.path.basename(output_path),
-                            log_func=self.gui_handler.log
-                        )
                 elif ext == "pdf":
                     output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
-                    # Update links to the source file
-                    if output_path:
-                        converter_utils.update_doc_links_to_html(
-                            self.target_dir,
-                            os.path.basename(fpath),
-                            os.path.basename(output_path),
-                            log_func=self.gui_handler.log
-                        )
+                
+                # Update links to the source file (all document types)
+                if output_path and ext in ["docx", "xlsx", "pptx", "pdf"]:
+                    converter_utils.update_doc_links_to_html(
+                        self.target_dir,
+                        os.path.basename(fpath),
+                        os.path.basename(output_path),
+                        log_func=self.gui_handler.log
+                    )
                 
                 if output_path:
                     success_count += 1
