@@ -258,7 +258,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         txt.insert(tk.END, doc_content)
         txt.config(state='disabled') # Read-only
         
-        tk.Button(dialog, text="Close", command=dialog.destroy, width=12).pack(pady=10)
+        tk.Button(dialog, text="Close", command=dialog.destroy, width=12, cursor="hand2").pack(pady=10)
 
     def _build_styles(self):
         style = ttk.Style()
@@ -297,7 +297,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         style.map("TButton", 
             background=[('active', colors["accent"]), ('pressed', colors["primary"])],
             foreground=[('active', '#000000'), ('pressed', '#FFFFFF')],
-            relief=[('pressed', 'sunken')]
+            relief=[('pressed', 'sunken')],
+            cursor=[('!disabled', 'hand2')]
         )
 
         # Action Buttons (Primary - Vibrant)
@@ -311,7 +312,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         style.map("Action.TButton", 
             background=[('active', colors["accent"]), ('!disabled', colors["primary"])],
             foreground=[('active', '#000000')],
-            relief=[('pressed', 'sunken')]
+            relief=[('pressed', 'sunken')],
+            cursor=[('!disabled', 'hand2')]
         )
         
         # Force background update for root
@@ -354,7 +356,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             webbrowser.open(f"{ent_url.get().strip()}/profile/settings")
             messagebox.showinfo("Help", "I've opened your Canvas Settings.\n\n1. Scroll down to 'Approved Integrations'.\n2. Click '+ New Access Token'.\n3. Copy the long key and paste it here.")
 
-        tk.Button(frame_token, text="❓ Help Me Find This", command=open_token_help, font=("Segoe UI", 8)).pack(side="left", padx=5)
+        tk.Button(frame_token, text="❓ Help Me Find This", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
         tk.Label(dialog, text="3. Your Course Test ID (Numbers):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
         
@@ -414,8 +416,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         btn_api_frame = tk.Frame(dialog, bg=colors["bg"])
         btn_api_frame.pack(anchor="w", padx=40)
         
-        tk.Button(btn_api_frame, text="💳 Get Paid API Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF").pack(side="left", padx=(0, 10))
-        tk.Button(btn_api_frame, text="🧪 Test This Key", command=test_api_key, font=("Segoe UI", 9, "bold")).pack(side="left")
+        tk.Button(btn_api_frame, text="💳 Get Paid API Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
+        tk.Button(btn_api_frame, text="🧪 Test This Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
 
         def open_course_help():
             messagebox.showinfo("Finding Your Course ID", 
@@ -427,7 +429,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
                                 "⚠️ IMPORTANT: If you reset course content, Canvas creates a NEW course with a DIFFERENT ID. "
                                 "You'll need to come back here and update this number!")
 
-        tk.Button(frame_course, text="❓ Help Me Find This", command=open_course_help, font=("Segoe UI", 8)).pack(side="left", padx=5)
+        tk.Button(frame_course, text="❓ Help Me Find This", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
         lbl_status = tk.Label(dialog, text="", bg=colors["bg"], font=("Segoe UI", 9, "bold"))
         lbl_status.pack(pady=10)
@@ -471,8 +473,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 
         btn_frame = tk.Frame(dialog, bg=colors["bg"])
         btn_frame.pack(pady=20)
-        tk.Button(btn_frame, text="🔍 Check If It's Safe", command=test_safety, bg="#BBDEFB", width=20, font=("bold")).pack(side="left", padx=10)
-        tk.Button(btn_frame, text="💾 Save & Close", command=save, bg="#C8E6C9", width=20, font=("bold")).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="🔍 Check If It's Safe", command=test_safety, bg="#BBDEFB", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=10)
+        tk.Button(btn_frame, text="💾 Save & Close", command=save, bg="#C8E6C9", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=10)
 
     def _toggle_theme(self):
         current = self.config.get("theme", "light")
@@ -872,10 +874,10 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         btn_frame.pack(pady=15)
         
         # Buttons
-        tk.Button(btn_frame, text="✅ Save / Next (Enter)", command=on_ok, bg="#dcedc8", font=("bold"), width=20).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Clear Text", command=on_clear, width=15).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#fff9c4", width=15).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="✅ Save / Next (Enter)", command=on_ok, bg="#dcedc8", font=("bold"), width=20, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Clear Text", command=on_clear, width=15, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Mark Decorative", command=on_decorate, bg="#fff9c4", width=15, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15, cursor="hand2").pack(side="left", padx=5)
         
         dialog.bind('<Return>', on_ok)
         self.root.wait_window(dialog)
@@ -926,8 +928,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(pady=10)
-        tk.Button(btn_frame, text="Update Link Text", command=on_ok, bg="#dcedc8", width=15).pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Update Link Text", command=on_ok, bg="#dcedc8", width=15, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Skip / Ignore", command=on_skip, width=15, cursor="hand2").pack(side="left", padx=5)
         
         dialog.bind('<Return>', on_ok)
         self.root.wait_window(dialog)
@@ -975,7 +977,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
                              bg=colors["primary"], fg="white", width=25, font=("Segoe UI", 10, "bold"))
         btn_copy.pack(pady=15)
 
-        tk.Button(dialog, text="Close", command=dialog.destroy, width=12).pack(pady=5)
+        tk.Button(dialog, text="Close", command=dialog.destroy, width=12, cursor="hand2").pack(pady=5)
 
     def _show_quick_start(self):
         """Shows beginner-friendly quick start guide for first-time users."""
@@ -1086,7 +1088,7 @@ Website: meri-becomming-code.github.io/mosh
         txt.config(state='disabled')
 
         tk.Button(dialog, text="✅ Got it! Let's Start", command=dialog.destroy, 
-                 bg=colors["primary"], fg="white", font=("Segoe UI", 11, "bold")).pack(pady=15)
+                 bg=colors["primary"], fg="white", font=("Segoe UI", 11, "bold"), cursor="hand2").pack(pady=15)
 
     def _disable_buttons(self):
         """Gray out all action buttons while a task is running."""
@@ -1109,10 +1111,15 @@ Website: meri-becomming-code.github.io/mosh
             except: pass
         self.is_running = False
 
-        # [NEW] Handle deferred review launch
-        if self.deferred_review:
-            self.deferred_review = False
-            self.root.after(100, self._run_interactive)
+        # [NEW] Reliable Post-Task Review Prompt
+        if getattr(self, "auto_prompt_review", False):
+            self.auto_prompt_review = False
+            msg_review = ("Mission Accomplished!\n\n"
+                         "Would you like to start the Guided Review (Interactive Checker) now?\n"
+                         "This will help you quickly fix image descriptions and verify all links.")
+            if messagebox.askyesno("Step 3: Guided Review", msg_review):
+                # We use after(100) to ensure the UI has finished all state updates
+                self.root.after(100, self._run_interactive)
 
 
 
@@ -1344,7 +1351,7 @@ Website: meri-becomming-code.github.io/mosh
         chk = tk.Checkbutton(dialog, text="Show this message on startup", variable=var_show, bg=colors["bg"], fg=colors["fg"], selectcolor=colors["bg"], activebackground=colors["bg"])
         chk.pack(pady=5)
         
-        tk.Button(dialog, text="Let's Get Started ▶", command=on_close, bg=colors["primary"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", padx=30, pady=10).pack(pady=(10, 30))
+        tk.Button(dialog, text="Let's Get Started ▶", command=on_close, bg=colors["primary"], fg="white", font=("Segoe UI", 12, "bold"), relief="flat", padx=30, pady=10, cursor="hand2").pack(pady=(10, 30))
 
 
     def _show_math_guide(self):
@@ -1462,8 +1469,8 @@ YOUR WORKFLOW:
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(fill="x", pady=20, padx=20)
         
-        tk.Button(btn_frame, text="Select/Deselect All", command=on_toggle_all).pack(side="left")
-        tk.Button(btn_frame, text="Start Conversion Process ▶", command=on_start, bg="#4b3190", fg="white", font=("bold")).pack(side="right")
+        tk.Button(btn_frame, text="Select/Deselect All", command=on_toggle_all, cursor="hand2").pack(side="left")
+        tk.Button(btn_frame, text="Start Conversion Process ▶", command=on_start, bg="#4b3190", fg="white", font=("bold"), cursor="hand2").pack(side="right")
 
 
     def _run_wizard_task(self, files):
@@ -1891,17 +1898,9 @@ YOUR WORKFLOW:
 
             self.gui_handler.log(f"\n--- Batch Complete. {success_count} files converted. ---")
             self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
-            self.gui_handler.log(f"   (Estimate based on 10m/file vs manual source remediation + {total_auto_fixes} automatic HTML fixes)")
             
-            # [NEW] Integrated Interactive Checker (Deferred)
-            def ask_review():
-                msg_review = ("Batch conversion is finished!\n\n"
-                             "Would you like to start the Guided Review (Interactive Checker) now?\n"
-                             "This will help you quickly fix image descriptions and check links.")
-                if messagebox.askyesno("Step 2: Guided Review", msg_review):
-                    self.deferred_review = True # Flag for _enable_buttons 
-            
-            self.root.after(0, ask_review)
+            # Queue the review prompt for _enable_buttons to handle
+            self.auto_prompt_review = True
 
             self.gui_handler.log("\n🛡️ Remember: Check the files in Canvas before publishing!")
             
@@ -1998,17 +1997,20 @@ YOUR WORKFLOW:
         tk.Label(score_header, text=msg, font=("Segoe UI", 12, "bold"), fg=color, bg=colors["bg"]).pack()
         tk.Label(score_header, text=advice, font=("Segoe UI", 10, "italic"), fg=colors.get("fg", "#212121"), bg=colors["bg"]).pack(pady=5)
 
+        def on_upload():
+            dialog.destroy()
+            self._push_to_canvas()
+
         # Primary Action Button
         btn_push = ttk.Button(footer, text=push_text, 
-                              command=lambda: [dialog.destroy(), self._push_to_canvas()], style="Action.TButton")
-        btn_push.pack(pady=5, fill="x")
+                            command=on_upload, style="Action.TButton", cursor="hand2")
+        btn_push.pack(side="left", padx=5)
 
         # Explicit Upload Page Button
         ttk.Button(footer, text="☁️ Direct Canvas Upload", 
-                   command=lambda: [dialog.destroy(), self._push_to_canvas()],
-                   style="TButton").pack(pady=5)
-
-        ttk.Button(footer, text="Close", command=dialog.destroy).pack(pady=10)
+                   command=self._push_to_canvas, cursor="hand2").pack(side="left", padx=5)
+        
+        ttk.Button(footer, text="Close", command=dialog.destroy, cursor="hand2").pack(side="left", padx=5)
 
     def _check_source_files(self):
         """Checks if there are still unconverted Word/PPT/PDFs."""

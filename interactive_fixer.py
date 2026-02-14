@@ -440,8 +440,9 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         # Before we even flag an issue, check if this image/alt combo is already in our memories.
         # This prevents prompting the user twice (once during conversion, once during review).
         img_full_path = resolve_image_path(src, filepath, root_dir, io_handler)
+        mem_key = normalize_image_key(src, img_full_path) # [FIX] Always define mem_key
+
         if img_full_path:
-            mem_key = normalize_image_key(src, img_full_path)
             if mem_key in io_handler.memory:
                 saved_alt = io_handler.memory[mem_key]
                 # If what's in the file already matches our memory, or if we have a memory for it,
@@ -473,10 +474,9 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         # If we have a memory, even if it contains the word "image", we trust the user's previous choice.
         elif "image" in alt.lower() and len(alt) > 10:
              has_memory = False
-             if img_full_path:
-                 mem_key = normalize_image_key(src, img_full_path)
-                 if mem_key in io_handler.memory:
-                     has_memory = True
+             # mem_key is guaranteed to be defined here from above
+             if mem_key in io_handler.memory:
+                 has_memory = True
              
              if not has_memory:
                 issue = "Review suggested alt text"
@@ -488,16 +488,14 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             
             # context and prompt (resolve_image_path already called above)
             context = get_context(img)
-            suggestion = get_image_suggestion(src, context)
+            initial_val = get_image_suggestion(src, context) # [FIX] Use consistent naming
             
             # Final check of memory before prompting (in case it was just added in this session)
-            if img_full_path:
-                mem_key = normalize_image_key(src, img_full_path)
-                if mem_key in io_handler.memory:
-                    suggested_alt = io_handler.memory[mem_key]
-                    img['alt'] = suggested_alt
-                    modified = True
-                    continue
+            if mem_key in io_handler.memory:
+                suggested_alt = io_handler.memory[mem_key]
+                img['alt'] = suggested_alt
+                modified = True
+                continue
 
             if not img_full_path:
                  io_handler.log(f"    [Warning] Could not find local image file.")
