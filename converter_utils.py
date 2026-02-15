@@ -1740,6 +1740,7 @@ def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
             return True, f"Manifest Updated: {replacements} resource(s) synchronized."
         
         return False, "No matching entries found in imsmanifest.xml."
+    except Exception as e:
         return False, f"Manifest update error: {str(e)}"
 
 def batch_update_manifest_resources(root_dir, path_map):
