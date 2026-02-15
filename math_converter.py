@@ -26,7 +26,7 @@ RULES:
 
 Return ready-to-paste HTML/LaTeX for Canvas."""
 
-def convert_pdf_to_latex(api_key, pdf_path, log_func=None):
+def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
     """
     Convert a PDF with handwritten math to Canvas LaTeX.
     
@@ -50,7 +50,12 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None):
         temp_dir = Path(pdf_path).parent / f"{Path(pdf_path).stem}_temp"
         temp_dir.mkdir(exist_ok=True)
         
-        images = convert_from_path(str(pdf_path), dpi=300, output_folder=str(temp_dir))
+        images = convert_from_path(
+            str(pdf_path), 
+            dpi=300, 
+            output_folder=str(temp_dir),
+            poppler_path=poppler_path
+        )
         
         if log_func:
             log_func(f"   ✅ Created {len(images)} page images")
@@ -185,7 +190,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"❌ Error: {e}")
         return False, str(e)
 
-def process_canvas_export(api_key, export_dir, log_func=None):
+def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None):
     """
     Process all PDFs in a Canvas export (IMSCC) structure.
     Includes licensing/attribution checking to protect teachers.
@@ -261,7 +266,7 @@ def process_canvas_export(api_key, export_dir, log_func=None):
     
     for pdf_path in safe_pdf_paths:
         pdf = Path(pdf_path)
-        success, html_or_error = convert_pdf_to_latex(api_key, str(pdf), log_func)
+        success, html_or_error = convert_pdf_to_latex(api_key, str(pdf), log_func, poppler_path=poppler_path)
         
         if success:
             # Add attribution footer if needed

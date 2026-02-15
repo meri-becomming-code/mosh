@@ -121,6 +121,10 @@ class ToolkitGUI:
         self.deferred_review = False # [NEW] Flag for post-task review
         self.current_dialog = None
         
+        # UI State
+        self.current_view = "dashboard"
+        self.main_content_frame = None
+        
         # Check instructions
         if self.config.get("show_instructions", True):
              self.root.after(500, self._show_instructions)
@@ -151,10 +155,12 @@ class ToolkitGUI:
             "canvas_url": "",
             "canvas_token": "",
             "canvas_course_id": "",
-            "theme": "light"
+            "theme": "light",
+            "poppler_path": "",
+            "user_experience": "beginner"
         }
 
-    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id=""):
+    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id="", poppler_path="", user_experience="beginner"):
         self.config["api_key"] = key
         self.gui_handler.api_key = key # Sync to handler immediately
         self.config["show_instructions"] = start_show
@@ -162,6 +168,10 @@ class ToolkitGUI:
         self.config["canvas_url"] = canvas_url
         self.config["canvas_token"] = canvas_token
         self.config["canvas_course_id"] = canvas_course_id
+        self.config["poppler_path"] = poppler_path
+        self.config["user_experience"] = user_experience
+        if "poppler_path" not in self.config: self.config["poppler_path"] = ""
+        if "user_experience" not in self.config: self.config["user_experience"] = "beginner"
         try:
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(self.config, f)
@@ -371,17 +381,40 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
                  bg=colors["bg"], fg="#E65100", font=("Segoe UI", 8, "bold"), wraplength=500).pack(anchor="w", padx=40, pady=(2,0))
 
         tk.Label(dialog, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(dialog, text="Required for '🪄 Magic' auto-generation. Requires a PAID API key (free tier doesn't work).", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        tk.Label(dialog, text="Required for '🪄 Magic' auto-generation. Supports FREE tier (up to 50 pages/day).", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
         ent_api = tk.Entry(dialog, width=60, show="*")
         ent_api.insert(0, self.config.get("api_key", ""))
         ent_api.pack(pady=5, padx=40)
+
+        tk.Label(dialog, text="5. Poppler Bin Path (Required for Math PDF):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        frame_poppler = tk.Frame(dialog, bg=colors["bg"])
+        frame_poppler.pack(fill="x", padx=40)
+        ent_poppler = tk.Entry(frame_poppler, width=45)
+        ent_poppler.insert(0, self.config.get("poppler_path", ""))
+        ent_poppler.pack(side="left", pady=5)
+        
+        def browse_poppler():
+            path = filedialog.askdirectory(title="Select Poppler bin folder")
+            if path:
+                ent_poppler.delete(0, tk.END)
+                ent_poppler.insert(0, path)
+
+        tk.Button(frame_poppler, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+        
+        # [NEW] Magic Auto-Setup Button
+        self.btn_auto_poppler = tk.Button(frame_poppler, text="🪄 Magic Setup (Auto-Install)", 
+                                           command=self._auto_setup_poppler, 
+                                           font=("Segoe UI", 8, "bold"), fg="#2E7D32", bg="#E8F5E9", cursor="hand2")
+        self.btn_auto_poppler.pack(side="left", padx=5)
+        
+        tk.Button(dialog, text="📖 How do I install Poppler?", command=lambda: webbrowser.open("POPPLER_GUIDE.md"), font=("Segoe UI", 8, "italic"), cursor="hand2").pack(anchor="w", padx=40)
         
         
         def open_api_help():
             webbrowser.open("https://aistudio.google.com/app/apikey")
             msg_steps = (
                 "MOSH Magic Setup Guide:\n\n"
-                "⚠️ IMPORTANT: You need a PAID Gemini API key. The free tier doesn't work.\n\n"
+                "⚠️ NOTE: You can use a FREE Gemini API key (limited to 50 pages/day) or a paid one.\n\n"
                 "1. Click 'Create API key' in the window that just opened.\n"
                 "2. Click 'Create API key in new project'.\n"
                 "3. In the box that appears, name your key 'MOSH'.\n"
@@ -416,7 +449,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         btn_api_frame = tk.Frame(dialog, bg=colors["bg"])
         btn_api_frame.pack(anchor="w", padx=40)
         
-        tk.Button(btn_api_frame, text="💳 Get Paid API Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
+        tk.Button(btn_api_frame, text="🔑 Get Gemini API Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
         tk.Button(btn_api_frame, text="🧪 Test This Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
 
         def open_course_help():
@@ -441,7 +474,9 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
                 self.config.get("theme", "light"),
                 ent_url.get().strip(),
                 ent_token.get().strip(),
-                ent_course.get().strip()
+                ent_course.get().strip(),
+                ent_poppler.get().strip(),
+                self.config.get("user_experience", "beginner")
             )
             messagebox.showinfo("Saved", "Settings saved! MOSH Magic is now active if you provided a key.")
             dialog.destroy()
@@ -512,6 +547,9 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         
         ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 10))
         
+        # [NEW] Navigation Buttons
+        ttk.Button(sidebar, text="🏠 HOME DASHBOARD", command=lambda: self._switch_view("dashboard"), style="Sidebar.TButton").pack(pady=5, padx=10, fill="x")
+        
         # [NEW] First-Time User Button - PROMINENT!
         ttk.Button(sidebar, text="💡 First Time? Start Here!", command=self._show_quick_start, style="Action.TButton").pack(pady=10, padx=10, fill="x")
 
@@ -522,35 +560,112 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         # [NEW] Advanced Button
         ttk.Button(sidebar, text="🛠️ Advanced Tasks", command=self._show_advanced_dialog).pack(pady=10, padx=10, fill="x")
 
-        # 2. Main Content Area (Scrollable)
-        container = ttk.Frame(self.root)
-        container.pack(side="right", fill="both", expand=True)
+        # [NEW] Toggle Experience Mode
+        self.btn_mode = ttk.Button(sidebar, text="🎓 Beginner Mode", command=self._toggle_experience_mode, style="Sidebar.TButton")
+        self.btn_mode.pack(fill="x", padx=10, pady=5)
+        self._update_mode_button()
+        # Initialize visibility after UI is built
+        self.root.after(100, self._apply_experience_mode)
 
-        self.canvas = tk.Canvas(container, borderwidth=0, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
-        # Create a frame inside the canvas for the actual content
-        content = ttk.Frame(self.canvas, padding="20 20 20 20")
+        # 2. Main Content Area Container
+        self.view_container = ttk.Frame(self.root)
+        self.view_container.pack(side="right", fill="both", expand=True)
 
-        # Configure scrolling
+        # Show initial view
+        self._switch_view("dashboard")
+
+    def _switch_view(self, view_name):
+        """Standard method to swap the main content area."""
+        if self.main_content_frame:
+            self.main_content_frame.destroy()
+        
+        self.current_view = view_name
+        
+        # Create a new scrollable container for the view
+        container = ttk.Frame(self.view_container)
+        container.pack(fill="both", expand=True)
+        self.main_content_frame = container
+        
+        canvas = tk.Canvas(container, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        content = ttk.Frame(canvas, padding="30 30 30 30")
+        
         def on_frame_configure(event):
-            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-        # Make the inner frame width match the canvas width
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
         def on_canvas_configure(event):
-            self.canvas.itemconfig(self.canvas_window, width=event.width)
-
-        self.canvas_window = self.canvas.create_window((0, 0), window=content, anchor="nw")
+            canvas.itemconfig(canvas_window, width=event.width)
+            
+        canvas_window = canvas.create_window((0, 0), window=content, anchor="nw")
         content.bind("<Configure>", on_frame_configure)
-        self.canvas.bind("<Configure>", on_canvas_configure)
-        self.canvas.configure(yscrollcommand=scrollbar.set)
-
-        # Mousewheel support
-        def _on_mousewheel(event):
-            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        self.canvas.pack(side="left", fill="both", expand=True)
+        canvas.bind("<Configure>", on_canvas_configure)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Mousewheel
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        
+        canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        
+        # Router
+        if view_name == "dashboard":
+            self._build_dashboard(content)
+        elif view_name == "course":
+            self._build_course_view(content)
+        elif view_name == "files":
+            self._build_files_view(content)
+
+    def _build_dashboard(self, content):
+        """The new landing page / home screen."""
+        mode = self.config.get("theme", "light")
+        colors = THEMES[mode]
+        
+        # Welcome Header
+        tk.Label(content, text="Welcome to MOSH'S Toolkit", font=("Segoe UI", 28, "bold"), fg=colors["header"], bg=colors["bg"]).pack(pady=(0, 10))
+        tk.Label(content, text="What would you like to do today?", font=("Segoe UI", 12), fg=colors["subheader"], bg=colors["bg"]).pack(pady=(0, 40))
+        
+        # Grid for the two main cards
+        card_frame = ttk.Frame(content)
+        card_frame.pack(fill="both", expand=True)
+        card_frame.columnconfigure(0, weight=1)
+        card_frame.columnconfigure(1, weight=1)
+        
+        # --- CARD 1: CANVAS COURSE ---
+        course_card = tk.Frame(card_frame, bg="white", padx=30, pady=30, highlightbackground="#4B3190", highlightthickness=1)
+        course_card.grid(row=0, column=0, padx=15, sticky="nsew")
+        
+        tk.Label(course_card, text="📦", font=("Segoe UI", 48), bg="white").pack()
+        tk.Label(course_card, text="Canvas Course Workflow", font=("Segoe UI", 16, "bold"), bg="white", fg="#4B3190").pack(pady=10)
+        tk.Label(course_card, text="Clean up an entire course export (.imscc).\ndefault for fixing headers, alt text, and links at scale.", 
+                 wraplength=250, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(pady=(0, 20))
+        
+        ttk.Button(course_card, text="🚀 START COURSE WORKFLOW", style="Action.TButton", 
+                   command=lambda: self._switch_view("course")).pack(fill="x")
+        
+        # --- CARD 2: INDIVIDUAL FILES ---
+        files_card = tk.Frame(card_frame, bg="white", padx=30, pady=30, highlightbackground="#0D9488", highlightthickness=1)
+        files_card.grid(row=0, column=1, padx=15, sticky="nsew")
+        
+        tk.Label(files_card, text="📄", font=("Segoe UI", 48), bg="white").pack()
+        tk.Label(files_card, text="Individual Files & Folders", font=("Segoe UI", 16, "bold"), bg="white", fg="#0D9488").pack(pady=10)
+        tk.Label(files_card, text="Quickly convert Word, PPT, or Math PDFs.\nGreat for ad-hoc remediation without a full course export.", 
+                 wraplength=250, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(pady=(0, 20))
+        
+        ttk.Button(files_card, text="⚡ START FILE WORKFLOW", style="Action.TButton",
+                   command=lambda: self._switch_view("files")).pack(fill="x")
+        
+        # Bottom Tip
+        tip_frame = tk.Frame(content, bg="#F0F9FF", padx=20, pady=15)
+        tip_frame.pack(fill="x", pady=40)
+        tk.Label(tip_frame, text="💡 Pro Tip", font=("Segoe UI", 10, "bold"), bg="#F0F9FF", fg="#0369A1").pack(anchor="w")
+        tk.Label(tip_frame, text="Use the 'Canvas Course' option if you want to fix links between content pages automatically!", 
+                 bg="#F0F9FF", fg="#0C4A6E", font=("Segoe UI", 10)).pack(anchor="w")
+
+    def _build_course_view(self, content):
+        """The existing 4-step workflow for IMSCC files."""
+        # Add a "Back to Dashboard" link
+        back_btn = ttk.Button(content, text="← Back to Home", command=lambda: self._switch_view("dashboard"))
+        back_btn.pack(anchor="w", pady=(0, 20))
 
         # -- Target Project Section --
         ttk.Label(content, text="Step 1: Select .imscc File", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
@@ -630,10 +745,11 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 
 
         # -- Step 2.5: Math LaTeX Converter (NEW) --
-        ttk.Label(content, text="🔬 Math Converter (GEMINI AI)", style="SubHeader.TLabel").pack(anchor="w", pady=(20, 5))
+        self.math_section_header = ttk.Label(content, text="🔬 Math Converter (GEMINI AI)", style="SubHeader.TLabel")
+        self.math_section_header.pack(anchor="w", pady=(20, 5))
         
-        math_disclaimer = tk.Frame(content, bg="#E8F5E9", padx=15, pady=15, highlightbackground="#4CAF50", highlightthickness=2)
-        math_disclaimer.pack(fill="x", pady=(0, 10))
+        self.math_disclaimer = tk.Frame(content, bg="#E8F5E9", padx=15, pady=15, highlightbackground="#4CAF50", highlightthickness=2)
+        self.math_disclaimer.pack(fill="x", pady=(0, 10))
         
         tk.Label(math_disclaimer, text="✨ AI-Powered Math Conversion",  font=("Segoe UI", 11, "bold"), bg="#E8F5E9", fg="#2E7D32").pack(anchor="w")
         math_desc = (
@@ -642,8 +758,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         )
         tk.Label(math_disclaimer, text=math_desc, wraplength=550, bg="#E8F5E9", fg="#1B5E20", justify="left", font=("Segoe UI", 9)).pack(pady=(5,0))
         
-        frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
-        frame_math.pack(fill="x", pady=(0, 20))
+        self.frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
+        self.frame_math.pack(fill="x", pady=(0, 20))
         
         self.btn_math_canvas = ttk.Button(frame_math, text="📚 Convert Canvas Export PDFs", 
                                            command=self._convert_math_canvas_export, style="Action.TButton")
@@ -1365,8 +1481,8 @@ Website: meri-becomming-code.github.io/mosh
         before moving them into a live semester.
         
         📦 MOSH MAGIC (AI ASSISTANCE):
-        If you provide a PAID Gemini API Key in Box #4, MOSH Magic can write your 
-        Alt Tags and Math LaTeX for you! Note: Free tier API keys don't work.
+        If you provide a Gemini API Key in Box #4, MOSH Magic can write your 
+        Alt Tags and Math LaTeX for you! Note: Free tier keys work great (50 pages/day).
 
         🤖 AI COLLABORATOR:
         This toolkit was co-authored by Antigravity, an advanced coding AI 
@@ -2409,7 +2525,8 @@ YOUR WORKFLOW:
             success, result = math_converter.process_canvas_export(
                 api_key, 
                 self.target_dir, 
-                log_func=self.gui_handler.log
+                log_func=self.gui_handler.log,
+                poppler_path=self.config.get("poppler_path", "")
             )
             
             if success:
@@ -2431,12 +2548,64 @@ YOUR WORKFLOW:
         
         self._run_task_in_thread(task, "Math PDF Conversion")
 
+    def _build_files_view(self, content):
+        """View for working with individual files/folders (bulk/single)."""
+        mode = self.config.get("theme", "light")
+        colors = THEMES[mode]
+        
+        # Back Button
+        back_btn = ttk.Button(content, text="← Back to Home", command=lambda: self._switch_view("dashboard"))
+        back_btn.pack(anchor="w", pady=(0, 20))
+        
+        tk.Label(content, text="📄 Individual Files & Folders", font=("Segoe UI", 24, "bold"), fg=colors["header"], bg=colors["bg"]).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="Convert and fix files directly from your computer.", font=("Segoe UI", 10), fg=colors["subheader"], bg=colors["bg"]).pack(anchor="w", pady=(0, 25))
+        
+        # --- Step 1: Browse ---
+        ttk.Label(content, text="Step 1: Pick Your Files or Folder", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        frame_dir = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_dir.pack(fill="x", pady=(0, 20))
+        
+        frame_browse = ttk.Frame(frame_dir)
+        frame_browse.pack(fill="x")
+        self.lbl_dir = tk.Entry(frame_browse, bg=colors["bg"], fg=colors["fg"], insertbackground=colors["fg"])
+        self.lbl_dir.insert(0, self.target_dir)
+        self.lbl_dir.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ttk.Button(frame_browse, text="Browse Folder...", command=self._browse_folder).pack(side="right")
+        
+        # --- Step 2: Converters ---
+        ttk.Label(content, text="Step 2: Convert to Accessible HTML", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        frame_convert = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_convert.pack(fill="x", pady=(0, 20))
+        
+        self.btn_batch = ttk.Button(frame_convert, text="📂 Convert Entire Folder (Bulk Fix)", 
+                                     command=self._run_batch_conversion, style="Action.TButton")
+        self.btn_batch.pack(fill="x", pady=(0, 12))
+        
+        tk.Label(frame_convert, text="Or pick specific types:", font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w", pady=(0, 5))
+        frame_singles = ttk.Frame(frame_convert)
+        frame_singles.pack(fill="x")
+        ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf")).pack(side="left", fill="x", expand=True, padx=2)
+
+        # --- Step 3: Math ---
+        if self.config.get("user_experience", "beginner") == "expert" or self.current_view == "files":
+            ttk.Label(content, text="🔬 Math Converter (AI)", style="SubHeader.TLabel").pack(anchor="w", pady=(20, 5))
+            frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
+            frame_math.pack(fill="x", pady=(0, 20))
+            ttk.Button(frame_math, text="📄 Pick Math PDF/Image to Convert", 
+                       command=lambda: self._convert_math_files("pdf"), style="Action.TButton").pack(fill="x")
+
+        # --- Logs ---
+        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
+        self.txt_log = scrolledtext.ScrolledText(content, height=10, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
+        self.txt_log.pack(fill="both", expand=True, pady=5)
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
         api_key = self.config.get("api_key", "").strip()
         if not api_key:
             messagebox.showwarning("No Gemini API Key",
-                                  "You need a Gemini API key for math conversion.\\n\\n"
+                                  "You need a Gemini API key for math conversion.\n\n"
                                   "Click '🔗 Connect to My Canvas Playground' and add your key in Step 4.")
             return
         
@@ -2464,10 +2633,15 @@ YOUR WORKFLOW:
         
         def task():
             import math_converter
-            self.gui_handler.log(f"\\n=== GEMINI MATH CONVERTER ({file_type.upper()}) ===")
+            self.gui_handler.log(f"\n=== GEMINI MATH CONVERTER ({file_type.upper()}) ===")
             
             if file_type == "pdf":
-                success, result = math_converter.convert_pdf_to_latex(api_key, file_path, self.gui_handler.log)
+                success, result = math_converter.convert_pdf_to_latex(
+                    api_key, 
+                    file_path, 
+                    self.gui_handler.log,
+                    poppler_path=self.config.get("poppler_path", "")
+                )
             elif file_type == "docx":
                 success, result = math_converter.convert_word_to_latex(api_key, file_path, self.gui_handler.log)
             elif file_type == "images":
@@ -2482,14 +2656,137 @@ YOUR WORKFLOW:
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(result)
                 
-                self.gui_handler.log(f"\\n✨ SUCCESS! Saved to: {output_path}")
-                msg = f"✨ Gemini converted your math to LaTeX!\\n\\nSaved as:\\n{output_path}\\n\\nOpen this file and paste into Canvas."
+                self.gui_handler.log(f"\n✨ SUCCESS! Saved to: {output_path}")
+                msg = f"✨ Gemini converted your math to LaTeX!\n\nSaved as:\n{output_path}\n\nOpen this file and paste into Canvas."
                 self.root.after(0, lambda: messagebox.showinfo("Conversion Complete! 🎉", msg))
             else:
-                self.gui_handler.log(f"\\n❌ Error: {result}")
-                self.root.after(0, lambda: messagebox.showerror("Conversion Failed", f"Error:\\n{result}"))
+                self.gui_handler.log(f"\n❌ Error: {result}")
+                self.root.after(0, lambda: messagebox.showerror("Conversion Failed", f"Error:\n{result}"))
         
         self._run_task_in_thread(task, f"Math {file_type.upper()} Conversion")
+        
+    def _toggle_experience_mode(self):
+        """Switch between Beginner and Expert modes."""
+        current = self.config.get("user_experience", "beginner")
+        new_mode = "expert" if current == "beginner" else "beginner"
+        self.config["user_experience"] = new_mode
+        self._save_config_simple() # Custom simple save helper
+        self._update_mode_button()
+        self._apply_experience_mode()
+        
+        mode_name = "Expert Mode 🚀" if new_mode == "expert" else "Beginner Mode 🎓"
+        self._log(f"Switched to {mode_name}")
+        
+    def _update_mode_button(self):
+        """Updates the sidebar button text based on current mode."""
+        mode = self.config.get("user_experience", "beginner")
+        if mode == "expert":
+            self.btn_mode.config(text="🚀 Expert Mode")
+        else:
+            self.btn_mode.config(text="🎓 Beginner Mode")
+            
+    def _apply_experience_mode(self):
+        """Hides/shows UI elements based on experience level."""
+        mode = self.config.get("user_experience", "beginner")
+        if mode == "beginner":
+            # Hide Math Converter
+            self.math_section_header.pack_forget()
+            self.math_disclaimer.pack_forget()
+            self.frame_math.pack_forget()
+            # Hide advanced sidebar items if any
+        else:
+            # Show Math Converter (re-pack after Step 2)
+            # This is tricky with pack_forget, usually better to rebuild or manage order
+            # For now, let's just use it to simplify the initial view
+            self.math_section_header.pack(anchor="w", pady=(20, 5), after=self.btn_batch)
+            self.math_disclaimer.pack(fill="x", pady=(0, 10), after=self.math_section_header)
+            self.frame_math.pack(fill="x", pady=(0, 20), after=self.math_disclaimer)
+
+    def _save_config_simple(self):
+        """Saves current config to file without prompt."""
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(self.config, f)
+        except:
+            pass
+
+    def _auto_setup_poppler(self):
+        """Automatically downloads and extracts Poppler for Windows users."""
+        if os.name != "nt":
+            msg = ("Poppler Auto-Setup is currently for Windows.\n\n"
+                   "Mac Users: Please run 'brew install poppler' in your Terminal.")
+            messagebox.showinfo("Platform Info", msg)
+            return
+
+        link = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
+        
+        explanation = (
+            "MOSH Toolkit needs a helper tool called 'Poppler' to read Math from PDF files.\n\n"
+            "This will:\n"
+            "1. Download Poppler (~20MB) from:\n"
+            f"{link}\n"
+            "2. Extract it to a 'helpers' folder in your project.\n"
+            "3. Automatically set the path for you.\n\n"
+            "Do you want to proceed?"
+        )
+        
+        if not messagebox.askyesno("Magic Poppler Setup", explanation):
+            return
+
+        def task():
+            import zipfile
+            import requests
+            from pathlib import Path
+
+            try:
+                self.gui_handler.log("--- STARTING POPPLER AUTO-SETUP ---")
+                helper_dir = Path(os.getcwd()) / "helpers"
+                helper_dir.mkdir(exist_ok=True)
+                
+                zip_path = helper_dir / "poppler.zip"
+                extract_path = helper_dir / "poppler"
+
+                # Download
+                self.gui_handler.log(f"📥 Downloading Poppler from Github...")
+                response = requests.get(link, stream=True)
+                response.raise_for_status()
+                
+                with open(zip_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                # Extract
+                self.gui_handler.log("📂 Extracting files...")
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(extract_path)
+                
+                # Find the bin folder
+                # The zip usually extracts to a folder named like "Release-24.08.0-0"
+                # Let's search for the 'bin' folder inside
+                bin_folders = list(extract_path.glob("**/bin"))
+                if not bin_folders:
+                    raise Exception("Could not find 'bin' folder in extracted files.")
+                
+                poppler_bin = str(bin_folders[0])
+                
+                # Update Config
+                self.config["poppler_path"] = poppler_bin
+                self._save_config_simple()
+                
+                self.gui_handler.log(f"✅ SUCCESS! Poppler linked to: {poppler_bin}")
+                
+                # Clean up zip
+                if zip_path.exists():
+                    os.remove(zip_path)
+                
+                msg = f"✨ Poppler has been installed and configured!\n\nLocation: {poppler_bin}"
+                self.root.after(0, lambda: messagebox.showinfo("Magic Setup Complete", msg))
+                
+            except Exception as e:
+                self.gui_handler.log(f"❌ Error during setup: {str(e)}")
+                self.root.after(0, lambda: messagebox.showerror("Setup Failed", f"Could not complete setup:\n{str(e)}"))
+
+        self._run_task_in_thread(task, "Poppler Auto-Setup")
 
 if __name__ == "__main__":
     root = tk.Tk()
