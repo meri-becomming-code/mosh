@@ -31,6 +31,16 @@ pip3 install -r requirements.txt
 pip3 install pyinstaller
 ```
 
+**Optional - For Math Converter Feature:**
+
+If you want to include AI-powered math conversion (converts handwritten math PDFs to LaTeX):
+
+```bash
+pip3 install google-genai pillow pdf2image
+```
+
+> **Note**: The math converter is optional. All core MOSH features (PowerPoint conversion, HTML remediation, accessibility auditing, Canvas upload) work without it. The Gemini API has a generous free tier suitable for most educational use.
+
 **Note**: If you encounter any permission errors, use:
 ```bash
 pip3 install --user -r requirements.txt
@@ -146,7 +156,7 @@ The Mac build includes all the same features as Windows:
 - ✅ PDF processing
 - ✅ Word/PowerPoint conversion
 - ✅ Canvas integration
-- ✅ Jeanie AI features (with API key)
+- ✅ Math PDF to LaTeX conversion (optional, requires Gemini API)
 - ✅ Audit tools
 - ✅ All guides and documentation
 

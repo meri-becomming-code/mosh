@@ -232,8 +232,10 @@ def process_canvas_export(api_key, export_dir, log_func=None):
             log_func("   Proceeding with conversion, but CHECK LICENSING_REPORT.md")
             log_func("   You are responsible for proper attribution!")
         
-        # Get list of safe PDF files
-        safe_pdf_paths = [f['path'] for f in safe_files if f['path'].endswith('.pdf')]
+        # Get list of safe PDF files (include risky/UNKNOWN files - teacher's own content)
+        # Only block PROPRIETARY publisher content
+        convertible_files = safe_files + risky_files
+        safe_pdf_paths = [f['path'] for f in convertible_files if f['path'].endswith('.pdf')]
         
         if not safe_pdf_paths:
             return False, "No safe PDF files found to convert"
