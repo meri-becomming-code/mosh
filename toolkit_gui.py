@@ -77,6 +77,35 @@ class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
         self.input_request_queue.put(('prompt_link', message, (help_url, context)))
         return self.input_response_queue.get()
 
+# Helper for Tooltips
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x, y, cx, cy = self.widget.bbox("insert")
+        x = x + self.widget.winfo_rootx() + 25
+        y = y + self.widget.winfo_rooty() + 20
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry("+%d+%d" % (x, y))
+        label = tk.Label(tw, text=self.text, justify='left',
+                      background="#ffffe0", relief='solid', borderwidth=1,
+                      font=("Segoe UI", "8", "normal"))
+        label.pack(ipadx=1)
+
+    def hide_tip(self, event=None):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
 # Colors
 # --- Themes ---
 THEMES = {
@@ -124,6 +153,7 @@ class ToolkitGUI:
         # UI State
         self.current_view = "dashboard"
         self.main_content_frame = None
+        self.progress_var = tk.DoubleVar(value=0)
         
         # Check instructions
         if self.config.get("show_instructions", True):
@@ -354,7 +384,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         ent_url.insert(0, self.config.get("canvas_url", ""))
         ent_url.pack(pady=5, padx=40)
 
-        tk.Label(dialog, text="2. Your Secret Access Key:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        tk.Label(dialog, text="2. Your Canvas Digital Key:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
         
         frame_token = tk.Frame(dialog, bg=colors["bg"])
         frame_token.pack(fill="x", padx=40)
@@ -401,8 +431,8 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 
         tk.Button(frame_poppler, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
         
-        # [NEW] Magic Auto-Setup Button
-        self.btn_auto_poppler = tk.Button(frame_poppler, text="🪄 Magic Setup (Auto-Install)", 
+        # [NEW] Guided Auto-Setup Button
+        self.btn_auto_poppler = tk.Button(frame_poppler, text="🪄 Guided Auto-Setup (No Admin Needed)", 
                                            command=self._auto_setup_poppler, 
                                            font=("Segoe UI", 8, "bold"), fg="#2E7D32", bg="#E8F5E9", cursor="hand2")
         self.btn_auto_poppler.pack(side="left", padx=5)
@@ -523,7 +553,11 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         # 1. Sidebar
         sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", width=200)
         sidebar.pack(side="left", fill="y")
-        
+
+        # 2. Main View Container (Right)
+        self.view_container = tk.Frame(self.root, bg="white")
+        self.view_container.pack(side="right", fill="both", expand=True)
+
         # Logo Area
         # [NEW] Mosh Mascot
         try:
@@ -532,13 +566,16 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             # Make it small for the sidebar
             mosh_img = mosh_img.resize((120, 120), Image.Resampling.LANCZOS)
             self.sidebar_mosh_tk = ImageTk.PhotoImage(mosh_img)
-            self.lbl_mosh_icon = ttk.Label(sidebar, image=self.sidebar_mosh_tk, style="Sidebar.TLabel")
+            self.lbl_mosh_icon = ttk.Label(sidebar, image=self.sidebar_mosh_tk, style="Sidebar.TLabel", cursor="hand2")
             self.lbl_mosh_icon.pack(pady=(20, 0))
+            self.lbl_mosh_icon.bind("<Button-1>", lambda e: self._switch_view("dashboard"))
+            ToolTip(self.lbl_mosh_icon, "Back to Home Dashboard")
         except:
             pass
 
-        lbl_logo = ttk.Label(sidebar, text="MOSH'S\nTOOLKIT", style="Sidebar.TLabel", font=("Segoe UI", 16, "bold"), justify="center")
+        lbl_logo = ttk.Label(sidebar, text="MOSH'S\nTOOLKIT", style="Sidebar.TLabel", font=("Segoe UI", 16, "bold"), justify="center", cursor="hand2")
         lbl_logo.pack(pady=(5, 5), padx=10)
+        lbl_logo.bind("<Button-1>", lambda e: self._switch_view("dashboard"))
         
         lbl_tagline = ttk.Label(sidebar, text="Built by a teacher with AI, for teachers", 
                                 style="Sidebar.TLabel", font=("Segoe UI", 9, "italic"), 
@@ -548,28 +585,44 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 10))
         
         # [NEW] Navigation Buttons
-        ttk.Button(sidebar, text="🏠 HOME DASHBOARD", command=lambda: self._switch_view("dashboard"), style="Sidebar.TButton").pack(pady=5, padx=10, fill="x")
+        btn_home = ttk.Button(sidebar, text="🏠 HOME DASHBOARD", command=lambda: self._switch_view("dashboard"), style="Sidebar.TButton")
+        btn_home.pack(pady=5, padx=10, fill="x")
+        ToolTip(btn_home, "Return to the main landing page")
         
         # [NEW] First-Time User Button - PROMINENT!
-        ttk.Button(sidebar, text="💡 First Time? Start Here!", command=self._show_quick_start, style="Action.TButton").pack(pady=10, padx=10, fill="x")
+        btn_start = ttk.Button(sidebar, text="💡 First Time? Start Here!", command=self._show_quick_start, style="Action.TButton")
+        btn_start.pack(pady=10, padx=10, fill="x")
+        ToolTip(btn_start, "Quick guide for new users")
 
         # [NEW] Viral/Mission Button
         self.btn_share = ttk.Button(sidebar, text="📣 SPREAD THE WORD", command=self._show_share_dialog, style="Action.TButton")
         self.btn_share.pack(pady=10, padx=10, fill="x")
+        ToolTip(self.btn_share, "Share MOSH with your colleagues!")
 
         # [NEW] Advanced Button
-        ttk.Button(sidebar, text="🛠️ Advanced Tasks", command=self._show_advanced_dialog).pack(pady=10, padx=10, fill="x")
+        btn_adv = ttk.Button(sidebar, text="🛠️ Advanced Tasks", command=self._show_advanced_dialog)
+        btn_adv.pack(pady=10, padx=10, fill="x")
+        ToolTip(btn_adv, "Manual and expert tasks")
 
         # [NEW] Toggle Experience Mode
         self.btn_mode = ttk.Button(sidebar, text="🎓 Beginner Mode", command=self._toggle_experience_mode, style="Sidebar.TButton")
         self.btn_mode.pack(fill="x", padx=10, pady=5)
+        ToolTip(self.btn_mode, "Switch between simplified (Beginner) and experimental (Expert) views")
         self._update_mode_button()
         # Initialize visibility after UI is built
         self.root.after(100, self._apply_experience_mode)
 
-        # 2. Main Content Area Container
-        self.view_container = ttk.Frame(self.root)
-        self.view_container.pack(side="right", fill="both", expand=True)
+        # Header Banner with Logo & Progress
+        header_frame = tk.Frame(self.view_container, height=60, bg="white")
+        header_frame.pack(side="top", fill="x")
+        header_frame.pack_propagate(False)
+        
+        tk.Label(header_frame, text="✨ MOSH Toolkit", font=("Segoe UI", 12, "bold"), bg="white", fg="#4B3190").pack(side="left", padx=20)
+        
+        self.progress_bar = ttk.Progressbar(header_frame, variable=self.progress_var, maximum=100, length=200)
+        self.progress_bar.pack(side="right", padx=20, pady=15)
+        self.lbl_status_text = tk.Label(header_frame, text="Ready", font=("Segoe UI", 9), bg="white", fg="gray")
+        self.lbl_status_text.pack(side="right")
 
         # Show initial view
         self._switch_view("dashboard")
@@ -639,8 +692,10 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         tk.Label(course_card, text="Clean up an entire course export (.imscc).\ndefault for fixing headers, alt text, and links at scale.", 
                  wraplength=250, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(pady=(0, 20))
         
-        ttk.Button(course_card, text="🚀 START COURSE WORKFLOW", style="Action.TButton", 
-                   command=lambda: self._switch_view("course")).pack(fill="x")
+        btn_course = ttk.Button(course_card, text="🚀 START COURSE WORKFLOW", style="Action.TButton", 
+                   command=lambda: self._switch_view("course"))
+        btn_course.pack(fill="x")
+        ToolTip(btn_course, "Clean up an entire course export file (.imscc)")
         
         # --- CARD 2: INDIVIDUAL FILES ---
         files_card = tk.Frame(card_frame, bg="white", padx=30, pady=30, highlightbackground="#0D9488", highlightthickness=1)
@@ -651,8 +706,10 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         tk.Label(files_card, text="Quickly convert Word, PPT, or Math PDFs.\nGreat for ad-hoc remediation without a full course export.", 
                  wraplength=250, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(pady=(0, 20))
         
-        ttk.Button(files_card, text="⚡ START FILE WORKFLOW", style="Action.TButton",
-                   command=lambda: self._switch_view("files")).pack(fill="x")
+        btn_files = ttk.Button(files_card, text="⚡ START FILE WORKFLOW", style="Action.TButton",
+                   command=lambda: self._switch_view("files"))
+        btn_files.pack(fill="x")
+        ToolTip(btn_files, "Convert individual files or folders directly")
         
         # Bottom Tip
         tip_frame = tk.Frame(content, bg="#F0F9FF", padx=20, pady=15)
@@ -664,7 +721,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
     def _build_course_view(self, content):
         """The existing 4-step workflow for IMSCC files."""
         # Add a "Back to Dashboard" link
-        back_btn = ttk.Button(content, text="← Back to Home", command=lambda: self._switch_view("dashboard"))
+        back_btn = ttk.Button(content, text="🏠 ← Back to Home", command=lambda: self._switch_view("dashboard"), style="Action.TButton")
         back_btn.pack(anchor="w", pady=(0, 20))
 
         # -- Target Project Section --
@@ -681,6 +738,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             style="Action.TButton"
         )
         btn_import.pack(side="top", fill="x", pady=(0, 8))
+        ToolTip(btn_import, "Import your Canvas course export file (.imscc or .zip)")
 
         # Row 1b: Connect to Canvas (Barney Mode)
         btn_canvas = ttk.Button(
@@ -690,6 +748,7 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
             style="Action.TButton"
         )
         btn_canvas.pack(side="top", fill="x", pady=(0, 12))
+        ToolTip(btn_canvas, "Set up your Canvas sandbox for safe testing")
         
         # Row 2: Folder Browser
         frame_browse = ttk.Frame(frame_dir)
@@ -726,22 +785,31 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         
         self.btn_wizard = ttk.Button(frame_convert, text="🪄 Select Specific Files to Convert", command=self._show_conversion_wizard, style="Action.TButton")
         self.btn_wizard.pack(fill="x", pady=(0, 8))
+        ToolTip(self.btn_wizard, "Choose exactly which Word, PPT, or PDF files to convert")
         
         frame_singles = ttk.Frame(frame_convert)
         frame_singles.pack(fill="x")
         
-        self.btn_word = ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx"))
+        self.btn_word = ttk.Button(frame_singles, text="📝 Word", command=lambda: self._show_conversion_wizard("docx"))
         self.btn_word.pack(side="left", fill="x", expand=True, padx=2)
-        self.btn_excel = ttk.Button(frame_singles, text="Excel", command=lambda: self._show_conversion_wizard("xlsx"))
+        ToolTip(self.btn_word, "Convert all Word documents")
+
+        self.btn_excel = ttk.Button(frame_singles, text="📈 Excel", command=lambda: self._show_conversion_wizard("xlsx"))
         self.btn_excel.pack(side="left", fill="x", expand=True, padx=2)
-        self.btn_ppt = ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx"))
+        ToolTip(self.btn_excel, "Convert all Excel sheets")
+
+        self.btn_ppt = ttk.Button(frame_singles, text="📽️ PPT", command=lambda: self._show_conversion_wizard("pptx"))
         self.btn_ppt.pack(side="left", fill="x", expand=True, padx=2)
-        self.btn_pdf = ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf"))
+        ToolTip(self.btn_ppt, "Convert all PowerPoint presentations")
+
+        self.btn_pdf = ttk.Button(frame_singles, text="📄 PDF", command=lambda: self._show_conversion_wizard("pdf"))
         self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
+        ToolTip(self.btn_pdf, "Convert all PDF documents")
 
         self.btn_batch = ttk.Button(frame_convert, text="📂 Convert Everything (Batch Mode)", 
                                      command=self._run_batch_conversion, style="Action.TButton")
         self.btn_batch.pack(fill="x", pady=(12, 0))
+        ToolTip(self.btn_batch, "Convert all supported files in the course automatically")
 
 
         # -- Step 2.5: Math LaTeX Converter (NEW) --
@@ -782,33 +850,38 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
 
 
         # -- Step 3: Remediation Actions (Grid) --
-        ttk.Label(content, text="Step 3: Fix & Review", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        self.step3_header = ttk.Label(content, text="Step 3: Fix & Review", style="SubHeader.TLabel")
+        self.step3_header.pack(anchor="w", pady=(0, 5))
         
-        frame_actions = ttk.Frame(content, style="Card.TFrame", padding=15)
-        frame_actions.pack(fill="x", pady=(0, 25))
+        self.frame_actions = ttk.Frame(content, style="Card.TFrame", padding=15)
+        self.frame_actions.pack(fill="x", pady=(0, 25))
         
         # Friendly Button Names
-        self.btn_inter = ttk.Button(frame_actions, text="Guided Review\n(Descriptions & Links)", command=self._run_interactive, style="Action.TButton")
+        self.btn_inter = ttk.Button(frame_actions, text="📖 Guided Review\n(Descriptions & Links)", command=self._run_interactive, style="Action.TButton")
         self.btn_inter.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        ToolTip(self.btn_inter, "Review image descriptions and fix links page-by-page")
 
-        self.btn_auto = ttk.Button(frame_actions, text="Auto-Fix Issues\n(Headings & Contrast)", command=self._run_auto_fixer, style="Action.TButton")
+        self.btn_auto = ttk.Button(frame_actions, text="✨ Auto-Fix Issues\n(Headings & Contrast)", command=self._run_auto_fixer, style="Action.TButton")
         self.btn_auto.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ToolTip(self.btn_auto, "Automatically fix accessibility issues across all pages")
 
         # Row 2 (Audit)
-        self.btn_audit = ttk.Button(frame_actions, text="Quick Report\n(Is it Compliant?)", command=self._run_audit, style="Action.TButton")
+        self.btn_audit = ttk.Button(frame_actions, text="📊 Quick Report\n(Is it Compliant?)", command=self._run_audit, style="Action.TButton")
         self.btn_audit.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        ToolTip(self.btn_audit, "Generate a detailed accessibility report for the course")
 
         frame_actions.columnconfigure(0, weight=1)
         frame_actions.columnconfigure(1, weight=1)
 
 
         # -- Step 4: Final Launch --
-        ttk.Label(content, text="Step 4: Final Step", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
-        frame_final = ttk.Frame(content, style="Card.TFrame", padding=15)
-        frame_final.pack(fill="x", pady=(0, 25))
+        self.step4_header = ttk.Label(content, text="Step 4: Final Step", style="SubHeader.TLabel")
+        self.step4_header.pack(anchor="w", pady=(0, 5))
+        self.frame_final = ttk.Frame(content, style="Card.TFrame", padding=15)
+        self.frame_final.pack(fill="x", pady=(0, 25))
 
         self.btn_check = ttk.Button(
-            frame_final, 
+            self.frame_final, 
             text="🚥 Step 4: Am I Ready to Upload? (Run Pre-Flight Check)", 
             command=self._show_preflight_dialog,
             style="Action.TButton"
@@ -820,6 +893,9 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
         self.txt_log = scrolledtext.ScrolledText(content, height=8, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
         self.txt_log.pack(fill="both", expand=True, pady=5)
+
+        # [NEW] Apply view logic
+        self._apply_experience_mode()
 
     def _browse_folder(self):
         path = filedialog.askdirectory(initialdir=self.target_dir)
@@ -1357,12 +1433,20 @@ Website: meri-becomming-code.github.io/mosh
             html_files = self._get_all_html_files()
             if not html_files:
                 self.gui_handler.log("No HTML files found to fix.")
+                self.progress_var.set(100)
+                self.lbl_status_text.config(text="No files found", fg="gray")
                 return
             
             self.gui_handler.log(f"Processing {len(html_files)} HTML files...")
+            self.lbl_status_text.config(text="Fixing ADA issues...", fg="blue")
+            
             files_with_fixes = 0
             total_fixes = 0
             for i, path in enumerate(html_files):
+                # Update progress
+                progress = (i / len(html_files)) * 100
+                self.progress_var.set(progress)
+                
                 success, fixes = interactive_fixer.run_auto_fixer(path, self.gui_handler)
                 if success and fixes:
                     files_with_fixes += 1
@@ -1378,11 +1462,21 @@ Website: meri-becomming-code.github.io/mosh
             time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
             
             self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
-            self.gui_handler.log(f"🏆 YOU SAVED APPROXIMATELY {time_str} OF TEDIOUS MANUAL LABOR!")
-
-            self.gui_handler.log(f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}")
-            self.gui_handler.log(f"🏆 YOU SAVED APPROXIMATELY {time_str} OF TEDIOUS MANUAL LABOR!")
-
+            self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
+            
+            self.gui_handler.log("\n✨ ALL TASKS COMPLETE!")
+            msg = (
+                "MOSH has finished fixing your files!\n\n"
+                f"🏆 Predicted time saved: {time_str}\n\n"
+                "WHAT'S NEXT?\n"
+                "1. Open your Canvas sandbox course.\n"
+                "2. Upload the files in the 'remediated' folder.\n"
+                "3. Verify your pages look great!"
+            )
+            self.root.after(0, lambda: messagebox.showinfo("Auto-Fix Complete", msg))
+            self.progress_var.set(100)
+            self.lbl_status_text.config(text="Done!", fg="green")
+            
         self._run_task_in_thread(task, "Auto-Fixer")
 
     def _run_interactive(self):
@@ -2021,9 +2115,12 @@ YOUR WORKFLOW:
             
             if not found_files:
                 self.gui_handler.log("No convertible files found.")
+                self.progress_var.set(100)
+                self.lbl_status_text.config(text="No files found", fg="gray")
                 return
 
             self.gui_handler.log(f"--- Starting Batch Conversion on {len(found_files)} files ---")
+            self.lbl_status_text.config(text="Converting files...", fg="blue")
             success_count = 0
             total_auto_fixes = 0
             
@@ -2035,6 +2132,12 @@ YOUR WORKFLOW:
                 if self.gui_handler.is_stopped(): break
                 fname = os.path.basename(fpath)
                 ext = os.path.splitext(fpath)[1].lower().replace('.', '')
+                
+                # Update Progress
+                progress = (i / len(found_files)) * 100
+                self.progress_var.set(progress)
+                self.lbl_status_text.config(text=f"Converting {i+1}/{len(found_files)}...", fg="blue")
+                
                 self.gui_handler.log(f"[{i+1}/{len(found_files)}] Preparing Canvas WikiPage: {fname}")
                 
                 output_path = None
@@ -2078,15 +2181,15 @@ YOUR WORKFLOW:
             # --- [TURBO] PASS: Batch Updates ---
             if manifest_map:
                 self.gui_handler.log("\n🔄 Synchronizing Course Manifest (Turbo)...")
+                self.lbl_status_text.config(text="Updating Manifest...", fg="blue")
                 m_success, m_msg = converter_utils.batch_update_manifest_resources(self.target_dir, manifest_map)
                 if m_success: self.gui_handler.log(f"   [MANIFEST] {m_msg}")
             
             if link_map:
                 self.gui_handler.log("🔗 Repairing Course Links (Turbo)...")
+                self.lbl_status_text.config(text="Repairing Links...", fg="blue")
                 converter_utils.batch_update_links_in_directory(self.target_dir, link_map, log_func=self.gui_handler.log)
             
-            # Estimation: 10 minutes per file vs manual remediation + auto-fixes
-            # (Adjusted based on "fast techy user" feedback, though pottery teachers might take longer!)
             total_mins = (success_count * 10) + (total_auto_fixes * 1.5)
             hours = int(total_mins // 60)
             mins = int(total_mins % 60)
@@ -2095,8 +2198,11 @@ YOUR WORKFLOW:
             self.gui_handler.log(f"\n--- Batch Complete. {success_count} files converted. ---")
             self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
             
-            # Queue the review prompt for _enable_buttons to handle
+            # Queue the review prompt
             self.auto_prompt_review = True
+            
+            self.progress_var.set(100)
+            self.lbl_status_text.config(text="Batch Done!", fg="green")
 
             self.gui_handler.log("\n🛡️ Remember: Check the files in Canvas before publishing!")
             
@@ -2106,9 +2212,15 @@ YOUR WORKFLOW:
                 self.gui_handler.log("📂 Opening archive folder with your original files for safekeeping...")
                 os.startfile(archive_path)
 
-            self.root.after(0, lambda: messagebox.showinfo("Conversion Complete", 
+            msg = (
                 f"Processed {len(found_files)} files.\nCheck the logs for details.\n\n"
-                "I have opened the folder containing your original files so you can move them to a safe place."))
+                f"🏆 Estimated time saved: {time_str}\n\n"
+                "WHAT'S NEXT?\n"
+                "1. Go to Canvas > Import Course Content.\n"
+                "2. Select your 'remediated.imscc' file.\n"
+                "3. Check your new accessible pages!"
+            )
+            self.root.after(0, lambda: messagebox.showinfo("Conversion Complete", msg))
 
         self._run_task_in_thread(task, "Batch Conversion")
 
@@ -2507,9 +2619,17 @@ YOUR WORKFLOW:
         api_key = self.config.get("api_key", "").strip()
         if not api_key:
             messagebox.showwarning("No Gemini API Key",
-                                  "You need a Gemini API key for math conversion.\\n\\n"
+                                  "You need a Gemini API key for math conversion.\n\n"
                                   "Click '🔗 Connect to My Canvas Playground' and add your key in Step 4.")
             return
+
+        # [NEW] Proactive Poppler Check
+        if os.name == "nt" and not self.config.get("poppler_path"):
+            if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nWould you like to run the 'Guided Auto-Setup' now? It doesn't require administrator password."):
+                self._auto_setup_poppler()
+                # If they cancelled the download or it failed, the config still won't have it
+                if not self.config.get("poppler_path"):
+                    return
         
         if not messagebox.askyesno("Start Math Conversion?",
                                    f"This will use Gemini AI to convert all PDFs in:\\n{self.target_dir}\\n\\n"
@@ -2531,21 +2651,37 @@ YOUR WORKFLOW:
             
             if success:
                 html_files = result
-                self.gui_handler.log(f"\\n✨ SUCCESS! Created {len(html_files)} Canvas pages with accessible LaTeX math!")
-                self.gui_handler.log("\\nNEXT STEPS:")
+                self.gui_handler.log(f"\n✨ SUCCESS! Created {len(html_files)} Canvas pages with accessible LaTeX math!")
+                self.gui_handler.log("\nNEXT STEPS:")
                 self.gui_handler.log("1. Review HTML files in converted_math_pages/ folder")
                 self.gui_handler.log("2. Copy content into Canvas pages")
                 self.gui_handler.log("3. Verify LaTeX renders correctly")
                 
-                msg = (f"✨ Gemini converted {len(html_files)} PDFs to accessible Canvas LaTeX!\\n\\n"
-                       f"Output location: {self.target_dir}/converted_math_pages/\\n\\n"
-                       "Next: Open these HTML files and paste content into Canvas pages.")
+                # Update progress
+                self.progress_var.set(100)
+                self.lbl_status_text.config(text="Done!", fg="green")
+                
+                msg = (
+                    f"✨ Gemini converted {len(html_files)} PDFs to accessible Canvas LaTeX!\n\n"
+                    f"Output location: {self.target_dir}/converted_math_pages/\n\n"
+                    "WHAT'S NEXT?\n"
+                    "1. Open the HTML files in your browser.\n"
+                    "2. Copy the content (Ctrl+A, Ctrl+C).\n"
+                    "3. Paste directly into a new Canvas Page!"
+                )
                 self.root.after(0, lambda: messagebox.showinfo("Conversion Complete! 🎉", msg))
+                
+                # Open folder automatically (PROACTIVE UX)
+                os.startfile(os.path.join(self.target_dir, "converted_math_pages"))
             else:
-                self.gui_handler.log(f"\\n❌ Error: {result}")
+                self.progress_var.set(0)
+                self.lbl_status_text.config(text="Error", fg="red")
+                self.gui_handler.log(f"\n❌ Error: {result}")
                 self.root.after(0, lambda: messagebox.showerror("Conversion Failed", 
-                    f"Could not convert PDFs:\\n{result}\\n\\nCheck Activity Log for details."))
+                    f"Could not convert PDFs:\n{result}\n\nCheck Activity Log for details."))
         
+        self.progress_var.set(10)
+        self.lbl_status_text.config(text="Reading PDFs...", fg="blue")
         self._run_task_in_thread(task, "Math PDF Conversion")
 
     def _build_files_view(self, content):
@@ -2580,21 +2716,33 @@ YOUR WORKFLOW:
         self.btn_batch = ttk.Button(frame_convert, text="📂 Convert Entire Folder (Bulk Fix)", 
                                      command=self._run_batch_conversion, style="Action.TButton")
         self.btn_batch.pack(fill="x", pady=(0, 12))
+        ToolTip(self.btn_batch, "Convert all Word, PPT, and PDF files in the selected folder")
         
         tk.Label(frame_convert, text="Or pick specific types:", font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w", pady=(0, 5))
         frame_singles = ttk.Frame(frame_convert)
         frame_singles.pack(fill="x")
-        ttk.Button(frame_singles, text="Word", command=lambda: self._show_conversion_wizard("docx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_singles, text="PPT", command=lambda: self._show_conversion_wizard("pptx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_singles, text="PDF", command=lambda: self._show_conversion_wizard("pdf")).pack(side="left", fill="x", expand=True, padx=2)
+        
+        btn_word = ttk.Button(frame_singles, text="📝 Word", command=lambda: self._show_conversion_wizard("docx"))
+        btn_word.pack(side="left", fill="x", expand=True, padx=2)
+        ToolTip(btn_word, "Select Word documents to convert")
+        
+        btn_ppt = ttk.Button(frame_singles, text="📽️ PPT", command=lambda: self._show_conversion_wizard("pptx"))
+        btn_ppt.pack(side="left", fill="x", expand=True, padx=2)
+        ToolTip(btn_ppt, "Select PowerPoint presentations to convert")
+        
+        btn_pdf = ttk.Button(frame_singles, text="📄 PDF", command=lambda: self._show_conversion_wizard("pdf"))
+        btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
+        ToolTip(btn_pdf, "Select PDF files to convert")
 
         # --- Step 3: Math ---
         if self.config.get("user_experience", "beginner") == "expert" or self.current_view == "files":
             ttk.Label(content, text="🔬 Math Converter (AI)", style="SubHeader.TLabel").pack(anchor="w", pady=(20, 5))
             frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
             frame_math.pack(fill="x", pady=(0, 20))
-            ttk.Button(frame_math, text="📄 Pick Math PDF/Image to Convert", 
-                       command=lambda: self._convert_math_files("pdf"), style="Action.TButton").pack(fill="x")
+            btn_math = ttk.Button(frame_math, text="📄 Pick Math PDF/Image to Convert", 
+                                   command=lambda: self._convert_math_files("pdf"), style="Action.TButton")
+            btn_math.pack(fill="x")
+            ToolTip(btn_math, "Use Gemini AI to read math equations from PDF or images")
 
         # --- Logs ---
         ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
@@ -2608,6 +2756,13 @@ YOUR WORKFLOW:
                                   "You need a Gemini API key for math conversion.\n\n"
                                   "Click '🔗 Connect to My Canvas Playground' and add your key in Step 4.")
             return
+
+        # [NEW] Proactive Poppler Check (Only for PDFs)
+        if file_type == "pdf" and os.name == "nt" and not self.config.get("poppler_path"):
+            if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nWould you like to run the 'Guided Auto-Setup' now? It doesn't require administrator password."):
+                self._auto_setup_poppler()
+                if not self.config.get("poppler_path"):
+                    return
         
         # File picker based on type
         if file_type == "pdf":
@@ -2688,19 +2843,22 @@ YOUR WORKFLOW:
     def _apply_experience_mode(self):
         """Hides/shows UI elements based on experience level."""
         mode = self.config.get("user_experience", "beginner")
+        
+        # Guard against elements not being defined yet (e.g. on Dashboard)
+        if not hasattr(self, "math_section_header") or not hasattr(self, "step3_header"):
+            return
+
         if mode == "beginner":
             # Hide Math Converter
             self.math_section_header.pack_forget()
             self.math_disclaimer.pack_forget()
             self.frame_math.pack_forget()
-            # Hide advanced sidebar items if any
         else:
-            # Show Math Converter (re-pack after Step 2)
-            # This is tricky with pack_forget, usually better to rebuild or manage order
-            # For now, let's just use it to simplify the initial view
-            self.math_section_header.pack(anchor="w", pady=(20, 5), after=self.btn_batch)
-            self.math_disclaimer.pack(fill="x", pady=(0, 10), after=self.math_section_header)
-            self.frame_math.pack(fill="x", pady=(0, 20), after=self.math_disclaimer)
+            # Show Math Converter (re-pack before Step 3)
+            # This ensures it stays in Step 2.5 position
+            self.math_section_header.pack(anchor="w", pady=(20, 5), before=self.step3_header)
+            self.math_disclaimer.pack(fill="x", pady=(0, 10), before=self.step3_header)
+            self.frame_math.pack(fill="x", pady=(0, 20), before=self.step3_header)
 
     def _save_config_simple(self):
         """Saves current config to file without prompt."""
@@ -2730,7 +2888,7 @@ YOUR WORKFLOW:
             "Do you want to proceed?"
         )
         
-        if not messagebox.askyesno("Magic Poppler Setup", explanation):
+        if not messagebox.askyesno("Guided Auto-Setup", explanation):
             return
 
         def task():
