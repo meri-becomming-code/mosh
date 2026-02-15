@@ -139,8 +139,8 @@ class ToolkitGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("MOSH's Toolkit: Making Online Spaces Helpful")
-        self.root.geometry("900x650") # Slightly wider for sidebar
-        self.root.minsize(900, 600) # [FIX] prevent cutting off buttons
+        self.root.geometry("1000x650") # Wider for dual-card dashboard
+        self.root.minsize(1000, 600) # prevent cutting off buttons
 
         # --- State ---
         self.target_dir = os.getcwd() # Default
@@ -263,12 +263,13 @@ MOSH's Toolkit was built as a human-AI collaboration. Dr. Meri Kasprak
 worked alongside Antigravity, an advanced coding AI from Google DeepMind, 
 to ensure this toolkit remains free, powerful, and accessible for all educators.
 
-🚀 QUICK START WORKFLOW
+🚀 THE MOSH WORKFLOW
 -----------------------
-Step 1: Click "Select .imscc File" and select your Canvas export.
-Step 2: Use the conversion buttons to build your Canvas Pages.
-Step 3: Run "Auto-Fix" followed by "Guided Review" for ADA compliance.
-Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
+Step 1: Get your .imscc export from Canvas Settings.
+Step 2: Import it into MOSH using the Dashboard.
+Step 3: Convert documents (Word/PDF) and Math into Canvas Pages.
+Step 4: Run "Auto-Fix" followed by "Guided Review" for ADA compliance.
+Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
 💡 TIPS FOR ALL TEACHERS & INSTRUCTORS
 ---------------------------------------
@@ -819,21 +820,21 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         self.math_disclaimer = tk.Frame(content, bg="#E8F5E9", padx=15, pady=15, highlightbackground="#4CAF50", highlightthickness=2)
         self.math_disclaimer.pack(fill="x", pady=(0, 10))
         
-        tk.Label(math_disclaimer, text="✨ AI-Powered Math Conversion",  font=("Segoe UI", 11, "bold"), bg="#E8F5E9", fg="#2E7D32").pack(anchor="w")
+        tk.Label(self.math_disclaimer, text="✨ AI-Powered Math Conversion",  font=("Segoe UI", 11, "bold"), bg="#E8F5E9", fg="#2E7D32").pack(anchor="w")
         math_desc = (
             "Gemini AI reads handwritten solutions and equations, then converts them to accessible Canvas LaTeX. "
             "This makes math searchable, copy-paste friendly, and screen-reader compatible!"
         )
-        tk.Label(math_disclaimer, text=math_desc, wraplength=550, bg="#E8F5E9", fg="#1B5E20", justify="left", font=("Segoe UI", 9)).pack(pady=(5,0))
+        tk.Label(self.math_disclaimer, text=math_desc, wraplength=550, bg="#E8F5E9", fg="#1B5E20", justify="left", font=("Segoe UI", 9)).pack(pady=(5,0))
         
         self.frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
         self.frame_math.pack(fill="x", pady=(0, 20))
         
-        self.btn_math_canvas = ttk.Button(frame_math, text="📚 Convert Canvas Export PDFs", 
+        self.btn_math_canvas = ttk.Button(self.frame_math, text="📚 Convert Canvas Export PDFs", 
                                            command=self._convert_math_canvas_export, style="Action.TButton")
         self.btn_math_canvas.pack(fill="x", pady=(0, 8))
         
-        frame_math_singles = ttk.Frame(frame_math)
+        frame_math_singles = ttk.Frame(self.frame_math)
         frame_math_singles.pack(fill="x")
         
         self.btn_math_pdf = ttk.Button(frame_math_singles, text="📄 Single PDF", 
@@ -857,21 +858,21 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         self.frame_actions.pack(fill="x", pady=(0, 25))
         
         # Friendly Button Names
-        self.btn_inter = ttk.Button(frame_actions, text="📖 Guided Review\n(Descriptions & Links)", command=self._run_interactive, style="Action.TButton")
+        self.btn_inter = ttk.Button(self.frame_actions, text="📖 Guided Review\n(Descriptions & Links)", command=self._run_interactive, style="Action.TButton")
         self.btn_inter.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         ToolTip(self.btn_inter, "Review image descriptions and fix links page-by-page")
 
-        self.btn_auto = ttk.Button(frame_actions, text="✨ Auto-Fix Issues\n(Headings & Contrast)", command=self._run_auto_fixer, style="Action.TButton")
+        self.btn_auto = ttk.Button(self.frame_actions, text="✨ Auto-Fix Issues\n(Headings & Contrast)", command=self._run_auto_fixer, style="Action.TButton")
         self.btn_auto.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         ToolTip(self.btn_auto, "Automatically fix accessibility issues across all pages")
 
         # Row 2 (Audit)
-        self.btn_audit = ttk.Button(frame_actions, text="📊 Quick Report\n(Is it Compliant?)", command=self._run_audit, style="Action.TButton")
+        self.btn_audit = ttk.Button(self.frame_actions, text="📊 Quick Report\n(Is it Compliant?)", command=self._run_audit, style="Action.TButton")
         self.btn_audit.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         ToolTip(self.btn_audit, "Generate a detailed accessibility report for the course")
 
-        frame_actions.columnconfigure(0, weight=1)
-        frame_actions.columnconfigure(1, weight=1)
+        self.frame_actions.columnconfigure(0, weight=1)
+        self.frame_actions.columnconfigure(1, weight=1)
 
 
         # -- Step 4: Final Launch --
@@ -1266,27 +1267,27 @@ Step 4: Click "Am I Ready to Upload?" to push to your Sandbox course.
         txt.pack(fill="both", expand=True)
         
         content = """
-📋 THREE SIMPLE STEPS
+📋 FIVE SIMPLE STEPS TO ACCESSIBILITY
 
-STEP 1: Get Your Course Files From Canvas
+STEP 1: Get Your Files from Canvas
    1. In Canvas: Settings → Export Course Content  
-   2. Click "Create Export" and wait for the email
-   3. Download the .imscc file to your computer
+   2. Click "Create Export" and download the .imscc file
 
-STEP 2: Fix Your Content
-   1. Launch this toolkit
-   2. Click "Select .imscc File" (Step 1)
-   3. Click "Auto-Fix Issues" (fixes 80% automatically!)
-   4. Click "Guided Review" (walks you through the rest)
+STEP 2: Import & Target
+   1. Launch MOSH and click "📚 Process Canvas Export"
+   2. Select your .imscc file and pick a storage folder
 
-   🆓 NO API KEY NEEDED! You can skip all AI features.
+STEP 3: Convert Individual Files (Expert Mode)
+   1. Use the Word, PPT, or PDF buttons to turn files into pages
+   2. [NEW] Use Math Converter for handwritten or complex equations
 
-STEP 3: Test & Upload
-   1. Click "Am I Ready to Upload?" for final check
-   2. In Canvas: Create a NEW EMPTY test course
-   3. Import your fixed .imscc file
-   4. Review everything looks good
-   5. Done! 🎉
+STEP 4: Fix & Review (The Core Work)
+   1. Click "✨ Auto-Fix Issues" to handle headings and colors
+   2. Click "📖 Guided Review" to walk through images and links
+
+STEP 5: Final Check & Upload
+   1. Click "🚥 Am I Ready to Upload?" for one last scan
+   2. Import the resulting 'remediated.imscc' back into Canvas!
 
 ────────────────────────────────────────
 
