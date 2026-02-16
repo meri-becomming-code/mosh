@@ -201,6 +201,10 @@ class ToolkitGUI:
         self.config["canvas_token"] = canvas_token
         self.config["canvas_course_id"] = canvas_course_id
         self.config["poppler_path"] = poppler_path
+        self._save_config_simple()
+
+    def _save_config_simple(self):
+        """Saves current self.config to the JSON file."""
         try:
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(self.config, f)
@@ -472,6 +476,18 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+        # Router
+        if view_name == "setup":
+            self._build_setup_view(content)
+        elif view_name == "course":
+            self._build_course_view(content)
+        elif view_name == "files":
+            self._build_files_view(content)
+        elif view_name == "math":
+            self._build_math_view(content)
+        else: # Default/Dashboard
+            self._build_dashboard(content)
         
     def _build_setup_view(self, content):
         """Unified 'Command Center' for all credentials and project loading."""
@@ -597,11 +613,18 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         frame_project = ttk.Frame(content, style="Card.TFrame", padding=20)
         frame_project.pack(fill="x", pady=(0, 30))
 
-        btn_import = ttk.Button(frame_project, text="📦 IMPORT: Select .imscc File (Canvas Export)", 
+        btn_import_row = tk.Frame(frame_project, bg="white")
+        btn_import_row.pack(fill="x", pady=(0, 10))
+
+        btn_import = ttk.Button(btn_import_row, text="📦 IMPORT: Select .imscc File (Canvas Export)", 
                                  command=self._import_package, style="Action.TButton")
-        btn_import.pack(fill="x", pady=(0, 10))
+        btn_import.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        btn_browse = ttk.Button(btn_import_row, text="📂 USE EXISTING: Select Project Folder", 
+                                 command=self._browse_folder)
+        btn_browse.pack(side="right")
         
-        tk.Label(frame_project, text="Selected Folder:", bg="white", fg="gray", font=("bold")).pack(anchor="w")
+        tk.Label(frame_project, text="Selected Folder (Current Remediation Target):", bg="white", fg="gray", font=("bold")).pack(anchor="w")
         lbl_current_dir = tk.Label(frame_project, text=self.target_dir if self.target_dir else "No folder selected", 
                                    bg="#F3F4F6", fg="#374151", padx=10, pady=5, anchor="w", wraplength=500)
         lbl_current_dir.pack(fill="x", pady=5)
@@ -860,7 +883,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             self._log(f"Selected: {path}")
 
     def _import_package(self):
-        """Allows user to select .imscc or .zip and extracts it."""
+        """Allows user to select .imscc or .zip and extracts it with duplicate detection."""
         path = filedialog.askopenfilename(
             filetypes=[("Canvas Export / Zip", "*.imscc *.zip"), ("All Files", "*.*")]
         )
@@ -872,8 +895,24 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         folder_name = os.path.splitext(filename)[0] + "_extracted"
         extract_to = os.path.join(directory, folder_name)
         
+        # [NEW] Duplicate Detection
+        if os.path.exists(extract_to):
+            choice = messagebox.askquestion("Folder Exists", 
+                                          f"The folder '{folder_name}' already exists.\n\n"
+                                          "Yes: Overwrite existing files (Dangerous!)\n"
+                                          "No: Create a new unique copy (e.g. folder(1))",
+                                          icon='warning')
+            
+            if choice == "no":
+                # Create unique name
+                count = 1
+                while os.path.exists(f"{extract_to}({count})"):
+                    count += 1
+                extract_to = f"{extract_to}({count})"
+        
         # Confirm (Must be on main thread)
-        if not messagebox.askyesno("Confirm Import", f"Extract package to:\n{extract_to}?"):
+        msg_confirm = f"Extract package to:\n{extract_to}?"
+        if not messagebox.askyesno("Confirm Import", msg_confirm):
             return
 
         def task():
@@ -2770,13 +2809,6 @@ YOUR WORKFLOW:
         self._run_task_in_thread(task, f"Math {file_type.upper()} Conversion")
         
 
-    def _save_config_simple(self):
-        """Saves current config to file without prompt."""
-        try:
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(self.config, f)
-        except:
-            pass
 
     def _auto_setup_poppler(self):
         """Automatically downloads and extracts Poppler for Windows users."""
@@ -2808,7 +2840,8 @@ YOUR WORKFLOW:
 
             try:
                 self.gui_handler.log("--- STARTING POPPLER AUTO-SETUP ---")
-                # [FIX] Relocate to stable home directory
+                
+                # Relocate to stable home directory
                 helper_dir = Path.home() / ".mosh_helpers"
                 helper_dir.mkdir(exist_ok=True)
                 
@@ -2816,9 +2849,15 @@ YOUR WORKFLOW:
                 extract_path = helper_dir / "poppler"
 
                 # Download
-                self.gui_handler.log(f"📥 Downloading Poppler from Github...")
-                response = requests.get(link, stream=True)
-                response.raise_for_status()
+                self.gui_handler.log(f"📥 Downloading Poppler helper (~20MB)...")
+                try:
+                    import requests
+                    response = requests.get(link, stream=True, timeout=30)
+                    response.raise_for_status()
+                except ImportError:
+                    raise Exception("Missing 'requests' library. Please report this to support.")
+                except Exception as e:
+                    raise Exception(f"Download failed: {str(e)}\n\nCheck your internet connection or download manually.")
                 
                 with open(zip_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
