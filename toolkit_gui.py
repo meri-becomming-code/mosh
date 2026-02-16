@@ -189,11 +189,10 @@ class ToolkitGUI:
             "canvas_token": "",
             "canvas_course_id": "",
             "theme": "light",
-            "poppler_path": "",
-            "user_experience": "beginner"
+            "poppler_path": ""
         }
 
-    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id="", poppler_path="", user_experience="beginner"):
+    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id="", poppler_path=""):
         self.config["api_key"] = key
         self.gui_handler.api_key = key # Sync to handler immediately
         self.config["show_instructions"] = start_show
@@ -202,9 +201,6 @@ class ToolkitGUI:
         self.config["canvas_token"] = canvas_token
         self.config["canvas_course_id"] = canvas_course_id
         self.config["poppler_path"] = poppler_path
-        self.config["user_experience"] = user_experience
-        if "poppler_path" not in self.config: self.config["poppler_path"] = ""
-        if "user_experience" not in self.config: self.config["user_experience"] = "beginner"
         try:
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(self.config, f)
@@ -722,63 +718,60 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             self._build_math_view(content)
 
     def _build_dashboard(self, content):
-        """The new landing page / home screen."""
+        """MOSH Toolkit Landing Page - Professional Suite Overview."""
         mode = self.config.get("theme", "light")
         colors = THEMES[mode]
         
         # Welcome Header
-        tk.Label(content, text="Welcome to MOSH'S Toolkit", font=("Segoe UI", 28, "bold"), fg=colors["header"], bg=colors["bg"]).pack(pady=(0, 10))
-        tk.Label(content, text="What would you like to do today?", font=("Segoe UI", 12), fg=colors["subheader"], bg=colors["bg"]).pack(pady=(0, 40))
+        tk.Label(content, text="MOSH Remediation Toolkit", font=("Segoe UI", 28, "bold"), fg="#4B3190", bg=colors["bg"]).pack(pady=(0, 5))
+        tk.Label(content, text="Select a tool from the sidebar to begin.", font=("Segoe UI", 12), fg=colors["subheader"], bg=colors["bg"]).pack(pady=(0, 40))
         
-        # Grid for the two main cards
+        # Grid for the main tool cards
         card_frame = ttk.Frame(content)
         card_frame.pack(fill="both", expand=True)
         card_frame.columnconfigure(0, weight=1)
         card_frame.columnconfigure(1, weight=1)
+        card_frame.columnconfigure(2, weight=1)
         
-        # --- CARD 1: CANVAS COURSE ---
-        course_card = tk.Frame(card_frame, bg="white", padx=30, pady=30, highlightbackground="#4B3190", highlightthickness=1)
-        course_card.grid(row=0, column=0, padx=15, sticky="nsew")
-        
-        tk.Label(course_card, text="📦", font=("Segoe UI", 48), bg="white").pack()
-        tk.Label(course_card, text="Canvas Course Workflow", font=("Segoe UI", 16, "bold"), bg="white", fg="#4B3190").pack(pady=10)
-        tk.Label(course_card, text="Clean up an entire course export (.imscc).\ndefault for fixing headers, alt text, and links at scale.", 
-                 wraplength=250, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(pady=(0, 20))
-        
-        btn_course = ttk.Button(course_card, text="🚀 START COURSE WORKFLOW", style="Action.TButton", 
-                   command=lambda: self._switch_view("course"))
-        btn_course.pack(fill="x")
-        ToolTip(btn_course, "Clean up an entire course export file (.imscc)")
-        
-        # --- CARD 2: INDIVIDUAL FILES ---
-        files_card = tk.Frame(card_frame, bg="white", padx=30, pady=30, highlightbackground="#0D9488", highlightthickness=1)
-        files_card.grid(row=0, column=1, padx=15, sticky="nsew")
-        
-        tk.Label(files_card, text="📄", font=("Segoe UI", 48), bg="white").pack()
-        tk.Label(files_card, text="Individual Files & Folders", font=("Segoe UI", 16, "bold"), bg="white", fg="#0D9488").pack(pady=10)
-        tk.Label(files_card, text="Quickly convert Word, PPT, or Math PDFs.\nGreat for ad-hoc remediation without a full course export.", 
-                 wraplength=250, bg="white", fg="#374151", font=("Segoe UI", 10)).pack(pady=(0, 20))
-        
-        btn_files = ttk.Button(files_card, text="⚡ START FILE WORKFLOW", style="Action.TButton",
-                   command=lambda: self._switch_view("files"))
-        btn_files.pack(fill="x")
-        ToolTip(btn_files, "Convert individual files or folders directly")
-        
-        # Bottom Tip
+        # --- TOOL 1: CANVAS ---
+        c1 = tk.Frame(card_frame, bg="white", padx=20, pady=25, highlightbackground="#4B3190", highlightthickness=1)
+        c1.grid(row=0, column=0, padx=10, sticky="nsew")
+        tk.Label(c1, text="🎨", font=("Segoe UI", 36), bg="white").pack()
+        tk.Label(c1, text="Canvas Remediation", font=("Segoe UI", 13, "bold"), bg="white", fg="#4B3190").pack(pady=5)
+        tk.Label(c1, text="Bulk fix entire course projects.", font=("Segoe UI", 9), bg="white", fg="gray").pack()
+        ttk.Button(c1, text="OPEN TOOL", command=lambda: self._switch_view("course")).pack(pady=10)
+
+        # --- TOOL 2: FILES ---
+        c2 = tk.Frame(card_frame, bg="white", padx=20, pady=25, highlightbackground="#0D9488", highlightthickness=1)
+        c2.grid(row=0, column=1, padx=10, sticky="nsew")
+        tk.Label(c2, text="📄", font=("Segoe UI", 36), bg="white").pack()
+        tk.Label(c2, text="File Conversion", font=("Segoe UI", 13, "bold"), bg="white", fg="#0D9488").pack(pady=5)
+        tk.Label(c2, text="Standard PPT/Word to HTML.", font=("Segoe UI", 9), bg="white", fg="gray").pack()
+        ttk.Button(c2, text="OPEN TOOL", command=lambda: self._switch_view("files")).pack(pady=10)
+
+        # --- TOOL 3: MATH ---
+        c3 = tk.Frame(card_frame, bg="white", padx=20, pady=25, highlightbackground="#1B5E20", highlightthickness=1)
+        c3.grid(row=0, column=2, padx=10, sticky="nsew")
+        tk.Label(c3, text="📐", font=("Segoe UI", 36), bg="white").pack()
+        tk.Label(c3, text="Math Converter", font=("Segoe UI", 13, "bold"), bg="white", fg="#1B5E20").pack(pady=5)
+        tk.Label(c3, text="AI conversion to LaTeX.", font=("Segoe UI", 9), bg="white", fg="gray").pack()
+        ttk.Button(c3, text="OPEN TOOL", command=lambda: self._switch_view("math")).pack(pady=10)
+
+        # Bottom Status Tip
         tip_frame = tk.Frame(content, bg="#F0F9FF", padx=20, pady=15)
         tip_frame.pack(fill="x", pady=40)
-        tk.Label(tip_frame, text="💡 Pro Tip", font=("Segoe UI", 10, "bold"), bg="#F0F9FF", fg="#0369A1").pack(anchor="w")
-        tk.Label(tip_frame, text="Use the 'Canvas Course' option if you want to fix links between content pages automatically!", 
-                 bg="#F0F9FF", fg="#0C4A6E", font=("Segoe UI", 10)).pack(anchor="w")
+        tk.Label(tip_frame, text="✅ Configuration Status", font=("Segoe UI", 10, "bold"), bg="#F0F9FF", fg="#0369A1").pack(anchor="w")
+        
+        status_text = "All Tools Ready" if self.config.get("api_key") and self.config.get("poppler_path") else "Setup Incomplete (Check Settings)"
+        tk.Label(tip_frame, text=f"System Status: {status_text}", bg="#F0F9FF", fg="#0C4A6E", font=("Segoe UI", 10)).pack(anchor="w")
 
     def _build_course_view(self, content):
-        """The existing 4-step workflow for IMSCC files."""
-        # Add a "Back to Dashboard" link
-        back_btn = ttk.Button(content, text="🏠 ← Back to Home", command=lambda: self._switch_view("dashboard"), style="Action.TButton")
-        back_btn.pack(anchor="w", pady=(0, 20))
+        """Standard view for remediating an entire Canvas course."""
+        tk.Label(content, text="🎨 Canvas Remediation Suite", font=("Segoe UI", 24, "bold"), fg="#4B3190", bg="white").pack(anchor="w", pady=(0, 10))
+        tk.Label(content, text="Bulk tools for fixing headers, alt text, and links on Page content.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
 
         # -- Target Project Section --
-        ttk.Label(content, text="Step 1: Select .imscc File", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Step 1: Open Your Course Project", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
         frame_dir = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_dir.pack(fill="x", pady=(0, 20))
@@ -786,7 +779,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # Row 1: Import Button
         btn_import = ttk.Button(
             frame_dir, 
-            text="📦 Step 1: Select .imscc File (Canvas Export)", 
+            text="📦 IMPORT: Select .imscc File (Canvas Export)", 
             command=self._import_package,
             style="Action.TButton"
         )
@@ -796,14 +789,14 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # Row 1b: Connect to Canvas (Barney Mode)
         btn_canvas = ttk.Button(
             frame_dir, 
-            text="🔗 Connect to My Canvas Playground", 
+            text="🔗 CONNECT: Set Up My Canvas Course Key", 
             command=self._show_canvas_settings,
             style="Action.TButton"
         )
         btn_canvas.pack(side="top", fill="x", pady=(0, 12))
-        ToolTip(btn_canvas, "Set up your Canvas sandbox for safe testing")
+        ToolTip(btn_canvas, "Configure your Canvas site and digital key for remediation")
         
-        # Row 2: Folder Browser
+        # Folder Browser
         frame_browse = ttk.Frame(frame_dir)
         frame_browse.pack(fill="x")
         
@@ -865,41 +858,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ToolTip(self.btn_batch, "Convert all supported files in the course automatically")
 
 
-        # -- Step 2.5: Math LaTeX Converter (NEW) --
-        self.math_section_header = ttk.Label(content, text="🔬 Math Converter (GEMINI AI)", style="SubHeader.TLabel")
-        self.math_section_header.pack(anchor="w", pady=(20, 5))
-        
-        self.math_disclaimer = tk.Frame(content, bg="#E8F5E9", padx=15, pady=15, highlightbackground="#4CAF50", highlightthickness=2)
-        self.math_disclaimer.pack(fill="x", pady=(0, 10))
-        
-        tk.Label(self.math_disclaimer, text="✨ AI-Powered Math Conversion",  font=("Segoe UI", 11, "bold"), bg="#E8F5E9", fg="#2E7D32").pack(anchor="w")
-        math_desc = (
-            "Gemini AI reads handwritten solutions and equations, then converts them to accessible Canvas LaTeX. "
-            "This makes math searchable, copy-paste friendly, and screen-reader compatible!"
-        )
-        tk.Label(self.math_disclaimer, text=math_desc, wraplength=550, bg="#E8F5E9", fg="#1B5E20", justify="left", font=("Segoe UI", 9)).pack(pady=(5,0))
-        
-        self.frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
-        self.frame_math.pack(fill="x", pady=(0, 20))
-        
-        self.btn_math_canvas = ttk.Button(self.frame_math, text="📚 Convert Canvas Export PDFs", 
-                                           command=self._convert_math_canvas_export, style="Action.TButton")
-        self.btn_math_canvas.pack(fill="x", pady=(0, 8))
-        
-        frame_math_singles = ttk.Frame(self.frame_math)
-        frame_math_singles.pack(fill="x")
-        
-        self.btn_math_pdf = ttk.Button(frame_math_singles, text="📄 Single PDF", 
-                                        command=lambda: self._convert_math_files("pdf"))
-        self.btn_math_pdf.pack(side="left", fill="x", expand=True, padx=2)
-        
-        self.btn_math_word = ttk.Button(frame_math_singles, text="📝 Word Doc", 
-                                         command=lambda: self._convert_math_files("docx"))
-        self.btn_math_word.pack(side="left", fill="x", expand=True, padx=2)
-        
-        self.btn_math_images = ttk.Button(frame_math_singles, text="🖼️ Images", 
-                                           command=lambda: self._convert_math_files("images"))
-        self.btn_math_images.pack(side="left", fill="x", expand=True, padx=2)
+        # [REMOVED MATH SECTION FROM COURSE VIEW]
 
 
         # -- Step 3: Remediation Actions (Grid) --
@@ -947,8 +906,56 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.txt_log = scrolledtext.ScrolledText(content, height=8, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
         self.txt_log.pack(fill="both", expand=True, pady=5)
 
-        # [NEW] Apply view logic
-        self._apply_experience_mode()
+        # Apply log sync
+        self.root.after(100, self._sync_logs_to_view)
+
+    def _build_math_view(self, content):
+        """Dedicated view for AI-powered Math conversion."""
+        tk.Label(content, text="📐 Math Remediation Suite", font=("Segoe UI", 24, "bold"), fg="#1B5E20", bg="white").pack(anchor="w", pady=(0, 10))
+        tk.Label(content, text="Gemini-powered conversion of math PDFs and Images to accessible Canvas LaTeX.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
+
+        # Re-use Math section logic
+        self.math_disclaimer = tk.Frame(content, bg="#E8F5E9", padx=15, pady=15, highlightbackground="#4CAF50", highlightthickness=2)
+        self.math_disclaimer.pack(fill="x", pady=(0, 10))
+        
+        tk.Label(self.math_disclaimer, text="✨ MOSH Magic: AI Math",  font=("Segoe UI", 11, "bold"), bg="#E8F5E9", fg="#2E7D32").pack(anchor="w")
+        math_desc = (
+            "This tool reads handwritten solutions and equations, then converts them to accessible Canvas LaTeX. "
+            "It turns unreadable PDFs into searchable, screen-reader compatible content!"
+        )
+        tk.Label(self.math_disclaimer, text=math_desc, wraplength=550, bg="#E8F5E9", fg="#1B5E20", justify="left", font=("Segoe UI", 10)).pack(pady=(5,0))
+        
+        frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_math.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(frame_math, text="Option A: Full Course Remediation", font=("bold")).pack(anchor="w", pady=(0, 5))
+        self.btn_math_canvas = ttk.Button(frame_math, text="📚 Convert Math in Canvas Course Export", 
+                                           command=self._convert_math_canvas_export, style="Action.TButton")
+        self.btn_math_canvas.pack(fill="x", pady=(0, 15))
+        
+        ttk.Separator(frame_math, orient='horizontal').pack(fill='x', pady=10)
+
+        ttk.Label(frame_math, text="Option B: Individual Ad-Hoc Files", font=("bold")).pack(anchor="w", pady=(0, 5))
+        frame_math_singles = ttk.Frame(frame_math)
+        frame_math_singles.pack(fill="x")
+        
+        ttk.Button(frame_math_singles, text="📄 Select PDF", command=lambda: self._convert_math_files("pdf")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_math_singles, text="📝 Select Word", command=lambda: self._convert_math_files("docx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_math_singles, text="🖼️ Select Image", command=lambda: self._convert_math_files("images")).pack(side="left", fill="x", expand=True, padx=2)
+
+        # Activity Log
+        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(20, 0))
+        self.txt_log = scrolledtext.ScrolledText(content, height=10, state='disabled', font=("Consolas", 9))
+        self.txt_log.pack(fill="both", expand=True, pady=5)
+        self.root.after(100, self._sync_logs_to_view)
+
+    def _sync_logs_to_view(self):
+         """Ensures the log widget in the current view is updated."""
+         # Check if log widget exists in current view
+         if hasattr(self, "txt_log") and self.txt_log.winfo_exists():
+             self.txt_log.configure(state='normal')
+             # Re-populate or just keep running
+             self.txt_log.configure(state='disabled')
 
     def _browse_folder(self):
         path = filedialog.askdirectory(initialdir=self.target_dir)
@@ -2092,38 +2099,6 @@ YOUR WORKFLOW:
             return None
         return canvas_utils.CanvasAPI(url, token, cid)
 
-    def _show_advanced_dialog(self):
-        """Displays advanced/manual tasks that users occasionally need."""
-        dialog = Toplevel(self.root)
-        dialog.title("🛠️ Advanced Tasks")
-        dialog.geometry("400x350")
-        dialog.transient(self.root)
-        
-        ttk.Label(dialog, text="🛠️ Advanced Tasks", style="Header.TLabel").pack(pady=10)
-        
-        frame = ttk.Frame(dialog, padding=20)
-        frame.pack(fill="both", expand=True)
-
-        ttk.Label(frame, text="These tools are for specific situations.\nIf you are using the Push button, you don't need these!", 
-                  wraplength=350, font=("Segoe UI", 9, "italic")).pack(pady=(0, 20))
-
-        # Repackage without Upload
-        ttk.Button(frame, text="📦 Repackage Course (.imscc) without Uploading", 
-                   command=self._export_package).pack(fill="x", pady=5)
-        
-        ttk.Label(frame, text="Creates a new .imscc file on your computer but does NOT send it to Canvas.", 
-                  font=("Segoe UI", 8), foreground="#666666").pack(anchor="w", pady=(0, 10))
-
-        # Global Link Fix
-        ttk.Button(frame, text="🔗 Fix All Document-to-HTML Links", 
-                   command=self._run_all_links_fix).pack(fill="x", pady=5)
-        
-        ttk.Label(frame, text="Repairs broken links in your HTML files back to their new HTML versions.", 
-                  font=("Segoe UI", 8), foreground="#666666").pack(anchor="w", pady=(0, 10))
-        
-        # [NEW] Emergency Reset
-        ttk.Button(frame, text="🛡️ Emergency UI Reset (Fix Unclickable Buttons)", 
-                   command=self._enable_buttons).pack(fill="x", pady=20)
 
         # Clear Logs
         ttk.Button(frame, text="🧹 Clear Activity Log", 
@@ -2738,19 +2713,15 @@ YOUR WORKFLOW:
         self._run_task_in_thread(task, "Math PDF Conversion")
 
     def _build_files_view(self, content):
-        """View for working with individual files/folders (bulk/single)."""
+        """Dedicated view for standard file conversion (Word/PPT)."""
         mode = self.config.get("theme", "light")
         colors = THEMES[mode]
         
-        # Back Button
-        back_btn = ttk.Button(content, text="← Back to Home", command=lambda: self._switch_view("dashboard"))
-        back_btn.pack(anchor="w", pady=(0, 20))
-        
-        tk.Label(content, text="📄 Individual Files & Folders", font=("Segoe UI", 24, "bold"), fg=colors["header"], bg=colors["bg"]).pack(anchor="w", pady=(0, 5))
-        tk.Label(content, text="Convert and fix files directly from your computer.", font=("Segoe UI", 10), fg=colors["subheader"], bg=colors["bg"]).pack(anchor="w", pady=(0, 25))
+        tk.Label(content, text="📄 File Conversion Suite", font=("Segoe UI", 24, "bold"), fg="#0D9488", bg="white").pack(anchor="w", pady=(0, 10))
+        tk.Label(content, text="Convert PowerPoint or Word files to clean, accessible HTML.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
         
         # --- Step 1: Browse ---
-        ttk.Label(content, text="Step 1: Pick Your Files or Folder", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Step 1: Pick Files or Folder", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         frame_dir = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_dir.pack(fill="x", pady=(0, 20))
         
@@ -2762,45 +2733,29 @@ YOUR WORKFLOW:
         ttk.Button(frame_browse, text="Browse Folder...", command=self._browse_folder).pack(side="right")
         
         # --- Step 2: Converters ---
-        ttk.Label(content, text="Step 2: Convert to Accessible HTML", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Step 2: Start Conversion", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         frame_convert = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_convert.pack(fill="x", pady=(0, 20))
         
-        self.btn_batch = ttk.Button(frame_convert, text="📂 Convert Entire Folder (Bulk Fix)", 
+        self.btn_batch = ttk.Button(frame_convert, text="📂 CONVERT ALL (Batch Mode)", 
                                      command=self._run_batch_conversion, style="Action.TButton")
-        self.btn_batch.pack(fill="x", pady=(0, 12))
-        ToolTip(self.btn_batch, "Convert all Word, PPT, and PDF files in the selected folder")
+        self.btn_batch.pack(fill="x", pady=(0, 15))
         
-        tk.Label(frame_convert, text="Or pick specific types:", font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w", pady=(0, 5))
-        frame_singles = ttk.Frame(frame_convert)
-        frame_singles.pack(fill="x")
+        ttk.Separator(frame_convert).pack(fill="x", pady=10)
+        tk.Label(frame_convert, text="Or pick specific file types:", font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w", pady=(0, 10))
         
-        btn_word = ttk.Button(frame_singles, text="📝 Word", command=lambda: self._show_conversion_wizard("docx"))
-        btn_word.pack(side="left", fill="x", expand=True, padx=2)
-        ToolTip(btn_word, "Select Word documents to convert")
-        
-        btn_ppt = ttk.Button(frame_singles, text="📽️ PPT", command=lambda: self._show_conversion_wizard("pptx"))
-        btn_ppt.pack(side="left", fill="x", expand=True, padx=2)
-        ToolTip(btn_ppt, "Select PowerPoint presentations to convert")
-        
-        btn_pdf = ttk.Button(frame_singles, text="📄 PDF", command=lambda: self._show_conversion_wizard("pdf"))
-        btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
-        ToolTip(btn_pdf, "Select PDF files to convert")
-
-        # --- Step 3: Math ---
-        if self.config.get("user_experience", "beginner") == "expert" or self.current_view == "files":
-            ttk.Label(content, text="🔬 Math Converter (AI)", style="SubHeader.TLabel").pack(anchor="w", pady=(20, 5))
-            frame_math = ttk.Frame(content, style="Card.TFrame", padding=15)
-            frame_math.pack(fill="x", pady=(0, 20))
-            btn_math = ttk.Button(frame_math, text="📄 Pick Math PDF/Image to Convert", 
-                                   command=lambda: self._convert_math_files("pdf"), style="Action.TButton")
-            btn_math.pack(fill="x")
-            ToolTip(btn_math, "Use Gemini AI to read math equations from PDF or images")
+        frame_btns = ttk.Frame(frame_convert)
+        frame_btns.pack(fill="x")
+        ttk.Button(frame_btns, text="📝 Word Doc", command=lambda: self._show_conversion_wizard("docx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_btns, text="📽️ PowerPoint", command=lambda: self._show_conversion_wizard("pptx")).pack(side="left", fill="x", expand=True, padx=2)
+        ttk.Button(frame_btns, text="📄 Standard PDF", command=lambda: self._show_conversion_wizard("pdf")).pack(side="left", fill="x", expand=True, padx=2)
 
         # --- Logs ---
         ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
-        self.txt_log = scrolledtext.ScrolledText(content, height=10, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
+        self.txt_log = scrolledtext.ScrolledText(content, height=10, state='disabled', font=("Consolas", 9))
         self.txt_log.pack(fill="both", expand=True, pady=5)
+        self.root.after(100, self._sync_logs_to_view)
+
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
         api_key = self.config.get("api_key", "").strip()
@@ -2873,45 +2828,6 @@ YOUR WORKFLOW:
         
         self._run_task_in_thread(task, f"Math {file_type.upper()} Conversion")
         
-    def _toggle_experience_mode(self):
-        """Switch between Beginner and Expert modes."""
-        current = self.config.get("user_experience", "beginner")
-        new_mode = "expert" if current == "beginner" else "beginner"
-        self.config["user_experience"] = new_mode
-        self._save_config_simple() # Custom simple save helper
-        self._update_mode_button()
-        self._apply_experience_mode()
-        
-        mode_name = "Expert Mode 🚀" if new_mode == "expert" else "Beginner Mode 🎓"
-        self._log(f"Switched to {mode_name}")
-        
-    def _update_mode_button(self):
-        """Updates the sidebar button text based on current mode."""
-        mode = self.config.get("user_experience", "beginner")
-        if mode == "expert":
-            self.btn_mode.config(text="🚀 Expert Mode")
-        else:
-            self.btn_mode.config(text="🎓 Beginner Mode")
-            
-    def _apply_experience_mode(self):
-        """Hides/shows UI elements based on experience level."""
-        mode = self.config.get("user_experience", "beginner")
-        
-        # Guard against elements not being defined yet (e.g. on Dashboard)
-        if not hasattr(self, "math_section_header") or not hasattr(self, "step3_header"):
-            return
-
-        if mode == "beginner":
-            # Hide Math Converter
-            self.math_section_header.pack_forget()
-            self.math_disclaimer.pack_forget()
-            self.frame_math.pack_forget()
-        else:
-            # Show Math Converter (re-pack before Step 3)
-            # This ensures it stays in Step 2.5 position
-            self.math_section_header.pack(anchor="w", pady=(20, 5), before=self.step3_header)
-            self.math_disclaimer.pack(fill="x", pady=(0, 10), before=self.step3_header)
-            self.frame_math.pack(fill="x", pady=(0, 20), before=self.step3_header)
 
     def _save_config_simple(self):
         """Saves current config to file without prompt."""
