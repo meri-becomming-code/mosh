@@ -541,6 +541,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             messagebox.showinfo("Finding Your Course ID", "Look at your browser address bar while in the course.\n\nThe ID is the numbers at the very end (e.g. .../courses/12345).")
         tk.Button(frame_course, text="❓ Help", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
+        # Status label for Canvas check
+        self.lbl_canvas_status = tk.Label(frame_course, text="", bg="white", font=("Segoe UI", 9, "bold"))
+
         def check_canvas():
             url = ent_url.get().strip()
             token = ent_token.get().strip()
@@ -548,18 +551,21 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             if not url or not token or not cid:
                 messagebox.showwarning("Incomplete", "Please fill out Canvas settings (Step 1).")
                 return
-            lbl_global_status.config(text="⏳ Verifying Canvas Connection...", fg="blue")
+            
+            self.lbl_canvas_status.config(text="⏳ Verifying...", fg="blue")
             self.root.update()
+            
             api = canvas_utils.CanvasAPI(url, token, cid)
             success, msg = api.validate_credentials()
             if success:
                 is_empty, _ = api.is_course_empty()
                 status = "✅ SAFE: Course is empty." if is_empty else "⚠️ WARNING: Course has content."
-                lbl_global_status.config(text=status, fg="green" if is_empty else "orange")
+                self.lbl_canvas_status.config(text=status, fg="green" if is_empty else "orange")
             else:
-                lbl_global_status.config(text=f"❌ FAILED: {msg}", fg="red")
+                self.lbl_canvas_status.config(text=f"❌ FAILED: {msg}", fg="red")
 
         tk.Button(frame_course, text="🔍 Check If Safe", command=check_canvas, bg="#BBDEFB", font=("Segoe UI", 8, "bold"), cursor="hand2").pack(side="left", padx=10)
+        self.lbl_canvas_status.pack(side="left", padx=5)
 
         # --- SECTION 2: MOSH MAGIC (AI) ---
         tk.Label(content, text="2. MOSH Magic (AI Features)", font=("Segoe UI", 14, "bold"), bg="white", fg="#1B5E20").pack(anchor="w", pady=(10, 5))
