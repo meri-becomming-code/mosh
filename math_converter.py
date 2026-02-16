@@ -54,7 +54,8 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
             str(pdf_path), 
             dpi=300, 
             output_folder=str(temp_dir),
-            poppler_path=poppler_path
+            poppler_path=poppler_path,
+            fmt='png'
         )
         
         if log_func:
@@ -78,9 +79,19 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
                 all_content.append(f"\n<!-- Page {i}: No response from Gemini -->\n")
         
         # Clean up temp images
-        for img in temp_dir.glob('*.png'):
-            img.unlink()
-        temp_dir.rmdir()
+        import shutil
+        import time
+        
+        # Close any open file handles
+        try:
+             del images
+        except: pass
+        
+        # Robust cleanup
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception as e:
+            if log_func: log_func(f"   ⚠️ Cleanup warning: {e}")
         
         # Create HTML
         title = Path(pdf_path).stem.replace('_', ' ').title()
