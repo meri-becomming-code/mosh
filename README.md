@@ -7,7 +7,7 @@
 
 MOSH is a powerful, educator-focused suite designed to automate the heavy lifting of accessibility remediation for Canvas and Web content.
 
-## 🎁 A Gift from One Educator to Another
+## 🎯 Project Mission
 MOSH wasn't born from a business plan or a commercial ambition. It began as a simple attempt to solve a personal struggle in my own classroom. I never intended to create this toolkit; I was simply looking for a way forward. 
 
 One step at a time, and one insight at a time, the path was revealed to me. I believe that my ability to build this was a gift from God, and I give Him all the glory for every insight granted during this journey. As a Christian, I believe that because I have been blessed with the ability to help, I have a sacred responsibility to share that help freely. I'm not here to hold a tool hostage for money; I'm here to serve.

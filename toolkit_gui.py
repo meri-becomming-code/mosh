@@ -26,7 +26,14 @@ import queue
 import json
 import darkdetect
 import webbrowser
+import queue
+import json
+import darkdetect
+import webbrowser
 import converter_utils
+import urllib.request
+import zipfile
+from pathlib import Path
 
 # Import Toolkit Modules
 import interactive_fixer
@@ -585,22 +592,26 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             webbrowser.open("https://aistudio.google.com/app/apikey")
             messagebox.showinfo("MOSH Magic Help", "1. Click 'Create API key'\n2. Copy the key and paste it here.")
 
+        # Status Label for AI Check
+        self.lbl_ai_status = tk.Label(btn_ai_frame, text="", bg="white", font=("Segoe UI", 9, "bold"))
+
         def test_api_key():
             key = ent_api.get().strip()
             if not key:
                 messagebox.showwarning("No Key", "Please paste a key first.")
                 return
-            lbl_global_status.config(text="⏳ Testing AI Key...", fg="blue")
+            self.lbl_ai_status.config(text="⏳ Testing...", fg="blue")
             self.root.update()
             import jeanie_ai
             is_valid, msg = jeanie_ai.validate_api_key(key)
             if is_valid:
-                lbl_global_status.config(text="✅ AI Key is valid!", fg="green")
+                self.lbl_ai_status.config(text="✅ Valid Key!", fg="green")
             else:
-                lbl_global_status.config(text="❌ AI Key invalid", fg="red")
+                self.lbl_ai_status.config(text="❌ Invalid Key", fg="red")
 
         tk.Button(btn_ai_frame, text="🔑 Get Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
-        tk.Button(btn_ai_frame, text="🧪 Test Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
+        tk.Button(btn_ai_frame, text="🧪 Test Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left", padx=5)
+        self.lbl_ai_status.pack(side="left", padx=5)
 
         # --- SECTION 3: POPPLER (MATH PDF) ---
         tk.Label(content, text="3. Poppler Bin Path (For Math PDF)", font=("Segoe UI", 14, "bold"), bg="white", fg="#D97706").pack(anchor="w", pady=(10, 5))
@@ -1413,7 +1424,10 @@ Website: meri-becomming-code.github.io/mosh
         self._disable_buttons()
         # [NEW] Sync API Key to handler before starting
         self.gui_handler.api_key = self.config.get("api_key", "")
-        self.target_dir = self.lbl_dir.get().strip()
+        
+        # Sync target_dir from UI only if the widget exists (Course View)
+        if hasattr(self, 'lbl_dir') and self.lbl_dir.winfo_exists():
+            self.target_dir = self.lbl_dir.get().strip()
         
         def worker():
             self.gui_handler.log(f"--- Starting {task_name} ---")
@@ -2841,115 +2855,106 @@ YOUR WORKFLOW:
 
 
     def _auto_setup_poppler(self):
-        """Automatically downloads and extracts Poppler for Windows users."""
+        """Robust, standalone Poppler downloader with explicit error handling."""
         if os.name != "nt":
-            msg = ("Poppler Auto-Setup is currently for Windows.\n\n"
-                   "Mac Users: Please run 'brew install poppler' in your Terminal.")
-            messagebox.showinfo("Platform Info", msg)
+            messagebox.showinfo("Platform Info", "Poppler Auto-Setup is for Windows only.\nMac users: run 'brew install poppler'.")
             return
 
         link = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
-        
         explanation = (
-            "MOSH Toolkit needs a helper tool called 'Poppler' to read Math from PDF files.\n\n"
-            "This will:\n"
-            "1. Download Poppler (~20MB) from:\n"
-            f"{link}\n"
-            "2. Extract it to a 'helpers' folder in your project.\n"
-            "3. Automatically set the path for you.\n\n"
-            "Do you want to proceed?"
+            "This will download Poppler (~20MB) and configure it automatically.\n\n"
+            "Target: ~/.mosh_helpers/poppler\n\n"
+            "Ready to start?"
         )
         
-        if not messagebox.askyesno("Guided Auto-Setup", explanation):
+        if not messagebox.askyesno("Poppler Setup", explanation):
             return
 
-        def task():
-            import zipfile
-            import requests
-            from pathlib import Path
+        # 1. Create Progress Window (Main Thread)
+        # This guarantees the user sees SOMETHING happening immediately.
+        progress_win = Toplevel(self.root)
+        progress_win.title("Downloading Poppler...")
+        progress_win.geometry("350x150")
+        progress_win.resizable(False, False)
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+        
+        lbl_status = tk.Label(progress_win, text="Initializing...", font=("Segoe UI", 10))
+        lbl_status.pack(pady=(20, 10))
+        
+        pbar = ttk.Progressbar(progress_win, mode="indeterminate")
+        pbar.pack(fill="x", padx=30, pady=10)
+        pbar.start(10)
 
+        def worker():
             try:
-                self.gui_handler.log("--- STARTING POPPLER AUTO-SETUP ---")
+                # 2. Background Work
+                import urllib.request
+                import zipfile
+                from pathlib import Path
+                import shutil
+                import threading
                 
-                # Relocate to stable home directory
+                def update_status(msg):
+                    self.root.after(0, lambda: lbl_status.config(text=msg))
+
+                update_status("Preparing folders...")
                 helper_dir = Path.home() / ".mosh_helpers"
                 helper_dir.mkdir(exist_ok=True)
-                
                 zip_path = helper_dir / "poppler.zip"
                 extract_path = helper_dir / "poppler"
+                
+                # Clean previous attempts
+                if extract_path.exists():
+                    shutil.rmtree(extract_path, ignore_errors=True)
 
-                # Download
-                self.gui_handler.log(f"📥 Downloading Poppler helper (~20MB)...")
-                try:
-                    import requests
-                    response = requests.get(link, stream=True, timeout=30)
-                    response.raise_for_status()
-                except ImportError:
-                    raise Exception("Missing 'requests' library. Please report this to support.")
-                except Exception as e:
-                    raise Exception(f"Download failed: {str(e)}\n\nCheck your internet connection or download manually.")
-                
-                with open(zip_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                # Extract
-                self.gui_handler.log("📂 Extracting files...")
+                update_status("Downloading (this may take a minute)...")
+                # Download with basic error checking
+                with urllib.request.urlopen(link, timeout=90) as response:
+                    with open(zip_path, "wb") as f:
+                        shutil.copyfileobj(response, f)
+
+                update_status("Extracting files...")
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(extract_path)
-                
-                # Find the bin folder
-                # The zip usually extracts to a folder named like "Release-24.08.0-0"
-                # Let's search for the 'bin' folder inside
+
+                # Locate Bin
+                update_status("Verifying installation...")
                 bin_folders = list(extract_path.glob("**/bin"))
                 if not bin_folders:
-                    raise Exception("Could not find 'bin' folder in extracted files.")
+                    raise Exception("Downloaded file is invalid (no 'bin' folder).")
                 
                 poppler_bin = str(bin_folders[0])
-                
-                # Update Config
-                self.config["poppler_path"] = poppler_bin
-                self._save_config_simple()
-                
-                # Direct UI Update (Setup View)
-                if hasattr(self, "ent_poppler_setup") and self.ent_poppler_setup.winfo_exists():
-                    self.ent_poppler_setup.delete(0, tk.END)
-                    self.ent_poppler_setup.insert(0, poppler_bin)
-                
-                self.gui_handler.log(f"✅ SUCCESS! Poppler linked to: {poppler_bin}")
-                
-                # Refresh if we are in Setup view
-                if self.current_view == "setup":
-                    self.root.after(0, lambda: self._switch_view("setup"))
 
-                def show_success():
-                    # Custom success with Copy button
-                    success_win = Toplevel(self.root)
-                    success_win.title("Setup Complete")
-                    success_win.geometry("450x200")
-                    success_win.transient(self.root)
-                    success_win.grab_set()
+                # 3. Success Callback (Main Thread)
+                def on_success():
+                    progress_win.destroy()
                     
-                    tk.Label(success_win, text="✨ Poppler Setup Successful!", font=("Segoe UI", 12, "bold"), fg="green").pack(pady=15)
-                    tk.Label(success_win, text=f"Installed to: {poppler_bin}", wraplength=400).pack(pady=5)
+                    # Update Config & UI
+                    self.config["poppler_path"] = poppler_bin
+                    self._save_config_simple()
                     
-                    def copy_path():
-                        self.root.clipboard_clear()
-                        self.root.clipboard_append(poppler_bin)
-                        messagebox.showinfo("Copied", "Path copied to clipboard!")
+                    if hasattr(self, "ent_poppler_setup") and self.ent_poppler_setup.winfo_exists():
+                        self.ent_poppler_setup.delete(0, tk.END)
+                        self.ent_poppler_setup.insert(0, poppler_bin)
+                    
+                    # Refresh Setup View if needed
+                    if self.current_view == "setup":
+                        self._switch_view("setup")
 
-                    btn_frame = tk.Frame(success_win)
-                    btn_frame.pack(pady=20)
-                    tk.Button(btn_frame, text="📋 Copy Path", command=copy_path, width=15).pack(side="left", padx=5)
-                    tk.Button(btn_frame, text="Close", command=success_win.destroy, width=15).pack(side="left", padx=5)
+                    messagebox.showinfo("Success", f"Poppler installed successfully!\n\nLocation: {poppler_bin}")
 
-                self.root.after(0, show_success)
-                
+                self.root.after(0, on_success)
+
             except Exception as e:
-                self.gui_handler.log(f"❌ Error during setup: {str(e)}")
-                self.root.after(0, lambda: messagebox.showerror("Setup Failed", f"Could not complete setup:\n{str(e)}"))
+                # 4. Error Callback (Main Thread)
+                def on_error():
+                    progress_win.destroy()
+                    messagebox.showerror("Setup Failed", f"An error occurred:\n{str(e)}\n\nPlease try downloading manually.")
+                self.root.after(0, on_error)
 
-        self._run_task_in_thread(task, "Poppler Auto-Setup")
+        # Start the worker
+        threading.Thread(target=worker, daemon=True).start()
 
 if __name__ == "__main__":
     root = tk.Tk()
