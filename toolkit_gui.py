@@ -366,16 +366,16 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
     def _show_canvas_settings(self):
         """Dialog to configure Canvas API settings (Barney Style)."""
         dialog = Toplevel(self.root)
-        dialog.title("Setup Your Canvas Sandbox")
-        dialog.geometry("550x650") # [FIX] Increased height
+        dialog.title("MOSH Toolkit Settings")
+        dialog.geometry("550x650") 
         dialog.transient(self.root)
         dialog.grab_set()
-        dialog.resizable(True, True) # [FIX] Allow resizing
+        dialog.resizable(True, True) 
 
         colors = THEMES[self.config.get("theme", "light")]
         dialog.configure(bg=colors["bg"])
 
-        tk.Label(dialog, text="Step 0: Connect to your Sandbox", font=("Segoe UI", 16, "bold"), 
+        tk.Label(dialog, text="Step 0: Connect to your Canvas Course", font=("Segoe UI", 16, "bold"), 
                  bg=colors["bg"], fg=colors["header"]).pack(pady=15)
         
         # Create a scrollable container
@@ -404,7 +404,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         inner_content = scrollable_frame
 
-        tk.Label(inner_content, text="This tool creates Pages in a 'Sandbox' or 'Playground' course so you can test them safely.", 
+        tk.Label(inner_content, text="This tool creates Pages in your specified Canvas Course so you can remediate them professionaly.", 
                  wraplength=500, bg=colors["bg"], fg=colors["fg"], font=("Segoe UI", 10, "italic")).pack(pady=5, padx=40)
 
         # Re-pack everything into inner_content
@@ -427,18 +427,38 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         tk.Button(frame_token, text="❓ Help Me Find This", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
-        tk.Label(inner_content, text="3. Your Course Test ID (Numbers):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        tk.Label(inner_content, text="3. Your Course ID (Numbers):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
         frame_course = tk.Frame(inner_content, bg=colors["bg"])
         frame_course.pack(fill="x", padx=40)
-        ent_course = tk.Entry(frame_course, width=20)
+        ent_course = tk.Entry(frame_course, width=15)
         ent_course.insert(0, self.config.get("canvas_course_id", ""))
         ent_course.pack(side="left", pady=5)
 
         def open_course_help():
             messagebox.showinfo("Finding Your Course ID", 
-                                "It's easy! \n\n1. Open your Canvas Playground course in your browser.\n2. Look at the address bar at the top.\n3. The ID is the group of numbers at the very end.\n\nExample: if the link is .../courses/12345, your ID is 12345.")
+                                "It's easy! \n\n1. Open your Canvas course in your browser.\n2. Look at the address bar at the top.\n3. The ID is the group of numbers at the very end.\n\nExample: if the link is .../courses/12345, your ID is 12345.")
 
-        tk.Button(frame_course, text="❓ Help Me Find This", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+        tk.Button(frame_course, text="❓ Help", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+
+        def test_safety():
+            url = ent_url.get().strip()
+            token = ent_token.get().strip()
+            cid = ent_course.get().strip()
+            if not url or not token or not cid:
+                messagebox.showwarning("Incomplete", "Please fill out all boxes in Step 1-3 first!")
+                return
+            api = canvas_utils.CanvasAPI(url, token, cid)
+            success, msg = api.validate_credentials()
+            if success:
+                is_empty, _ = api.is_course_empty()
+                if is_empty:
+                    lbl_status.config(text="✅ SAFE: Course is empty.", fg="green")
+                else:
+                    lbl_status.config(text="⚠️ WARNING: Course has content.", fg="orange")
+            else:
+                lbl_status.config(text=f"❌ FAILED: {msg}", fg="red")
+
+        tk.Button(frame_course, text="🔍 Check Course Safety", command=test_safety, bg="#BBDEFB", font=("Segoe UI", 8, "bold"), cursor="hand2").pack(side="left", padx=5)
 
         # Gemini Section (Moved up)
         tk.Label(inner_content, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
@@ -483,15 +503,6 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         def browse_poppler():
             path = filedialog.askdirectory()
             if path:
-                ent_poppler.delete(0, tk.END)
-                ent_poppler.insert(0, path)
-
-        tk.Button(frame_poppler, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
-        tk.Button(frame_poppler, text="🪄 Auto-Setup", command=self._auto_setup_poppler, font=("Segoe UI", 8, "bold"), fg="#2E7D32", cursor="hand2").pack(side="left", padx=5)
-        
-        
-        def open_api_help():
-            webbrowser.open("https://aistudio.google.com/app/apikey")
             msg_steps = (
                 "MOSH Magic Setup Guide:\n\n"
                 "⚠️ NOTE: You can use a FREE Gemini API key (limited to 50 pages/day) or a paid one.\n\n"
@@ -526,24 +537,26 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 lbl_status.config(text="❌ INVALID: See message below.", fg="red")
                 messagebox.showerror("Key Error", f"The API Key did not work.\n\nError from Google:\n{msg}\n\nTips:\n- Make sure you copied the whole key.\n- Ensure the 'MOSH' project is enabled in Google AI Studio.")
 
-        btn_api_frame = tk.Frame(dialog, bg=colors["bg"])
-        btn_api_frame.pack(anchor="w", padx=40)
-        
         tk.Button(btn_api_frame, text="🔑 Get Gemini API Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
         tk.Button(btn_api_frame, text="🧪 Test This Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
 
-        def open_course_help():
-            messagebox.showinfo("Finding Your Course ID", 
-                                "It's easy! \n\n"
-                                "1. Open your Canvas Playground course in your browser.\n"
-                                "2. Look at the address bar at the top.\n"
-                                "3. The ID is the group of numbers at the very end.\n\n"
-                                "Example: if the link is .../courses/12345, your ID is 12345.\n\n"
-                                "⚠️ IMPORTANT: If you reset course content, Canvas creates a NEW course with a DIFFERENT ID. "
-                                "You'll need to come back here and update this number!")
+        # Poppler Section
+        tk.Label(inner_content, text="5. Poppler Bin Path (Required for Math PDF):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
+        frame_poppler = tk.Frame(inner_content, bg=colors["bg"])
+        frame_poppler.pack(fill="x", padx=40)
+        ent_poppler = tk.Entry(frame_poppler, width=45)
+        ent_poppler.insert(0, self.config.get("poppler_path", ""))
+        ent_poppler.pack(side="left", pady=5)
+        
+        def browse_poppler():
+            path = filedialog.askdirectory()
+            if path:
+                ent_poppler.delete(0, tk.END)
+                ent_poppler.insert(0, path)
 
-        tk.Button(frame_course, text="❓ Help Me Find This", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
-
+        tk.Button(frame_poppler, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+        tk.Button(frame_poppler, text="🪄 Auto-Setup", command=self._auto_setup_poppler, font=("Segoe UI", 8, "bold"), fg="#2E7D32", cursor="hand2").pack(side="left", padx=5)
+        
         lbl_status = tk.Label(inner_content, text="", bg=colors["bg"], font=("Segoe UI", 9, "bold"))
         lbl_status.pack(pady=10)
 
@@ -583,7 +596,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         btn_frame = tk.Frame(dialog, bg=colors["bg"], pady=15)
         btn_frame.pack(side="bottom", fill="x")
         tk.Button(btn_frame, text="🔍 Check Canvas Safety", command=test_safety, bg="#BBDEFB", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=20)
-        tk.Button(btn_frame, text="💾 SAVE & CLOSE", command=save, bg="#C8E6C9", width=20, font=("bold"), cursor="hand2").pack(side="right", padx=20)
+        tk.Button(btn_frame, text="💾 SAVE & CLOSE SETTINGS", command=save, bg="#C8E6C9", width=30, font=("bold"), cursor="hand2").pack(pady=5)
 
     def _toggle_theme(self):
         current = self.config.get("theme", "light")
@@ -629,32 +642,26 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 10))
         
         # [NEW] Navigation Buttons
-        btn_home = ttk.Button(sidebar, text="🏠 HOME DASHBOARD", command=lambda: self._switch_view("dashboard"), style="Sidebar.TButton")
+        btn_home = ttk.Button(sidebar, text="🏠 HOME & STATUS", command=lambda: self._switch_view("dashboard"), style="Sidebar.TButton")
         btn_home.pack(pady=5, padx=10, fill="x")
-        ToolTip(btn_home, "Return to the main landing page")
         
-        # [NEW] First-Time User Button - PROMINENT!
-        btn_start = ttk.Button(sidebar, text="💡 First Time? Start Here!", command=self._show_quick_start, style="Action.TButton")
-        btn_start.pack(pady=10, padx=10, fill="x")
-        ToolTip(btn_start, "Quick guide for new users")
+        btn_canvas = ttk.Button(sidebar, text="🎨 CANVAS REMEDIATION", command=lambda: self._switch_view("course"), style="Sidebar.TButton")
+        btn_canvas.pack(pady=5, padx=10, fill="x")
+        ToolTip(btn_canvas, "Bulk audit and fix your Canvas course pages")
 
-        # [NEW] Viral/Mission Button
+        btn_files = ttk.Button(sidebar, text="📄 FILE CONVERSION", command=lambda: self._switch_view("files"), style="Sidebar.TButton")
+        btn_files.pack(pady=5, padx=10, fill="x")
+        ToolTip(btn_files, "Convert PowerPoint or Word files to clean HTML")
+
+        btn_math = ttk.Button(sidebar, text="📐 MATH CONVERTER", command=lambda: self._switch_view("math"), style="Sidebar.TButton")
+        btn_math.pack(pady=5, padx=10, fill="x")
+        ToolTip(btn_math, "Gemini-powered conversion of Math from PDF or Images")
+
+        ttk.Separator(sidebar, orient='horizontal').pack(fill='x', padx=20, pady=10)
+
+        # [NEW] Share Button
         self.btn_share = ttk.Button(sidebar, text="📣 SPREAD THE WORD", command=self._show_share_dialog, style="Action.TButton")
         self.btn_share.pack(pady=10, padx=10, fill="x")
-        ToolTip(self.btn_share, "Share MOSH with your colleagues!")
-
-        # [NEW] Advanced Button
-        btn_adv = ttk.Button(sidebar, text="🛠️ Advanced Tasks", command=self._show_advanced_dialog)
-        btn_adv.pack(pady=10, padx=10, fill="x")
-        ToolTip(btn_adv, "Manual and expert tasks")
-
-        # [NEW] Toggle Experience Mode
-        self.btn_mode = ttk.Button(sidebar, text="🎓 Beginner Mode", command=self._toggle_experience_mode, style="Sidebar.TButton")
-        self.btn_mode.pack(fill="x", padx=10, pady=5)
-        ToolTip(self.btn_mode, "Switch between simplified (Beginner) and experimental (Expert) views")
-        self._update_mode_button()
-        # Initialize visibility after UI is built
-        self.root.after(100, self._apply_experience_mode)
 
         # Header Banner with Logo & Progress
         header_frame = tk.Frame(self.view_container, height=60, bg="white")
@@ -711,6 +718,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             self._build_course_view(content)
         elif view_name == "files":
             self._build_files_view(content)
+        elif view_name == "math":
+            self._build_math_view(content)
 
     def _build_dashboard(self, content):
         """The new landing page / home screen."""
