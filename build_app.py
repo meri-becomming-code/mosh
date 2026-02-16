@@ -13,6 +13,7 @@ def build():
         f"GUIDE_STYLES.md{sep}.",
         f"GUIDE_COMMON_MISTAKES.md{sep}.",
         f"GUIDE_MANUAL_FIXES.md{sep}.",
+        f"POPPLER_GUIDE.md{sep}.",
         f"mosh_pilot.png{sep}."
     ]
 
@@ -29,7 +30,7 @@ def build():
     for d in datas:
         args.append(f'--add-data={d}')
 
-    # Hidden imports if needed (bs4 is usually found, but just in case)
+    # Hidden imports if needed
     args.append('--hidden-import=bs4')
     args.append('--hidden-import=interactive_fixer')
     args.append('--hidden-import=run_fixer')
@@ -37,8 +38,10 @@ def build():
     args.append('--hidden-import=canvas_utils')
     args.append('--hidden-import=requests')
     args.append('--hidden-import=jeanie_ai')
+    args.append('--hidden-import=google')
+    args.append('--hidden-import=google.genai')
     
-    # PDF Processing Libraries (Critical for table/image extraction)
+    # PDF Processing Libraries
     args.append('--hidden-import=fitz')  # PyMuPDF
     args.append('--hidden-import=pymupdf')
     args.append('--hidden-import=pdfminer')

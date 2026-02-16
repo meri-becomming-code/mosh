@@ -403,13 +403,14 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         tk.Label(inner_content, text="This tool creates Pages in your specified Canvas Course so you can remediate them professionaly.", 
                  wraplength=500, bg=colors["bg"], fg=colors["fg"], font=("Segoe UI", 10, "italic")).pack(pady=5, padx=40)
 
-        # Re-pack everything into inner_content
+        # 1. Canvas URL
         tk.Label(inner_content, text="1. Your School's Canvas Website:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(inner_content, text="(e.g. https://yourschool.instructure.com or https://canvas.your-school.edu)", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        tk.Label(inner_content, text="(e.g. https://yourschool.instructure.com)", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
         ent_url = tk.Entry(inner_content, width=60)
         ent_url.insert(0, self.config.get("canvas_url", ""))
         ent_url.pack(pady=5, padx=40)
 
+        # 2. Canvas Token
         tk.Label(inner_content, text="2. Your Canvas Digital Key (Token):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
         frame_token = tk.Frame(inner_content, bg=colors["bg"])
         frame_token.pack(fill="x", padx=40)
@@ -421,8 +422,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             webbrowser.open(f"{ent_url.get().strip()}/profile/settings")
             messagebox.showinfo("Help", "I've opened your Canvas Settings.\n\n1. Scroll down to 'Approved Integrations'.\n2. Click '+ New Access Token'.\n3. Copy the long key and paste it here.")
 
-        tk.Button(frame_token, text="❓ Help Me Find This", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+        tk.Button(frame_token, text="❓ Help", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
+        # 3. Course ID
         tk.Label(inner_content, text="3. Your Course ID (Numbers):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
         frame_course = tk.Frame(inner_content, bg=colors["bg"])
         frame_course.pack(fill="x", padx=40)
@@ -432,44 +434,27 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         def open_course_help():
             messagebox.showinfo("Finding Your Course ID", 
-                                "It's easy! \n\n1. Open your Canvas course in your browser.\n2. Look at the address bar at the top.\n3. The ID is the group of numbers at the very end.\n\nExample: if the link is .../courses/12345, your ID is 12345.")
+                                "Look at your browser address bar while in the course.\n\nThe ID is the numbers at the very end (e.g. .../courses/12345).")
 
         tk.Button(frame_course, text="❓ Help", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
-        def test_safety():
-            url = ent_url.get().strip()
-            token = ent_token.get().strip()
-            cid = ent_course.get().strip()
-            if not url or not token or not cid:
-                messagebox.showwarning("Incomplete", "Please fill out all boxes in Step 1-3 first!")
-                return
-            api = canvas_utils.CanvasAPI(url, token, cid)
-            success, msg = api.validate_credentials()
-            if success:
-                is_empty, _ = api.is_course_empty()
-                if is_empty:
-                    lbl_status.config(text="✅ SAFE: Course is empty.", fg="green")
-                else:
-                    lbl_status.config(text="⚠️ WARNING: Course has content.", fg="orange")
-            else:
-                lbl_status.config(text=f"❌ FAILED: {msg}", fg="red")
+        # Status Label (Shared)
+        lbl_status = tk.Label(inner_content, text="", bg=colors["bg"], font=("Segoe UI", 9, "bold"))
+        lbl_status.pack(pady=10)
 
-        tk.Button(frame_course, text="🔍 Check Course Safety", command=test_safety, bg="#BBDEFB", font=("Segoe UI", 8, "bold"), cursor="hand2").pack(side="left", padx=5)
-
-        # Gemini Section (Moved up)
+        # 4. Gemini API Key
         tk.Label(inner_content, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
         tk.Label(inner_content, text="Required for '🪄 Magic' auto-generation (Images & Math).", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
         ent_api = tk.Entry(inner_content, width=60, show="*")
         ent_api.insert(0, self.config.get("api_key", ""))
         ent_api.pack(pady=5, padx=40)
 
-        # -- Gemini Buttons Directly Beneath --
         btn_api_frame = tk.Frame(inner_content, bg=colors["bg"])
         btn_api_frame.pack(anchor="w", padx=40, pady=5)
         
         def open_api_help():
             webbrowser.open("https://aistudio.google.com/app/apikey")
-            messagebox.showinfo("MOSH Magic Help", "1. Click 'Create API key'\n2. Choose/Create a project 'MOSH'.\n3. Copy the key and paste it here.")
+            messagebox.showinfo("MOSH Magic Help", "1. Click 'Create API key'\n2. Copy the key and paste it here.")
 
         def test_api_key():
             key = ent_api.get().strip()
@@ -485,58 +470,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             else:
                 lbl_status.config(text="❌ INVALID Key", fg="red")
 
-        tk.Button(btn_api_frame, text="🔑 Get My Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
+        tk.Button(btn_api_frame, text="🔑 Get Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
         tk.Button(btn_api_frame, text="🧪 Test Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
 
-        # Poppler Section
-        tk.Label(inner_content, text="5. Poppler Bin Path (Required for Math PDF):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
-        frame_poppler = tk.Frame(inner_content, bg=colors["bg"])
-        frame_poppler.pack(fill="x", padx=40)
-        ent_poppler = tk.Entry(frame_poppler, width=45)
-        ent_poppler.insert(0, self.config.get("poppler_path", ""))
-        ent_poppler.pack(side="left", pady=5)
-        
-        def browse_poppler():
-            path = filedialog.askdirectory()
-            if path:
-            msg_steps = (
-                "MOSH Magic Setup Guide:\n\n"
-                "⚠️ NOTE: You can use a FREE Gemini API key (limited to 50 pages/day) or a paid one.\n\n"
-                "1. Click 'Create API key' in the window that just opened.\n"
-                "2. Click 'Create API key in new project'.\n"
-                "3. In the box that appears, name your key 'MOSH'.\n"
-                "4. If prompted to choose a project, select 'Create project'.\n"
-                "5. Name the project 'MOSH' (or anything you like).\n"
-                "6. Click 'Create API key'.\n"
-                "7. SET UP BILLING: Go to Google Cloud Console and add a payment method.\n"
-                "8. Copy the long code and paste it into box #4 here!\n\n"
-                "✨ Once active, you can use the 🪄 Magic Wand during Step 3!"
-            )
-            messagebox.showinfo("MOSH Magic Help", msg_steps)
-            
-        def test_api_key():
-            key = ent_api.get().strip()
-            if not key:
-                messagebox.showwarning("No Key", "Please paste a key first.")
-                return
-            
-            lbl_status.config(text="⏳ Testing Key...", fg="blue")
-            self.root.update()
-            
-            import jeanie_ai
-            is_valid, msg = jeanie_ai.validate_api_key(key)
-            
-            if is_valid:
-                lbl_status.config(text="✅ SUCCESS: Key is valid!", fg="green")
-                messagebox.showinfo("Success", "Your API Key is working perfectly!\n\nMOSH Magic is ready to go.")
-            else:
-                lbl_status.config(text="❌ INVALID: See message below.", fg="red")
-                messagebox.showerror("Key Error", f"The API Key did not work.\n\nError from Google:\n{msg}\n\nTips:\n- Make sure you copied the whole key.\n- Ensure the 'MOSH' project is enabled in Google AI Studio.")
-
-        tk.Button(btn_api_frame, text="🔑 Get Gemini API Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
-        tk.Button(btn_api_frame, text="🧪 Test This Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
-
-        # Poppler Section
+        # 5. Poppler Section
         tk.Label(inner_content, text="5. Poppler Bin Path (Required for Math PDF):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
         frame_poppler = tk.Frame(inner_content, bg=colors["bg"])
         frame_poppler.pack(fill="x", padx=40)
@@ -552,9 +489,6 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         tk.Button(frame_poppler, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
         tk.Button(frame_poppler, text="🪄 Auto-Setup", command=self._auto_setup_poppler, font=("Segoe UI", 8, "bold"), fg="#2E7D32", cursor="hand2").pack(side="left", padx=5)
-        
-        lbl_status = tk.Label(inner_content, text="", bg=colors["bg"], font=("Segoe UI", 9, "bold"))
-        lbl_status.pack(pady=10)
 
         def save():
             self._save_config(
@@ -564,8 +498,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 ent_url.get().strip(),
                 ent_token.get().strip(),
                 ent_course.get().strip(),
-                ent_poppler.get().strip(),
-                self.config.get("user_experience", "beginner")
+                ent_poppler.get().strip()
             )
             messagebox.showinfo("Saved", "Settings saved successfully!")
             dialog.destroy()
@@ -575,7 +508,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             token = ent_token.get().strip()
             cid = ent_course.get().strip()
             if not url or not token or not cid:
-                messagebox.showwarning("Incomplete", "Please fill out all boxes in Step 1-3 first!")
+                messagebox.showwarning("Incomplete", "Please fill out Step 1-3 first!")
                 return
             api = canvas_utils.CanvasAPI(url, token, cid)
             success, msg = api.validate_credentials()
@@ -588,7 +521,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             else:
                 lbl_status.config(text=f"❌ FAILED: {msg}", fg="red")
 
-        # Bottom Buttons (Fixed at bottom of DIALOG, outside scroll)
+        # Bottom Buttons
         btn_frame = tk.Frame(dialog, bg=colors["bg"], pady=15)
         btn_frame.pack(side="bottom", fill="x")
         tk.Button(btn_frame, text="🔍 Check Canvas Safety", command=test_safety, bg="#BBDEFB", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=20)
