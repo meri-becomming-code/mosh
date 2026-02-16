@@ -213,7 +213,7 @@ class ToolkitGUI:
         
         advanced_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Advanced", menu=advanced_menu)
-        advanced_menu.add_command(label="Canvas API Settings", command=self._show_canvas_settings)
+        advanced_menu.add_command(label="Canvas API Settings", command=lambda: self._switch_view("setup"))
         advanced_menu.add_command(label="Open Documentation", command=self._show_documentation)
         advanced_menu.add_separator()
         advanced_menu.add_command(label="Course Health Check (Broken Links)", command=self._run_course_health_check)
