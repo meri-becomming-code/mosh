@@ -69,7 +69,7 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
             
             img = Image.open(img_path)
             response = client.models.generate_content(
-                model='gemini-1.5-pro',
+                model='gemini-1.5-flash',
                 contents=[MATH_PROMPT, img]
             )
             
@@ -120,7 +120,7 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
         
         img = Image.open(image_path)
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-1.5-flash',
             contents=[MATH_PROMPT, img]
         )
         
@@ -176,7 +176,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                 # Convert with Gemini
                 img = Image.open(temp_img)
                 response = client.models.generate_content(
-                    model='gemini-1.5-pro',
+                    model='gemini-1.5-flash',
                     contents=[MATH_PROMPT, img]
                 )
                 
