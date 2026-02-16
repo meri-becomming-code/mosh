@@ -3,6 +3,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Website](https://img.shields.io/badge/Website-Live-green.svg)](https://meri-becomming-code.github.io/mosh/)
+[![Antigravity](https://img.shields.io/badge/Made%20with-Antigravity-orange.svg)](https://deepmind.google/technologies/gemini/)
 
 MOSH is a powerful, educator-focused suite designed to automate the heavy lifting of accessibility remediation for Canvas and Web content.
 
@@ -14,10 +15,12 @@ One step at a time, and one insight at a time, the path was revealed to me. I be
 We believe that accessibility is a foundational human right, not a profit center. Accessibility remediation shouldn't be a source of resentment or unpaid labor—it should be a seamless part of the teaching craft. This toolkit is a gift, freely given, to help you reclaim your time, protect your course quality, and focus on what truly matters: your students.
 
 ## ✨ Key Features
-- **🎲 Roll the Dice (Batch Conversion)**: Instantly convert entire directories of Word, PPT, Excel, and PDF files into clean, accessible HTML.
-- **🛡️ Auto-Fixer**: Automatically corrects structural issues like missing header hierarchies, improper table formatting, and broken tags.
-- **Guided Review**: A human-centric interface to help you write meaningful Alt Text and verify links without looking at code.
-- **🏆 Morale Tracker**: Quantifies exactly how much manual labor has been saved, reinforcing the value of your efforts.
+- **🛠️ Connect & Setup**: A unified command center to manage your Canvas tokens, AI keys, and project files in one place.
+- **🎨 Canvas Remediation**: A complete suite for auditing and fixing accessibility issues in your course. Includes:
+    - **✨ Auto-Fix**: Instantly corrects structural issues like headers and tables.
+    - **📖 Guided Review**: A human-centric interface to write Alt Text and fix links page-by-page.
+- **📐 Math Converter**: Uses "MOSH Magic" (AI) to read handwritten math and PDF equations, converting them into accessible LaTeX.
+- **📄 File Conversion**: Instantly converts Word, PowerPoint, and Excel files into clean, accessible HTML.
 
 ## 💛 Dedication
 This software is dedicated to my son, **Michael Joshua (MOSH) Albright**, who battles Diabetic Retinopathy. Having spent years in blindness and reclaiming his sight, his journey reminds us that accessibility isn't just a requirement; it's a lifeline.

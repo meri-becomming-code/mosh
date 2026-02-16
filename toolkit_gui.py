@@ -146,8 +146,8 @@ class ToolkitGUI:
         self.root.minsize(1000, 600) # prevent cutting off buttons
 
         # --- State ---
-        self.target_dir = os.getcwd() # Default
         self.config = self._load_config()
+        self.target_dir = self.config.get("target_dir", os.getcwd()) # Persistence!
         self.api_key = ""
         self.is_running = False
         self.deferred_review = False # [NEW] Flag for post-task review
@@ -192,7 +192,7 @@ class ToolkitGUI:
             "poppler_path": ""
         }
 
-    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id="", poppler_path=""):
+    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id="", poppler_path="", target_dir=None):
         self.config["api_key"] = key
         self.gui_handler.api_key = key # Sync to handler immediately
         self.config["show_instructions"] = start_show
@@ -201,6 +201,9 @@ class ToolkitGUI:
         self.config["canvas_token"] = canvas_token
         self.config["canvas_course_id"] = canvas_course_id
         self.config["poppler_path"] = poppler_path
+        if target_dir:
+            self.config["target_dir"] = target_dir
+            self.target_dir = target_dir
         self._save_config_simple()
 
     def _save_config_simple(self):
@@ -371,6 +374,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
     def _build_ui_modern(self):
         # Main Container: Sidebar (Left) + Content (Right)
+        mode = self.config.get("theme", "light")
+        colors = THEMES[mode]
         
         # 1. Sidebar
         sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", width=200)
@@ -404,7 +409,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                                 wraplength=180, justify="center")
         lbl_tagline.pack(pady=(0, 20), padx=10)
         
-        ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 10))
+        ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 5))
+        tk.Label(sidebar, text="Powered by Antigravity 🚀", bg=colors["sidebar"], fg="#AAA", font=("Segoe UI", 7)).pack(pady=(0, 10))
         
         # [NEW] Navigation Buttons
         btn_setup = ttk.Button(sidebar, text="🛠️ CONNECT & SETUP", command=lambda: self._switch_view("setup"), style="Sidebar.TButton")
@@ -598,15 +604,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         tk.Label(frame_poppler, text="Path to Poppler/bin folder:", bg="white", fg="#D97706", font=("bold")).pack(anchor="w")
         frame_p_row = tk.Frame(frame_poppler, bg="white")
         frame_p_row.pack(fill="x")
-        ent_poppler = tk.Entry(frame_p_row, width=45)
-        ent_poppler.insert(0, self.config.get("poppler_path", ""))
-        ent_poppler.pack(side="left", pady=5, fill="x", expand=True)
+        self.ent_poppler_setup = tk.Entry(frame_p_row, width=45)
+        self.ent_poppler_setup.insert(0, self.config.get("poppler_path", ""))
+        self.ent_poppler_setup.pack(side="left", pady=5, fill="x", expand=True)
         
         def browse_poppler():
             path = filedialog.askdirectory()
             if path:
-                ent_poppler.delete(0, tk.END)
-                ent_poppler.insert(0, path)
+                self.ent_poppler_setup.delete(0, tk.END)
+                self.ent_poppler_setup.insert(0, path)
 
         tk.Button(frame_p_row, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
         tk.Button(frame_p_row, text="🪄 Auto-Setup", command=self._auto_setup_poppler, font=("Segoe UI", 8, "bold"), fg="#2E7D32", cursor="hand2").pack(side="left", padx=5)
@@ -628,9 +634,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         btn_browse.pack(side="right")
         
         tk.Label(frame_project, text="Selected Folder (Current Remediation Target):", bg="white", fg="gray", font=("bold")).pack(anchor="w")
-        lbl_current_dir = tk.Label(frame_project, text=self.target_dir if self.target_dir else "No folder selected", 
+        self.lbl_setup_dir = tk.Label(frame_project, text=self.target_dir if self.target_dir else "No folder selected", 
                                    bg="#F3F4F6", fg="#374151", padx=10, pady=5, anchor="w", wraplength=500)
-        lbl_current_dir.pack(fill="x", pady=5)
+        self.lbl_setup_dir.pack(fill="x", pady=5)
 
         # Pack global status after sections
         lbl_global_status.pack(pady=10)
@@ -643,7 +649,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 ent_url.get().strip(),
                 ent_token.get().strip(),
                 ent_course.get().strip(),
-                ent_poppler.get().strip()
+                self.ent_poppler_setup.get().strip(),
+                target_dir=self.target_dir
             )
             lbl_global_status.config(text="✅ All Settings Saved!", fg="green")
             messagebox.showinfo("Success", "Configuration updated.")
@@ -881,19 +888,21 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         path = filedialog.askdirectory(initialdir=self.target_dir)
         if path:
             self.target_dir = path
-            # Update Course View if it exists
+            
+            # 1. Update Course View Widget (if exists)
             if hasattr(self, 'lbl_dir') and self.lbl_dir.winfo_exists():
                 self.lbl_dir.delete(0, tk.END)
                 self.lbl_dir.insert(0, path)
             
+            # 2. Update Setup View Widget (if exists)
+            if hasattr(self, 'lbl_setup_dir') and self.lbl_setup_dir.winfo_exists():
+                self.lbl_setup_dir.config(text=path)
+            
             self._log(f"Selected project folder: {path}")
             
-            # Auto-save setting if possible
-            if self.config:
-                self._save_config_simple()
-
-            # Refresh current view to show the new folder (especially for Setup view)
-            self._switch_view(self.current_view)
+            # Persistent Save
+            self.config["target_dir"] = path
+            self._save_config_simple()
 
     def _import_package(self):
         """Allows user to select .imscc or .zip and extracts it with duplicate detection."""
@@ -945,6 +954,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
     def _finalize_import(self, extract_to):
         """Updates UI after successful import (runs on main thread)."""
         self.target_dir = extract_to
+        self.config["target_dir"] = extract_to
+        self._save_config_simple()
         
         # Refresh current view if it's the Setup view to show the new folder
         self._switch_view("setup")
@@ -2893,6 +2904,11 @@ YOUR WORKFLOW:
                 # Update Config
                 self.config["poppler_path"] = poppler_bin
                 self._save_config_simple()
+                
+                # Direct UI Update (Setup View)
+                if hasattr(self, "ent_poppler_setup") and self.ent_poppler_setup.winfo_exists():
+                    self.ent_poppler_setup.delete(0, tk.END)
+                    self.ent_poppler_setup.insert(0, poppler_bin)
                 
                 self.gui_handler.log(f"✅ SUCCESS! Poppler linked to: {poppler_bin}")
                 
