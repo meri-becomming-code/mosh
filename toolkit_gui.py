@@ -35,11 +35,12 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-# Import Toolkit Modules
+import math_converter
+import attribution_checker
+import canvas_utils
 import interactive_fixer
 import run_fixer
 import run_audit
-import canvas_utils
 
 # CONFIG_FILE = "toolkit_config.json" [DEPRECATED]
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".mosh_toolkit")
@@ -2751,34 +2752,60 @@ YOUR WORKFLOW:
                 self._switch_view("setup")
             return
 
-        def task():
-            import math_converter
-            self.gui_handler.log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
-            self.progress_var.set(20)
-            
-            success, result = math_converter.process_canvas_export(
-                api_key, 
-                self.target_dir, 
-                log_func=self.gui_handler.log,
-                poppler_path=self.config.get("poppler_path", "")
-            )
-            
-            if success:
-                self.gui_handler.log(f"\n✨ SUCCESS! Converted math in your course project.")
-                self.progress_var.set(100)
-                msg = (
-                    f"✨ Bulk Math Conversion Complete!\n\n"
-                    f"I found and converted math in the course export.\n"
-                    f"Output location: {self.target_dir}/converted_math_pages/\n\n"
-                    "Next, review the pages and paste into Canvas."
-                )
-                self.root.after(0, lambda: messagebox.showinfo("Success", msg))
-                os.startfile(os.path.join(self.target_dir, "converted_math_pages"))
-            else:
-                self.gui_handler.log(f"❌ Error: {result}")
-                self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
+        if not messagebox.askyesno("Confirm", "This will convert ALL math in your project using AI.\n\nIt may take a while. Continue?"):
+             return
 
-        self._run_task_in_thread(task, "Bulk Math Conversion")
+        # 1. Immediate UI Feedback
+        self.progress_var.set(5)
+        self.root.after(0, lambda: messagebox.showinfo("Started", "Math Conversion Started!\n\nCheck the log for progress."))
+
+        def task():
+            try:
+                import threading
+                import math_converter
+                
+                def log(msg):
+                    self.gui_handler.log(msg)
+                
+                log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
+                log("--- Starting Standalone Worker ---")
+                
+                # Verify Logic
+                if not api_key:
+                     raise Exception("No API Key provided.")
+                
+                success, result = math_converter.process_canvas_export(
+                    api_key, 
+                    self.target_dir, 
+                    log_func=log,
+                    poppler_path=self.config.get("poppler_path", "")
+                )
+                
+                if success:
+                    log(f"\n✨ SUCCESS! Converted math in your course project.")
+                    
+                    def on_success():
+                        self.progress_var.set(100)
+                        msg = (
+                            f"✨ Bulk Math Conversion Complete!\n\n"
+                            f"Output: {self.target_dir}/converted_math_pages/\n\n"
+                            "Next: Review pages and paste into Canvas."
+                        )
+                        messagebox.showinfo("Success", msg)
+                        try:
+                            os.startfile(os.path.join(self.target_dir, "converted_math_pages"))
+                        except: pass
+                    
+                    self.root.after(0, on_success)
+                else:
+                    log(f"❌ Error: {result}")
+                    self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
+            
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Critical Error", f"An unexpected error occurred:\n{str(e)}"))
+
+        # 2. Explicit Threading (Bypassing internal queue)
+        threading.Thread(target=task, daemon=True).start()
 
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
