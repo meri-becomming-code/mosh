@@ -15,6 +15,30 @@ try:
 except ImportError:
     genai = None
 
+import re
+import time
+
+def clean_gemini_response(text):
+    """
+    Cleans Gemini response by removing markdown code blocks and HTML boilerplate.
+    Returns only the body content.
+    """
+    # 1. Strip markdown code blocks (e.g. ```html ... ```)
+    text = re.sub(r'^```\w*\s*', '', text.strip(), flags=re.MULTILINE)
+    text = re.sub(r'\s*```$', '', text.strip(), flags=re.MULTILINE)
+    
+    # 2. Extract body content if present
+    if '<body' in text.lower():
+        match = re.search(r'<body[^>]*>(.*?)</body>', text, re.DOTALL | re.IGNORECASE)
+        if match:
+            text = match.group(1)
+            
+    # 3. Strip other boilerplate if body tag wasn't strict
+    if '<!DOCTYPE html>' in text:
+        text = re.sub(r'<!DOCTYPE html>.*', '', text, flags=re.DOTALL)
+        
+    return text.strip()
+
 MATH_PROMPT = """Convert ALL mathematical content in this image to Canvas-compatible LaTeX format.
 
 RULES:
@@ -23,10 +47,9 @@ RULES:
 3. Preserve problem numbers and steps
 4. Add <details><summary>Solution</summary>...</details> for solutions
 5. Be 100% accurate
+6. DO NOT return a full HTML document (no <html>, <head>, <body> tags). Return ONLY the content.
 
 Return ready-to-paste HTML/LaTeX for Canvas."""
-
-import time
 
 def generate_content_with_retry(client, model, contents, log_func=None):
     """
@@ -79,6 +102,11 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
             log_func("   Converting PDF pages to images...")
         
         temp_dir = Path(pdf_path).parent / f"{Path(pdf_path).stem}_temp"
+        
+        # Clean up previous temp dir if it exists to avoid stale images
+        import shutil
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
         temp_dir.mkdir(exist_ok=True)
         
         images = convert_from_path(
@@ -99,7 +127,6 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
                 log_func(f"   [{i}/{len(images)}] Converting page {i}...")
             
             img = Image.open(img_path)
-            img = Image.open(img_path)
             response = generate_content_with_retry(
                 client=client,
                 model='gemini-2.0-flash',
@@ -108,12 +135,12 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
             )
             
             if response.text:
-                all_content.append(f"\n<!-- Page {i} -->\n{response.text}\n")
+                cleaned_text = clean_gemini_response(response.text)
+                all_content.append(f"\n<!-- Page {i} -->\n{cleaned_text}\n")
             else:
                 all_content.append(f"\n<!-- Page {i}: No response from Gemini -->\n")
         
         # Clean up temp images
-        import shutil
         import time
         
         # Close any open file handles
@@ -162,8 +189,9 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
         )
         
         if response.text:
+            cleaned_text = clean_gemini_response(response.text)
             title = Path(image_path).stem.replace('_', ' ').title()
-            html = create_canvas_html(title, response.text)
+            html = create_canvas_html(title, cleaned_text)
             
             if log_func:
                 log_func(f"✅ Conversion complete")
@@ -221,7 +249,8 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                 )
                 
                 if response.text:
-                    all_content.append(f"\n<!-- Image {i} -->\n{response.text}\n")
+                    cleaned_text = clean_gemini_response(response.text)
+                    all_content.append(f"\n<!-- Image {i} -->\n{cleaned_text}\n")
                 
                 temp_img.unlink()  # Clean up
         

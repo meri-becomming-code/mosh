@@ -41,6 +41,7 @@ CRITICAL RULES:
 4. Preserve the structure (numbered problems, steps, etc.)
 5. Add descriptive text between equations if needed
 6. Be 100% accurate with mathematical notation
+7. DO NOT return a full HTML document (no <html>, <head>, <body> tags). Return ONLY the content.
 
 OUTPUT FORMAT:
 - Return clean, ready-to-paste Canvas HTML/LaTeX
@@ -106,6 +107,21 @@ def convert_image_to_latex(client, image_path: str) -> Tuple[str, bool]:
             return "", False
         
         latex_content = response.text.strip()
+        
+        # Clean up markdown code blocks
+        import re
+        latex_content = re.sub(r'^```\w*\s*', '', latex_content, flags=re.MULTILINE)
+        latex_content = re.sub(r'\s*```$', '', latex_content, flags=re.MULTILINE)
+        
+        # Clean up HTML boilerplate
+        if '<body' in latex_content.lower():
+            match = re.search(r'<body[^>]*>(.*?)</body>', latex_content, re.DOTALL | re.IGNORECASE)
+            if match:
+                latex_content = match.group(1).strip()
+        
+        if '<!DOCTYPE html>' in latex_content:
+            latex_content = re.sub(r'<!DOCTYPE html>.*', '', latex_content, flags=re.DOTALL).strip()
+            
         print("✅ Converted!")
         return latex_content, True
         
