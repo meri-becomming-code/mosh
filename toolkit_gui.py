@@ -359,174 +359,6 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # Force background update for root
         self.root.configure(bg=colors["bg"])
 
-    def _show_canvas_settings(self):
-        """Dialog to configure Canvas API settings (Barney Style)."""
-        dialog = Toplevel(self.root)
-        dialog.title("MOSH Toolkit Settings")
-        dialog.geometry("550x650") 
-        dialog.transient(self.root)
-        dialog.grab_set()
-        dialog.resizable(True, True) 
-
-        colors = THEMES[self.config.get("theme", "light")]
-        dialog.configure(bg=colors["bg"])
-
-        tk.Label(dialog, text="Step 0: Connect to your Canvas Course", font=("Segoe UI", 16, "bold"), 
-                 bg=colors["bg"], fg=colors["header"]).pack(pady=15)
-        
-        # Create a scrollable container
-        container = tk.Frame(dialog, bg=colors["bg"])
-        container.pack(fill="both", expand=True)
-        
-        canvas = tk.Canvas(container, bg=colors["bg"], highlightthickness=0)
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=colors["bg"])
-
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(
-                scrollregion=canvas.bbox("all")
-            )
-        )
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # Handle mousewheel
-        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
-
-        inner_content = scrollable_frame
-
-        tk.Label(inner_content, text="This tool creates Pages in your specified Canvas Course so you can remediate them professionaly.", 
-                 wraplength=500, bg=colors["bg"], fg=colors["fg"], font=("Segoe UI", 10, "italic")).pack(pady=5, padx=40)
-
-        # 1. Canvas URL
-        tk.Label(inner_content, text="1. Your School's Canvas Website:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(inner_content, text="(e.g. https://yourschool.instructure.com)", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
-        ent_url = tk.Entry(inner_content, width=60)
-        ent_url.insert(0, self.config.get("canvas_url", ""))
-        ent_url.pack(pady=5, padx=40)
-
-        # 2. Canvas Token
-        tk.Label(inner_content, text="2. Your Canvas Digital Key (Token):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        frame_token = tk.Frame(inner_content, bg=colors["bg"])
-        frame_token.pack(fill="x", padx=40)
-        ent_token = tk.Entry(frame_token, width=45, show="*")
-        ent_token.insert(0, self.config.get("canvas_token", ""))
-        ent_token.pack(side="left", pady=5)
-        
-        def open_token_help():
-            webbrowser.open(f"{ent_url.get().strip()}/profile/settings")
-            messagebox.showinfo("Help", "I've opened your Canvas Settings.\n\n1. Scroll down to 'Approved Integrations'.\n2. Click '+ New Access Token'.\n3. Copy the long key and paste it here.")
-
-        tk.Button(frame_token, text="❓ Help", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
-
-        # 3. Course ID
-        tk.Label(inner_content, text="3. Your Course ID (Numbers):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        frame_course = tk.Frame(inner_content, bg=colors["bg"])
-        frame_course.pack(fill="x", padx=40)
-        ent_course = tk.Entry(frame_course, width=15)
-        ent_course.insert(0, self.config.get("canvas_course_id", ""))
-        ent_course.pack(side="left", pady=5)
-
-        def open_course_help():
-            messagebox.showinfo("Finding Your Course ID", 
-                                "Look at your browser address bar while in the course.\n\nThe ID is the numbers at the very end (e.g. .../courses/12345).")
-
-        tk.Button(frame_course, text="❓ Help", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
-
-        # Status Label (Shared)
-        lbl_status = tk.Label(inner_content, text="", bg=colors["bg"], font=("Segoe UI", 9, "bold"))
-        lbl_status.pack(pady=10)
-
-        # 4. Gemini API Key
-        tk.Label(inner_content, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
-        tk.Label(inner_content, text="Required for '🪄 Magic' auto-generation (Images & Math).", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
-        ent_api = tk.Entry(inner_content, width=60, show="*")
-        ent_api.insert(0, self.config.get("api_key", ""))
-        ent_api.pack(pady=5, padx=40)
-
-        btn_api_frame = tk.Frame(inner_content, bg=colors["bg"])
-        btn_api_frame.pack(anchor="w", padx=40, pady=5)
-        
-        def open_api_help():
-            webbrowser.open("https://aistudio.google.com/app/apikey")
-            messagebox.showinfo("MOSH Magic Help", "1. Click 'Create API key'\n2. Copy the key and paste it here.")
-
-        def test_api_key():
-            key = ent_api.get().strip()
-            if not key:
-                messagebox.showwarning("No Key", "Please paste a key first.")
-                return
-            lbl_status.config(text="⏳ Testing Key...", fg="blue")
-            self.root.update()
-            import jeanie_ai
-            is_valid, msg = jeanie_ai.validate_api_key(key)
-            if is_valid:
-                lbl_status.config(text="✅ SUCCESS: Key is valid!", fg="green")
-            else:
-                lbl_status.config(text="❌ INVALID Key", fg="red")
-
-        tk.Button(btn_api_frame, text="🔑 Get Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
-        tk.Button(btn_api_frame, text="🧪 Test Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
-
-        # 5. Poppler Section
-        tk.Label(inner_content, text="5. Poppler Bin Path (Required for Math PDF):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
-        frame_poppler = tk.Frame(inner_content, bg=colors["bg"])
-        frame_poppler.pack(fill="x", padx=40)
-        ent_poppler = tk.Entry(frame_poppler, width=45)
-        ent_poppler.insert(0, self.config.get("poppler_path", ""))
-        ent_poppler.pack(side="left", pady=5)
-        
-        def browse_poppler():
-            path = filedialog.askdirectory()
-            if path:
-                ent_poppler.delete(0, tk.END)
-                ent_poppler.insert(0, path)
-
-        tk.Button(frame_poppler, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
-        tk.Button(frame_poppler, text="🪄 Auto-Setup", command=self._auto_setup_poppler, font=("Segoe UI", 8, "bold"), fg="#2E7D32", cursor="hand2").pack(side="left", padx=5)
-
-        def save():
-            self._save_config(
-                ent_api.get().strip(),
-                self.config.get("show_instructions", True),
-                self.config.get("theme", "light"),
-                ent_url.get().strip(),
-                ent_token.get().strip(),
-                ent_course.get().strip(),
-                ent_poppler.get().strip()
-            )
-            messagebox.showinfo("Saved", "Settings saved successfully!")
-            dialog.destroy()
-
-        def test_safety():
-            url = ent_url.get().strip()
-            token = ent_token.get().strip()
-            cid = ent_course.get().strip()
-            if not url or not token or not cid:
-                messagebox.showwarning("Incomplete", "Please fill out Step 1-3 first!")
-                return
-            api = canvas_utils.CanvasAPI(url, token, cid)
-            success, msg = api.validate_credentials()
-            if success:
-                is_empty, _ = api.is_course_empty()
-                if is_empty:
-                    lbl_status.config(text="✅ SAFE: Course is empty.", fg="green")
-                else:
-                    lbl_status.config(text="⚠️ WARNING: Course has content.", fg="orange")
-            else:
-                lbl_status.config(text=f"❌ FAILED: {msg}", fg="red")
-
-        # Bottom Buttons
-        btn_frame = tk.Frame(dialog, bg=colors["bg"], pady=15)
-        btn_frame.pack(side="bottom", fill="x")
-        tk.Button(btn_frame, text="🔍 Check Canvas Safety", command=test_safety, bg="#BBDEFB", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=20)
-        tk.Button(btn_frame, text="💾 SAVE & CLOSE SETTINGS", command=save, bg="#C8E6C9", width=30, font=("bold"), cursor="hand2").pack(pady=5)
-
     def _toggle_theme(self):
         current = self.config.get("theme", "light")
         new_theme = "dark" if current == "light" else "light"
@@ -571,8 +403,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 10))
         
         # [NEW] Navigation Buttons
-        btn_home = ttk.Button(sidebar, text="🏠 HOME & STATUS", command=lambda: self._switch_view("dashboard"), style="Sidebar.TButton")
-        btn_home.pack(pady=5, padx=10, fill="x")
+        btn_setup = ttk.Button(sidebar, text="🛠️ CONNECT & SETUP", command=lambda: self._switch_view("setup"), style="Sidebar.TButton")
+        btn_setup.pack(pady=5, padx=10, fill="x")
+        ToolTip(btn_setup, "Configure your Canvas, AI Key, and load your project")
         
         btn_canvas = ttk.Button(sidebar, text="🎨 CANVAS REMEDIATION", command=lambda: self._switch_view("course"), style="Sidebar.TButton")
         btn_canvas.pack(pady=5, padx=10, fill="x")
@@ -640,15 +473,159 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Router
-        if view_name == "dashboard":
-            self._build_dashboard(content)
-        elif view_name == "course":
-            self._build_course_view(content)
-        elif view_name == "files":
-            self._build_files_view(content)
-        elif view_name == "math":
-            self._build_math_view(content)
+    def _build_setup_view(self, content):
+        """Unified 'Command Center' for all credentials and project loading."""
+        tk.Label(content, text="🛠️ Connect & Setup", font=("Segoe UI", 24, "bold"), fg="#4B3190", bg="white").pack(anchor="w", pady=(0, 10))
+        tk.Label(content, text="Configure your connections and load your project to begin.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
+
+        mode = self.config.get("theme", "light")
+        colors = THEMES[mode]
+
+        # --- SECTION 1: CANVAS ---
+        tk.Label(content, text="1. Canvas Course Connection", font=("Segoe UI", 14, "bold"), bg="white", fg="#4B3190").pack(anchor="w", pady=(10, 5))
+        frame_canvas = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_canvas.pack(fill="x", pady=(0, 20))
+
+        tk.Label(frame_canvas, text="School Canvas URL:", bg="white", fg="#4B3190", font=("bold")).pack(anchor="w")
+        ent_url = tk.Entry(frame_canvas, width=60)
+        ent_url.insert(0, self.config.get("canvas_url", ""))
+        ent_url.pack(pady=(2, 10), fill="x")
+
+        tk.Label(frame_canvas, text="Canvas Digital Key (Token):", bg="white", fg="#4B3190", font=("bold")).pack(anchor="w")
+        frame_token = tk.Frame(frame_canvas, bg="white")
+        frame_token.pack(fill="x")
+        ent_token = tk.Entry(frame_token, width=45, show="*")
+        ent_token.insert(0, self.config.get("canvas_token", ""))
+        ent_token.pack(side="left", pady=5, fill="x", expand=True)
+        
+        def open_token_help():
+            url = ent_url.get().strip()
+            if not url: url = "https://canvas.instructure.com"
+            webbrowser.open(f"{url}/profile/settings")
+            messagebox.showinfo("Help", "I've opened your Canvas Settings.\n\n1. Scroll to 'Approved Integrations'.\n2. Click '+ New Access Token'.\n3. Copy the key and paste it here.")
+        tk.Button(frame_token, text="❓ Help", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+
+        tk.Label(frame_canvas, text="Course ID (Numbers):", bg="white", fg="#4B3190", font=("bold")).pack(anchor="w")
+        frame_course = tk.Frame(frame_canvas, bg="white")
+        frame_course.pack(fill="x")
+        ent_course = tk.Entry(frame_course, width=15)
+        ent_course.insert(0, self.config.get("canvas_course_id", ""))
+        ent_course.pack(side="left", pady=5)
+
+        def open_course_help():
+            messagebox.showinfo("Finding Your Course ID", "Look at your browser address bar while in the course.\n\nThe ID is the numbers at the very end (e.g. .../courses/12345).")
+        tk.Button(frame_course, text="❓ Help", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+
+        def check_canvas():
+            url = ent_url.get().strip()
+            token = ent_token.get().strip()
+            cid = ent_course.get().strip()
+            if not url or not token or not cid:
+                messagebox.showwarning("Incomplete", "Please fill out Canvas settings (Step 1).")
+                return
+            lbl_global_status.config(text="⏳ Verifying Canvas Connection...", fg="blue")
+            self.root.update()
+            api = canvas_utils.CanvasAPI(url, token, cid)
+            success, msg = api.validate_credentials()
+            if success:
+                is_empty, _ = api.is_course_empty()
+                status = "✅ SAFE: Course is empty." if is_empty else "⚠️ WARNING: Course has content."
+                lbl_global_status.config(text=status, fg="green" if is_empty else "orange")
+            else:
+                lbl_global_status.config(text=f"❌ FAILED: {msg}", fg="red")
+
+        tk.Button(frame_course, text="🔍 Check If Safe", command=check_canvas, bg="#BBDEFB", font=("Segoe UI", 8, "bold"), cursor="hand2").pack(side="left", padx=10)
+
+        # --- SECTION 2: MOSH MAGIC (AI) ---
+        tk.Label(content, text="2. MOSH Magic (AI Features)", font=("Segoe UI", 14, "bold"), bg="white", fg="#1B5E20").pack(anchor="w", pady=(10, 5))
+        frame_ai = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_ai.pack(fill="x", pady=(0, 20))
+
+        tk.Label(frame_ai, text="Gemini API Key (Google):", bg="white", fg="#1B5E20", font=("bold")).pack(anchor="w")
+        tk.Label(frame_ai, text="Enables automatic Image Alt-Text and Math OCR.", bg="white", fg="gray", font=("Segoe UI", 8)).pack(anchor="w")
+        ent_api = tk.Entry(frame_ai, width=60, show="*")
+        ent_api.insert(0, self.config.get("api_key", ""))
+        ent_api.pack(pady=(5, 10), fill="x")
+
+        btn_ai_frame = tk.Frame(frame_ai, bg="white")
+        btn_ai_frame.pack(anchor="w")
+        
+        def open_api_help():
+            webbrowser.open("https://aistudio.google.com/app/apikey")
+            messagebox.showinfo("MOSH Magic Help", "1. Click 'Create API key'\n2. Copy the key and paste it here.")
+
+        def test_api_key():
+            key = ent_api.get().strip()
+            if not key:
+                messagebox.showwarning("No Key", "Please paste a key first.")
+                return
+            lbl_global_status.config(text="⏳ Testing AI Key...", fg="blue")
+            self.root.update()
+            import jeanie_ai
+            is_valid, msg = jeanie_ai.validate_api_key(key)
+            if is_valid:
+                lbl_global_status.config(text="✅ AI Key is valid!", fg="green")
+            else:
+                lbl_global_status.config(text="❌ AI Key invalid", fg="red")
+
+        tk.Button(btn_ai_frame, text="🔑 Get Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
+        tk.Button(btn_ai_frame, text="🧪 Test Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
+
+        # --- SECTION 3: POPPLER (MATH PDF) ---
+        tk.Label(content, text="3. Poppler Bin Path (For Math PDF)", font=("Segoe UI", 14, "bold"), bg="white", fg="#D97706").pack(anchor="w", pady=(10, 5))
+        frame_poppler = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_poppler.pack(fill="x", pady=(0, 20))
+
+        tk.Label(frame_poppler, text="Path to Poppler/bin folder:", bg="white", fg="#D97706", font=("bold")).pack(anchor="w")
+        frame_p_row = tk.Frame(frame_poppler, bg="white")
+        frame_p_row.pack(fill="x")
+        ent_poppler = tk.Entry(frame_p_row, width=45)
+        ent_poppler.insert(0, self.config.get("poppler_path", ""))
+        ent_poppler.pack(side="left", pady=5, fill="x", expand=True)
+        
+        def browse_poppler():
+            path = filedialog.askdirectory()
+            if path:
+                ent_poppler.delete(0, tk.END)
+                ent_poppler.insert(0, path)
+
+        tk.Button(frame_p_row, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+        tk.Button(frame_p_row, text="🪄 Auto-Setup", command=self._auto_setup_poppler, font=("Segoe UI", 8, "bold"), fg="#2E7D32", cursor="hand2").pack(side="left", padx=5)
+
+        # --- SECTION 4: LOAD PROJECT ---
+        tk.Label(content, text="4. Load Your Course Project", font=("Segoe UI", 14, "bold"), bg="white", fg="#4B3190").pack(anchor="w", pady=(10, 5))
+        frame_project = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_project.pack(fill="x", pady=(0, 30))
+
+        btn_import = ttk.Button(frame_project, text="📦 IMPORT: Select .imscc File (Canvas Export)", 
+                                 command=self._import_package, style="Action.TButton")
+        btn_import.pack(fill="x", pady=(0, 10))
+        
+        tk.Label(frame_project, text="Selected Folder:", bg="white", fg="gray", font=("bold")).pack(anchor="w")
+        lbl_current_dir = tk.Label(frame_project, text=self.target_dir if self.target_dir else "No folder selected", 
+                                   bg="#F3F4F6", fg="#374151", padx=10, pady=5, anchor="w", wraplength=500)
+        lbl_current_dir.pack(fill="x", pady=5)
+
+        # --- GLOBAL ACTIONS ---
+        lbl_global_status = tk.Label(content, text="", bg="white", font=("Segoe UI", 10, "bold"))
+        lbl_global_status.pack(pady=10)
+
+        def save_all():
+            self._save_config(
+                ent_api.get().strip(),
+                self.config.get("show_instructions", True),
+                self.config.get("theme", "light"),
+                ent_url.get().strip(),
+                ent_token.get().strip(),
+                ent_course.get().strip(),
+                ent_poppler.get().strip()
+            )
+            lbl_global_status.config(text="✅ All Settings Saved!", fg="green")
+            messagebox.showinfo("Success", "Configuration updated.")
+
+        action_frame = tk.Frame(content, bg="white")
+        action_frame.pack(pady=20)
+        tk.Button(action_frame, text="💾 SAVE ALL SETTINGS", command=save_all, bg="#C8E6C9", width=40, font=("bold"), cursor="hand2").pack(side="left", padx=10)
 
     def _build_dashboard(self, content):
         """MOSH Toolkit Landing Page - Professional Suite Overview."""
@@ -704,46 +681,26 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         tk.Label(content, text="Bulk tools for fixing headers, alt text, and links on Page content.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
 
         # -- Target Project Section --
-        ttk.Label(content, text="Step 1: Open Your Course Project", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
+        ttk.Label(content, text="Current Remediation Project", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 5))
         
         frame_dir = ttk.Frame(content, style="Card.TFrame", padding=15)
         frame_dir.pack(fill="x", pady=(0, 20))
         
-        # Row 1: Import Button
-        btn_import = ttk.Button(
-            frame_dir, 
-            text="📦 IMPORT: Select .imscc File (Canvas Export)", 
-            command=self._import_package,
-            style="Action.TButton"
-        )
-        btn_import.pack(side="top", fill="x", pady=(0, 8))
-        ToolTip(btn_import, "Import your Canvas course export file (.imscc or .zip)")
-
-        # Row 1b: Connect to Canvas (Barney Mode)
-        btn_canvas = ttk.Button(
-            frame_dir, 
-            text="🔗 CONNECT: Set Up My Canvas Course Key", 
-            command=self._show_canvas_settings,
-            style="Action.TButton"
-        )
-        btn_canvas.pack(side="top", fill="x", pady=(0, 12))
-        ToolTip(btn_canvas, "Configure your Canvas site and digital key for remediation")
-        
-        # Folder Browser
-        frame_browse = ttk.Frame(frame_dir)
-        frame_browse.pack(fill="x")
-        
+        # Project Status Row
+        tk.Label(frame_dir, text="Target Folder:", bg="white", fg="gray", font=("bold")).pack(anchor="w")
         mode = self.config.get("theme", "light")
         colors = THEMES[mode]
         
-        self.lbl_dir = tk.Entry(frame_browse, bg=colors["bg"], fg=colors["fg"], insertbackground=colors["fg"])
+        self.lbl_dir = tk.Entry(frame_dir, bg=colors["bg"], fg=colors["fg"], insertbackground=colors["fg"])
         self.lbl_dir.insert(0, self.target_dir)
-        self.lbl_dir.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.lbl_dir.pack(fill="x", expand=True, pady=5)
         
-        ttk.Button(frame_browse, text="Browse Folder...", command=self._browse_folder).pack(side="right")
+        btn_row = ttk.Frame(frame_dir)
+        btn_row.pack(fill="x", pady=(5,0))
+        ttk.Button(btn_row, text="📂 Change Folder", command=self._browse_folder).pack(side="left")
+        ttk.Button(btn_row, text="🛠️ Go to Setup / Import", command=lambda: self._switch_view("setup")).pack(side="right")
 
 
-        # -- Step 2: Converters --
         # [NEW] BIG COPYRIGHT DISCLAIMER
         disclaimer_frame = tk.Frame(content, bg="#FEF3C7", padx=20, pady=20, highlightbackground="#FCD34D", highlightthickness=1)
         disclaimer_frame.pack(fill="x", pady=(0, 25))
@@ -789,9 +746,6 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                                      command=self._run_batch_conversion, style="Action.TButton")
         self.btn_batch.pack(fill="x", pady=(12, 0))
         ToolTip(self.btn_batch, "Convert all supported files in the course automatically")
-
-
-        # [REMOVED MATH SECTION FROM COURSE VIEW]
 
 
         # -- Step 3: Remediation Actions (Grid) --
@@ -846,6 +800,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         """Dedicated view for AI-powered Math conversion."""
         tk.Label(content, text="📐 Math Remediation Suite", font=("Segoe UI", 24, "bold"), fg="#1B5E20", bg="white").pack(anchor="w", pady=(0, 10))
         tk.Label(content, text="Gemini-powered conversion of math PDFs and Images to accessible Canvas LaTeX.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
+
+        # Setup Link Helper
+        setup_help_frame = tk.Frame(content, bg="#F0F9FF", padx=15, pady=10)
+        setup_help_frame.pack(fill="x", pady=(0, 20))
+        tk.Label(setup_help_frame, text="💡 Need to set your AI Key or Poppler helper?", bg="#F0F9FF", font=("Segoe UI", 9)).pack(side="left")
+        tk.Button(setup_help_frame, text="Go to CONNECT & SETUP", command=lambda: self._switch_view("setup"), 
+                  font=("Segoe UI", 9, "bold", "underline"), fg="#0369A1", bg="#F0F9FF", borderwidth=0, cursor="hand2").pack(side="left", padx=5)
 
         # Re-use Math section logic
         self.math_disclaimer = tk.Frame(content, bg="#E8F5E9", padx=15, pady=15, highlightbackground="#4CAF50", highlightthickness=2)
@@ -932,12 +893,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
     def _finalize_import(self, extract_to):
         """Updates UI after successful import (runs on main thread)."""
         self.target_dir = extract_to
-        self.lbl_dir.delete(0, tk.END)
-        self.lbl_dir.insert(0, extract_to)
         
-        msg = (f"Package extracted successfully!\n\n"
+        # Refresh current view if it's the Setup view to show the new folder
+        self._switch_view("setup")
+        
+        msg = (f"Package extracted successfully! 🎉\n\n"
                f"Mosh has prepared your project here:\n{extract_to}\n\n"
-               f"Now, use Step 2 to fix descriptions or Step 3 to add more files.")
+               f"Now, click 'CANVAS REMEDIATION' in the sidebar to start fixing your course!")
         messagebox.showinfo("Import Complete", msg)
 
     def _export_package(self):
@@ -2688,6 +2650,52 @@ YOUR WORKFLOW:
         self.txt_log = scrolledtext.ScrolledText(content, height=10, state='disabled', font=("Consolas", 9))
         self.txt_log.pack(fill="both", expand=True, pady=5)
         self.root.after(100, self._sync_logs_to_view)
+
+    def _convert_math_canvas_export(self):
+        """Processes an entire IMSCC course package for math content."""
+        api_key = self.config.get("api_key", "").strip()
+        if not api_key:
+            messagebox.showwarning("Setup Required", "Please set your Gemini API Key in the 'CONNECT & SETUP' view first.")
+            return
+
+        if not self.target_dir or not os.path.exists(self.target_dir):
+            messagebox.showwarning("No Project", "Please load a course project (.imscc) in the 'CONNECT & SETUP' view first.")
+            return
+
+        # Poppler check
+        if os.name == "nt" and not self.config.get("poppler_path"):
+            if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nRun 'Auto-Setup' in the 'CONNECT & SETUP' view?"):
+                self._switch_view("setup")
+            return
+
+        def task():
+            import math_converter
+            self.gui_handler.log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
+            self.progress_var.set(20)
+            
+            success, result = math_converter.process_canvas_export(
+                api_key, 
+                self.target_dir, 
+                log_func=self.gui_handler.log,
+                poppler_path=self.config.get("poppler_path", "")
+            )
+            
+            if success:
+                self.gui_handler.log(f"\n✨ SUCCESS! Converted math in your course project.")
+                self.progress_var.set(100)
+                msg = (
+                    f"✨ Bulk Math Conversion Complete!\n\n"
+                    f"I found and converted math in the course export.\n"
+                    f"Output location: {self.target_dir}/converted_math_pages/\n\n"
+                    "Next, review the pages and paste into Canvas."
+                )
+                self.root.after(0, lambda: messagebox.showinfo("Success", msg))
+                os.startfile(os.path.join(self.target_dir, "converted_math_pages"))
+            else:
+                self.gui_handler.log(f"❌ Error: {result}")
+                self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
+
+        self._run_task_in_thread(task, "Bulk Math Conversion")
 
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
