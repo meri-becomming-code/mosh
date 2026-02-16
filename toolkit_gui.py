@@ -34,7 +34,10 @@ import run_fixer
 import run_audit
 import canvas_utils
 
-CONFIG_FILE = "toolkit_config.json"
+# CONFIG_FILE = "toolkit_config.json" [DEPRECATED]
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".mosh_toolkit")
+os.makedirs(CONFIG_DIR, exist_ok=True)
+CONFIG_FILE = os.path.join(CONFIG_DIR, "toolkit_config.json")
 
 class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
     """
@@ -375,19 +378,44 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         tk.Label(dialog, text="Step 0: Connect to your Sandbox", font=("Segoe UI", 16, "bold"), 
                  bg=colors["bg"], fg=colors["header"]).pack(pady=15)
         
-        tk.Label(dialog, text="This tool creates Pages in a 'Sandbox' or 'Playground' course so you can test them safely.", 
-                 wraplength=500, bg=colors["bg"], fg=colors["fg"], font=("Segoe UI", 10, "italic")).pack(pady=5)
+        # Create a scrollable container
+        container = tk.Frame(dialog, bg=colors["bg"])
+        container.pack(fill="both", expand=True)
+        
+        canvas = tk.Canvas(container, bg=colors["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=colors["bg"])
 
-        # Fields
-        tk.Label(dialog, text="1. Your School's Canvas Website:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(dialog, text="(e.g. https://yourschool.instructure.com or https://canvas.your-school.edu)", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
-        ent_url = tk.Entry(dialog, width=60)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Handle mousewheel
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        inner_content = scrollable_frame
+
+        tk.Label(inner_content, text="This tool creates Pages in a 'Sandbox' or 'Playground' course so you can test them safely.", 
+                 wraplength=500, bg=colors["bg"], fg=colors["fg"], font=("Segoe UI", 10, "italic")).pack(pady=5, padx=40)
+
+        # Re-pack everything into inner_content
+        tk.Label(inner_content, text="1. Your School's Canvas Website:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        tk.Label(inner_content, text="(e.g. https://yourschool.instructure.com or https://canvas.your-school.edu)", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        ent_url = tk.Entry(inner_content, width=60)
         ent_url.insert(0, self.config.get("canvas_url", ""))
         ent_url.pack(pady=5, padx=40)
 
-        tk.Label(dialog, text="2. Your Canvas Digital Key:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        
-        frame_token = tk.Frame(dialog, bg=colors["bg"])
+        tk.Label(inner_content, text="2. Your Canvas Digital Key (Token):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        frame_token = tk.Frame(inner_content, bg=colors["bg"])
         frame_token.pack(fill="x", padx=40)
         ent_token = tk.Entry(frame_token, width=45, show="*")
         ent_token.insert(0, self.config.get("canvas_token", ""))
@@ -399,46 +427,67 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         tk.Button(frame_token, text="❓ Help Me Find This", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
-        tk.Label(dialog, text="3. Your Course Test ID (Numbers):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        
-        frame_course = tk.Frame(dialog, bg=colors["bg"])
+        tk.Label(inner_content, text="3. Your Course Test ID (Numbers):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
+        frame_course = tk.Frame(inner_content, bg=colors["bg"])
         frame_course.pack(fill="x", padx=40)
         ent_course = tk.Entry(frame_course, width=20)
         ent_course.insert(0, self.config.get("canvas_course_id", ""))
         ent_course.pack(side="left", pady=5)
-        
-        # Warning about course reset
-        tk.Label(dialog, text="⚠️ WARNING: If you reset course content in Canvas, you'll get a NEW course ID!", 
-                 bg=colors["bg"], fg="#E65100", font=("Segoe UI", 8, "bold"), wraplength=500).pack(anchor="w", padx=40, pady=(2,0))
 
-        tk.Label(dialog, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        tk.Label(dialog, text="Required for '🪄 Magic' auto-generation. Supports FREE tier (up to 50 pages/day).", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
-        ent_api = tk.Entry(dialog, width=60, show="*")
+        def open_course_help():
+            messagebox.showinfo("Finding Your Course ID", 
+                                "It's easy! \n\n1. Open your Canvas Playground course in your browser.\n2. Look at the address bar at the top.\n3. The ID is the group of numbers at the very end.\n\nExample: if the link is .../courses/12345, your ID is 12345.")
+
+        tk.Button(frame_course, text="❓ Help Me Find This", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+
+        # Gemini Section (Moved up)
+        tk.Label(inner_content, text="4. [OPTIONAL] MOSH Magic (Gemini API Key):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
+        tk.Label(inner_content, text="Required for '🪄 Magic' auto-generation (Images & Math).", bg=colors["bg"], fg="gray", font=("Segoe UI", 8)).pack(anchor="w", padx=40)
+        ent_api = tk.Entry(inner_content, width=60, show="*")
         ent_api.insert(0, self.config.get("api_key", ""))
         ent_api.pack(pady=5, padx=40)
 
-        tk.Label(dialog, text="5. Poppler Bin Path (Required for Math PDF):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(15,0), anchor="w", padx=40)
-        frame_poppler = tk.Frame(dialog, bg=colors["bg"])
+        # -- Gemini Buttons Directly Beneath --
+        btn_api_frame = tk.Frame(inner_content, bg=colors["bg"])
+        btn_api_frame.pack(anchor="w", padx=40, pady=5)
+        
+        def open_api_help():
+            webbrowser.open("https://aistudio.google.com/app/apikey")
+            messagebox.showinfo("MOSH Magic Help", "1. Click 'Create API key'\n2. Choose/Create a project 'MOSH'.\n3. Copy the key and paste it here.")
+
+        def test_api_key():
+            key = ent_api.get().strip()
+            if not key:
+                messagebox.showwarning("No Key", "Please paste a key first.")
+                return
+            lbl_status.config(text="⏳ Testing Key...", fg="blue")
+            self.root.update()
+            import jeanie_ai
+            is_valid, msg = jeanie_ai.validate_api_key(key)
+            if is_valid:
+                lbl_status.config(text="✅ SUCCESS: Key is valid!", fg="green")
+            else:
+                lbl_status.config(text="❌ INVALID Key", fg="red")
+
+        tk.Button(btn_api_frame, text="🔑 Get My Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
+        tk.Button(btn_api_frame, text="🧪 Test Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left")
+
+        # Poppler Section
+        tk.Label(inner_content, text="5. Poppler Bin Path (Required for Math PDF):", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(pady=(20,0), anchor="w", padx=40)
+        frame_poppler = tk.Frame(inner_content, bg=colors["bg"])
         frame_poppler.pack(fill="x", padx=40)
         ent_poppler = tk.Entry(frame_poppler, width=45)
         ent_poppler.insert(0, self.config.get("poppler_path", ""))
         ent_poppler.pack(side="left", pady=5)
         
         def browse_poppler():
-            path = filedialog.askdirectory(title="Select Poppler bin folder")
+            path = filedialog.askdirectory()
             if path:
                 ent_poppler.delete(0, tk.END)
                 ent_poppler.insert(0, path)
 
         tk.Button(frame_poppler, text="📂 Browse", command=browse_poppler, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
-        
-        # [NEW] Guided Auto-Setup Button
-        self.btn_auto_poppler = tk.Button(frame_poppler, text="🪄 Guided Auto-Setup (No Admin Needed)", 
-                                           command=self._auto_setup_poppler, 
-                                           font=("Segoe UI", 8, "bold"), fg="#2E7D32", bg="#E8F5E9", cursor="hand2")
-        self.btn_auto_poppler.pack(side="left", padx=5)
-        
-        tk.Button(dialog, text="📖 How do I install Poppler?", command=lambda: webbrowser.open("POPPLER_GUIDE.md"), font=("Segoe UI", 8, "italic"), cursor="hand2").pack(anchor="w", padx=40)
+        tk.Button(frame_poppler, text="🪄 Auto-Setup", command=self._auto_setup_poppler, font=("Segoe UI", 8, "bold"), fg="#2E7D32", cursor="hand2").pack(side="left", padx=5)
         
         
         def open_api_help():
@@ -495,7 +544,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         tk.Button(frame_course, text="❓ Help Me Find This", command=open_course_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
 
-        lbl_status = tk.Label(dialog, text="", bg=colors["bg"], font=("Segoe UI", 9, "bold"))
+        lbl_status = tk.Label(inner_content, text="", bg=colors["bg"], font=("Segoe UI", 9, "bold"))
         lbl_status.pack(pady=10)
 
         def save():
@@ -509,38 +558,32 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 ent_poppler.get().strip(),
                 self.config.get("user_experience", "beginner")
             )
-            messagebox.showinfo("Saved", "Settings saved! MOSH Magic is now active if you provided a key.")
+            messagebox.showinfo("Saved", "Settings saved successfully!")
             dialog.destroy()
 
         def test_safety():
             url = ent_url.get().strip()
             token = ent_token.get().strip()
             cid = ent_course.get().strip()
-            
             if not url or not token or not cid:
-                messagebox.showwarning("Incomplete", "Please fill out all three boxes first!")
+                messagebox.showwarning("Incomplete", "Please fill out all boxes in Step 1-3 first!")
                 return
-
             api = canvas_utils.CanvasAPI(url, token, cid)
-            
-            # Connection Check
             success, msg = api.validate_credentials()
-            if not success:
-                lbl_status.config(text=f"❌ Connection Failed: {msg}", fg="red")
-                return
-
-            # Safety Check
-            is_empty, safety_msg = api.is_course_empty()
-            if is_empty:
-                lbl_status.config(text="✅ SAFE: This course is empty and ready for testing.", fg="green")
+            if success:
+                is_empty, _ = api.is_course_empty()
+                if is_empty:
+                    lbl_status.config(text="✅ SAFE: Course is empty.", fg="green")
+                else:
+                    lbl_status.config(text="⚠️ WARNING: Course has content.", fg="orange")
             else:
-                lbl_status.config(text="⚠️ WARNING: This course ALREADY HAS PAGES.", fg="#E65100")
-                messagebox.showwarning("Safety Warning", f"Wait! This course ({cid}) already has content.\n\n{safety_msg}\n\nTo be safe, please use a NEW, EMPTY Sandbox course for conversions.")
+                lbl_status.config(text=f"❌ FAILED: {msg}", fg="red")
 
-        btn_frame = tk.Frame(dialog, bg=colors["bg"])
-        btn_frame.pack(pady=20)
-        tk.Button(btn_frame, text="🔍 Check If It's Safe", command=test_safety, bg="#BBDEFB", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=10)
-        tk.Button(btn_frame, text="💾 Save & Close", command=save, bg="#C8E6C9", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=10)
+        # Bottom Buttons (Fixed at bottom of DIALOG, outside scroll)
+        btn_frame = tk.Frame(dialog, bg=colors["bg"], pady=15)
+        btn_frame.pack(side="bottom", fill="x")
+        tk.Button(btn_frame, text="🔍 Check Canvas Safety", command=test_safety, bg="#BBDEFB", width=20, font=("bold"), cursor="hand2").pack(side="left", padx=20)
+        tk.Button(btn_frame, text="💾 SAVE & CLOSE", command=save, bg="#C8E6C9", width=20, font=("bold"), cursor="hand2").pack(side="right", padx=20)
 
     def _toggle_theme(self):
         current = self.config.get("theme", "light")
@@ -2899,7 +2942,8 @@ YOUR WORKFLOW:
 
             try:
                 self.gui_handler.log("--- STARTING POPPLER AUTO-SETUP ---")
-                helper_dir = Path(os.getcwd()) / "helpers"
+                # [FIX] Relocate to stable home directory
+                helper_dir = Path.home() / ".mosh_helpers"
                 helper_dir.mkdir(exist_ok=True)
                 
                 zip_path = helper_dir / "poppler.zip"
@@ -2938,8 +2982,28 @@ YOUR WORKFLOW:
                 if zip_path.exists():
                     os.remove(zip_path)
                 
-                msg = f"✨ Poppler has been installed and configured!\n\nLocation: {poppler_bin}"
-                self.root.after(0, lambda: messagebox.showinfo("Magic Setup Complete", msg))
+                def show_success():
+                    # Custom success with Copy button
+                    success_win = Toplevel(self.root)
+                    success_win.title("Setup Complete")
+                    success_win.geometry("450x200")
+                    success_win.transient(self.root)
+                    success_win.grab_set()
+                    
+                    tk.Label(success_win, text="✨ Poppler Setup Successful!", font=("Segoe UI", 12, "bold"), fg="green").pack(pady=15)
+                    tk.Label(success_win, text=f"Installed to: {poppler_bin}", wraplength=400).pack(pady=5)
+                    
+                    def copy_path():
+                        self.root.clipboard_clear()
+                        self.root.clipboard_append(poppler_bin)
+                        messagebox.showinfo("Copied", "Path copied to clipboard!")
+
+                    btn_frame = tk.Frame(success_win)
+                    btn_frame.pack(pady=20)
+                    tk.Button(btn_frame, text="📋 Copy Path", command=copy_path, width=15).pack(side="left", padx=5)
+                    tk.Button(btn_frame, text="Close", command=success_win.destroy, width=15).pack(side="left", padx=5)
+
+                self.root.after(0, show_success)
                 
             except Exception as e:
                 self.gui_handler.log(f"❌ Error during setup: {str(e)}")
