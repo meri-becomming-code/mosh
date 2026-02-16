@@ -497,6 +497,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         mode = self.config.get("theme", "light")
         colors = THEMES[mode]
 
+        # Define status label early so callbacks can use it
+        lbl_global_status = tk.Label(content, text="", bg="white", font=("Segoe UI", 10, "bold"))
+
         # --- SECTION 1: CANVAS ---
         tk.Label(content, text="1. Canvas Course Connection", font=("Segoe UI", 14, "bold"), bg="white", fg="#4B3190").pack(anchor="w", pady=(10, 5))
         frame_canvas = ttk.Frame(content, style="Card.TFrame", padding=20)
@@ -629,8 +632,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                                    bg="#F3F4F6", fg="#374151", padx=10, pady=5, anchor="w", wraplength=500)
         lbl_current_dir.pack(fill="x", pady=5)
 
-        # --- GLOBAL ACTIONS ---
-        lbl_global_status = tk.Label(content, text="", bg="white", font=("Segoe UI", 10, "bold"))
+        # Pack global status after sections
         lbl_global_status.pack(pady=10)
 
         def save_all():
@@ -875,12 +877,23 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
              self.txt_log.configure(state='disabled')
 
     def _browse_folder(self):
+        """Standard folder browser that updates UI across views."""
         path = filedialog.askdirectory(initialdir=self.target_dir)
         if path:
             self.target_dir = path
-            self.lbl_dir.delete(0, tk.END)
-            self.lbl_dir.insert(0, path)
-            self._log(f"Selected: {path}")
+            # Update Course View if it exists
+            if hasattr(self, 'lbl_dir') and self.lbl_dir.winfo_exists():
+                self.lbl_dir.delete(0, tk.END)
+                self.lbl_dir.insert(0, path)
+            
+            self._log(f"Selected project folder: {path}")
+            
+            # Auto-save setting if possible
+            if self.config:
+                self._save_config_simple()
+
+            # Refresh current view to show the new folder (especially for Setup view)
+            self._switch_view(self.current_view)
 
     def _import_package(self):
         """Allows user to select .imscc or .zip and extracts it with duplicate detection."""
@@ -2883,10 +2896,10 @@ YOUR WORKFLOW:
                 
                 self.gui_handler.log(f"✅ SUCCESS! Poppler linked to: {poppler_bin}")
                 
-                # Clean up zip
-                if zip_path.exists():
-                    os.remove(zip_path)
-                
+                # Refresh if we are in Setup view
+                if self.current_view == "setup":
+                    self.root.after(0, lambda: self._switch_view("setup"))
+
                 def show_success():
                     # Custom success with Copy button
                     success_win = Toplevel(self.root)
