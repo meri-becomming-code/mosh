@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chapter 10 Note Packet (Key) (2)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #4b3190;
+            border-bottom: 2px solid #4b3190;
+            padding-bottom: 10px;
+        }
+        details {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #4b3190;
+            border-radius: 4px;
+        }
+        summary {
+            cursor: pointer;
+            font-weight: bold;
+            color: #4b3190;
+        }
+        summary:hover {
+            color: #6b4fc0;
+        }
+        .problem {
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chapter 10 Note Packet (Key) (2)</h1>
+    
+<!-- Page 1 -->
+```html
+MAT 165 Notes
+Chapter 10: Further Applications of Trigonometry
+Chapter 10: Further Applications of Trigonometry
+In this chapter, we will explore an extension of the right triangle trigonometry we explored in Chapter 7 to situations
+involving non-right triangles.
+Table of Contents
+Section 10.1-10.2 Non-Right Triangles: Laws of Sines and Cosines...........................................................................2
+(Section 10.1) Law of Sines ......................................................................................................................................2
+Law of Sines: The Ambiguous Case ("SSA")................................................................................................................3
+(Section 10.2) Law of Cosines ....................................................................................................................................5
+1
+These notes are based on the textbook <i>Precalculus An Investigation of Functions</i> by David Lippman and Melonie
+Rasmussen, available to read free online at http://www.opentextbookstore.com/precalc/ .
+```
+
+
+<!-- Page 2 -->
+```html
+MAT 165 Notes
+Chapter 10: Further Applications of Trigonometry
+Section 10.1-10.2 Non-Right Triangles: Laws of Sines and Cosines
+Although right triangles allow us to solve many applications, it is more common to find scenarios where the triangle
+we are interested in does not have a right angle. In this section we will solve non-right triangles for missing angles
+and sides using trigonometric formulas called the Law of Sines and the Law of Cosines.
+(Section 10.1) Law of Sines
+Law of Sines
+Given a triangle with angles and sides opposite labeled as shown, the ratio of sine of
+angle to length of the opposite side will always be equal, or, symbolically,
+$$\frac{sin(A)}{a} = \frac{sin(B)}{b} = \frac{sin(C)}{c}$$
+
+Examples:
+1. Sketch a triangle \(\triangle ABC\) with \(\angle B = 29^\circ\), \(\angle C = 51^\circ\) and side \(b = 44\). Find the missing information.
+<details><summary>Solution</summary>
+$$ \angle A = 180^\circ - 29^\circ - 51^\circ = 100^\circ$$
+$$ \frac{sin B}{b} = \frac{sin A}{a}$$
+$$ \frac{sin 29^\circ}{44} = \frac{sin 100^\circ}{a}$$
+Cross multiply
+$$ a \cdot sin(29^\circ) = 44 \cdot sin(100^\circ)$$
+$$ \frac{a \cdot sin(29^\circ)}{sin(29^\circ)} = \frac{44 \cdot sin(100^\circ)}{sin(29^\circ)} \approx 89.38$$
+$$ \frac{sin B}{b} = \frac{sin C}{c}$$
+$$ \frac{sin 29^\circ}{44} = \frac{sin 51^\circ}{c}$$
+$$ c \cdot sin(29^\circ) = 44 \cdot sin(51^\circ)$$
+$$ \frac{c \cdot sin(29^\circ)}{sin(29^\circ)} = \frac{44 \cdot sin(51^\circ)}{sin(29^\circ)}$$
+$$ c \approx 70.53$$
+</details>
+2. To find the distance across a river, a surveyor chooses points A and B, which are 200ft apart on one side of the river. She then chooses a reference point C on the opposite side of the river and finds that \(\angle BAC \approx 82^\circ\) and \(\angle ABC \approx 52^\circ\). Approximate the distance from A to C.
+<details><summary>Solution</summary>
+$$ \angle C = 180^\circ - 82^\circ - 52^\circ = 46^\circ$$
+$$ \frac{sin C}{c} = \frac{sin B}{b}$$
+$$ \frac{sin 46^\circ}{200} = \frac{sin 52^\circ}{b}$$
+$$ b \cdot sin(46^\circ) = 200 \cdot sin(52^\circ)$$
+$$ b = \frac{200 \cdot sin(52^\circ)}{sin(46^\circ)} \approx 219.09 \ ft$$
+</details>
+These notes are based on the textbook *Precalculus An Investigation of Functions* by David Lippman and Melonie Rasmussen, available to read free online at http://www.opentextbookstore.com/precalc/ .
+```
+
+
+<!-- Page 3 -->
+```html
+MAT 165 Notes
+Chapter 10: Further Applications of Trigonometry
+Law of Sines: The Ambiguous Case ("SSA")
+In Examples 1 & 2 we saw that we can solve a triangle for missing information when we know two angles and the
+non-included side (“AAS” or “SAA"), and when we know two angles and the included side (“ASA”). These two
+cases always result in a unique triangle.
+We can also use the Law of Sines when we are given two sides and a non-included angle (“SSA”). However, in this
+case sometimes 0, 1, or 2 triangles can result. Hence "SSA" is called the ambiguous case.
+Examples:
+3. Solve for all possible triangles \(\triangle ABC\) that satisfy the given conditions: \(a = 30\), \(c = 40\), \(\angle A = 37°\)
+$$\frac{sin A}{a} = \frac{sin C}{c} \rightarrow \frac{sin 37°}{30} = \frac{sin C}{40} \rightarrow \frac{40sin 37°}{30} = \frac{30sin C}{30}$$
+$$sin C = \frac{40 sin 37°}{30} \approx .80$$
+$$C_1 = sin^{-1} (\frac{40 sin 37°}{30}) \approx 53.36°$$
+$$C_2 = 180°-C_1 \approx 126.64°$$
+Triangle 1:
+$$\begin{array}{|l|l|}
+\hline
+a_1 = 30 & A_1 = 37° \\
+\hline
+b_1 = 49.85 & B_1 = 89.64° \\
+\hline
+c_1 = 40 & C_1 = 53.36° \\
+\hline
+\end{array}$$
+
+Triangle 2:
+$$\begin{array}{|l|l|}
+\hline
+a_2 = 30 & A_2 = 37° \\
+\hline
+b_2 = 14.04 & B_2 = 16.36° \\
+\hline
+c_2 = 40 & C_2 = 126.64° \\
+\hline
+\end{array}$$
+
+$$B_1 = 180°-37°-53.36° = 89.64°$$
+$$B_2 = 180°-37°-126.64° = 16.36°$$
+
+$$\frac{sin 37°}{30} = \frac{sin 89.64°}{b_1}$$
+$$b_1 sin(37°) = 30 sin (89.64°)$$
+$$b_1 = \frac{30 sin(89.64°)}{sin(37°)}$$
+$$b_1 \approx 49.85$$
+
+$$\frac{sin 37°}{30} = \frac{sin 16.36°}{b_2}$$
+$$b_2 = \frac{30 sin(16.36°)}{sin(37°)}$$
+$$b_2 \approx 14.04$$
+
+These notes are based on the textbook Precalculus An Investigation of Functions by David Lippman and Melonie
+Rasmussen, available to read free online at http://www.opentextbookstore.com/precalc/ .
+```
+
+
+<!-- Page 4 -->
+```html
+MAT 165 Notes Chapter 10: Further Applications of Trigonometry
+
+4. Solve for all possible triangles \(\angle ABC\) that satisfy the given conditions: \(a = 100, b = 80, \angle A = 135^\circ\)
+$$\frac{sin A}{a} = \frac{sin B}{b} \rightarrow \frac{sin 135^\circ}{100} = \frac{sin B}{80} \rightarrow sin B = \frac{80 sin(135^\circ)}{100} \approx .57$$
+$$B_1 = sin^{-1}(\frac{80 sin(135^\circ)}{100}) \approx 34.45^\circ$$
+$$B_2 = 180^\circ - B_1 \approx 145.55^\circ$$
+A triangle cannot have more than one obtuse angle, so \(B_2\) does not work.
+$$(A + B_2 = 135^\circ + 145.55^\circ > 180^\circ)$$
+
+One Triangle:
+$$ a = 100 \qquad A = 135^\circ$$
+$$ b = 80 \qquad B = 34.45^\circ $$
+$$ c = 25.89 \qquad C = 10.55^\circ$$
+$$ \angle C = 180^\circ - 135^\circ - 34.45^\circ = 10.55^\circ$$
+$$\frac{sin 135^\circ}{100} = \frac{sin 10.55^\circ}{c}$$
+$$c \cdot sin(135^\circ) = 100 \cdot sin(10.55^\circ)$$
+$$c = \frac{100 \cdot sin(10.55^\circ)}{sin(135^\circ)} \approx 25.89$$
+<details><summary>Solution</summary>
+</details>
+5. Solve for all possible triangles \(\angle ABC\) that satisfy the given conditions: \(b = 50, c = 100, \angle B = 50^\circ\)
+
+$$\frac{sin 50^\circ}{50} = \frac{sin C}{100} \rightarrow sin C = 2sin(50^\circ) \approx 1.53$$
+Since \(-1 \leq sin C \leq 1\) for all angles, \(sin C = 1.53\) has no solution.
+No Triangle Possible
+<details><summary>Solution</summary>
+</details>
+```
+
+
+<!-- Page 5 -->
+```html
+MAT 165 Notes
+Chapter 10: Further Applications of Trigonometry
+(Section 10.2) Law of Cosines
+
+Law of Cosines
+
+Given a triangle with angles and opposite sides labeled as shown,
+$$a^2 = b^2 + c^2 - 2bc \cos A$$
+$$b^2 = a^2 + c^2 - 2ac \cos B$$
+$$c^2 = a^2 + b^2 - 2ab \cos C$$
+
+Examples: Notice: If \(C=90^\circ\), \(\cos 90^\circ = 0\), so \(c^2 = a^2 + b^2 - 2ab(0) \rightarrow c^2 = a^2 + b^2\)
+
+6.  Sketch a triangle \(\triangle ABC\) with \(a = 40\), \(b = 12\), \(c = 44\). Find the missing information.
+
+① Find the largest \(\angle\)
+$$c^2 = a^2 + b^2 - 2ab \cos C$$
+$$44^2 = 40^2 + 12^2 - 2(40)(12) \cos C$$
+$$1936 = 1600 + 144 - 960 \cos C$$
+$$1936 = 1744 - 960 \cos C$$
+$$192 = -960 \cos C$$
+$$-0.2 = \cos C \rightarrow C = \cos^{-1}(-0.2) \approx 101.54^\circ$$
+<details><summary>Solution</summary>
+$$c^2 = a^2 + b^2 - 2ab \cos C$$
+$$44^2 = 40^2 + 12^2 - 2(40)(12) \cos C$$
+$$1936 = 1600 + 144 - 960 \cos C$$
+$$1936 = 1744 - 960 \cos C$$
+$$192 = -960 \cos C$$
+$$-0.2 = \cos C \rightarrow C = \cos^{-1}(-0.2) \approx 101.54^\circ$$
+</details>
+
+② Find a 2nd \(\angle\) using either Law of Cosines OR Law of Sines (Ambiguous case).
+$$\frac{40}{\sin A} = \frac{44}{\sin (101.536959^\circ)}$$
+$$\sin A = \frac{40 \sin (101.536959^\circ)}{44}$$
+$$A = \sin^{-1} \left( \frac{40 \sin (101.536959^\circ)}{44} \right) \approx 62.96^\circ$$
+<details><summary>Solution</summary>
+$$\frac{40}{\sin A} = \frac{44}{\sin (101.536959^\circ)}$$
+$$\sin A = \frac{40 \sin (101.536959^\circ)}{44}$$
+$$A = \sin^{-1} \left( \frac{40 \sin (101.536959^\circ)}{44} \right) \approx 62.96^\circ$$
+</details>
+
+③ Find the 3rd \(\angle\) by subtracting from \(180^\circ\).
+$$B = 180^\circ - 101.54^\circ - 62.96^\circ = 15.5^\circ$$
+<details><summary>Solution</summary>
+$$B = 180^\circ - 101.54^\circ - 62.96^\circ = 15.5^\circ$$
+</details>
+
+These notes are based on the textbook Precalculus An Investigation of Functions by David Lippman and Melonie Rasmussen, available to read free online at http://www.opentextbookstore.com/precalc/.
+```
+
+
+<!-- Page 6 -->
+```html
+MAT 165 Notes Chapter 10: Further Applications of Trigonometry
+7. A car travels along a straight road, heading east for 1 h, then traveling for 30 min on another road that leads northeast. If the car has maintained a constant speed of 40 mi/h, how far is it from its starting position?
+\( distance = (rate)(time) \)
+
+Law of Cosines:
+$$ c^2 = a^2 + b^2 - 2ab \cos C $$
+$$ \sqrt{c^2} = \sqrt{40^2 + 20^2 - 2(40)(20)\cos 135^\circ} $$
+$$ C = \sqrt{40^2 + 20^2 - 2(40)(20)\cos 135^\circ} $$
+$$ C \approx 55.96 \text{ mi} $$
+
+<details><summary>Solution</summary>
+    $$d = \left(40 \frac{mi}{h}\right) (1h) = 40 \text{ mi}$$
+    $$d = \left(40 \frac{mi}{h}\right) \left(\frac{1}{2} h\right) = 20 \text{ mi}$$
+</details>
+
+8. A 184 ft tower is located on the side of a mountain that is inclined \(31^\circ\) to the horizontal. A guy wire is to be attached to the top of the tower and anchored at a point 60 ft downhill from the base of the tower. Find the shortest length of wire needed.
+$$ C^2 = 60^2 + 184^2 - 2(60)(184) \cos 121^\circ $$
+$$ C = \sqrt{60^2 + 184^2 - 2(60)(184) \cos 121^\circ} $$
+$$ C \approx 220.97 \text{ ft} $$
+```
+
+    <hr>
+    <p style="font-size: 0.9em; color: #666; font-style: italic;">
+        ✨ Converted to accessible LaTeX by MOSH Toolkit with Gemini AI
+    </p>
+
+<hr style="margin-top: 30px;">
+<div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4b3190; font-size: 0.9em;">
+    <strong>📜 Source Attribution</strong><br>
+    Original material: <em>Chapter 10 Note Packet (Key) (2).pdf</em><br>
+    Converted to accessible LaTeX: 2026-02-15 using MOSH Toolkit<br>
+    <br>
+    <em>This derivative work is shared under the same license as the original.</em>
+</div>
+</body>
+</html>

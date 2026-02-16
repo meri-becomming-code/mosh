@@ -183,10 +183,11 @@ def batch_convert_folder(client, folder_path: str, output_file: str):
             all_latex.append(f"\n<!-- FAILED: {img_path.name} -->\n")
     
     # Save combined output
+    html_content = "".join(all_latex)
+    full_html = create_html_wrapper("Canvas Math Export", html_content)
+    
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("# Canvas Math Content - Converted by Gemini\n\n")
-        f.write("<!-- Copy this entire file into Canvas HTML editor, or copy sections as needed -->\n\n")
-        f.write("".join(all_latex))
+        f.write(full_html)
     
     print(f"\n✅ Conversion complete!")
     print(f"   ✓ Success: {stats['success']}")
@@ -194,10 +195,35 @@ def batch_convert_folder(client, folder_path: str, output_file: str):
         print(f"   ✗ Failed: {stats['failed']}")
     print(f"\n📄 Output saved to: {output_file}")
     print(f"\n🎯 Next steps:")
-    print(f"   1. Open {output_file}")
-    print(f"   2. Review the LaTeX (check for accuracy)")
-    print(f"   3. Copy into Canvas HTML editor")
-    print(f"   4. Save and preview in Canvas")
+    print(f"   1. Open {output_file} in your browser to PREVIEW")
+    print(f"   2. Copy the content (minus the HTML boilerplate) into Canvas")
+    print(f"      OR just copy the equations you need.")
+
+def create_html_wrapper(title, content):
+    """Creates a previewable HTML file with MathJax."""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>
+        body {{ font-family: sans-serif; max-width: 800px; margin: 2rem auto; line-height: 1.6; padding: 1rem; }}
+        h1 {{ color: #4b3190; border-bottom: 2px solid #4b3190; }}
+        details {{ background: #f8f9fa; padding: 1rem; border-left: 4px solid #4b3190; margin: 1rem 0; }}
+        summary {{ cursor: pointer; font-weight: bold; color: #4b3190; }}
+    </style>
+    <!-- MathJax for local preview -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1>{title}</h1>
+    <p><em>Copy the content below into Canvas HTML Editor</em></p>
+    <hr>
+    {content}
+</body>
+</html>"""
 
 def interactive_single_image(client, image_path: str):
     """Converts a single image with interactive review."""

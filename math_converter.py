@@ -422,6 +422,9 @@ def create_canvas_html(title, content):
             margin: 20px 0;
         }}
     </style>
+    <!-- MathJax for local preview (Canvas has this built-in) -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
 <body>
     <h1>{title}</h1>
