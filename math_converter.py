@@ -26,6 +26,37 @@ RULES:
 
 Return ready-to-paste HTML/LaTeX for Canvas."""
 
+import time
+
+def generate_content_with_retry(client, model, contents, log_func=None):
+    """
+    Wraps Gemini generation with exponential backoff for 429 errors.
+    """
+    max_retries = 5
+    base_delay = 4  # Start with 4 seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Proactive delay to avoid hitting rate limits
+            if attempt == 0:
+                time.sleep(1.5)
+            
+            return client.models.generate_content(
+                model=model,
+                contents=contents
+            )
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                wait_time = base_delay * (2 ** attempt) # 4, 8, 16, 32, 64
+                if log_func:
+                    log_func(f"   ⏳ Rate Limit Hit. Pausing for {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                raise e
+    
+    raise Exception("API Quota Exceeded. Please try again later.")
+
 def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
     """
     Convert a PDF with handwritten math to Canvas LaTeX.
@@ -68,9 +99,12 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
                 log_func(f"   [{i}/{len(images)}] Converting page {i}...")
             
             img = Image.open(img_path)
-            response = client.models.generate_content(
+            img = Image.open(img_path)
+            response = generate_content_with_retry(
+                client=client,
                 model='gemini-2.0-flash',
-                contents=[MATH_PROMPT, img]
+                contents=[MATH_PROMPT, img],
+                log_func=log_func
             )
             
             if response.text:
@@ -119,9 +153,12 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
             log_func(f"📸 Converting image: {Path(image_path).name}")
         
         img = Image.open(image_path)
-        response = client.models.generate_content(
+        img = Image.open(image_path)
+        response = generate_content_with_retry(
+            client=client,
             model='gemini-2.0-flash',
-            contents=[MATH_PROMPT, img]
+            contents=[MATH_PROMPT, img],
+            log_func=log_func
         )
         
         if response.text:
@@ -175,9 +212,12 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                 
                 # Convert with Gemini
                 img = Image.open(temp_img)
-                response = client.models.generate_content(
+                img = Image.open(temp_img)
+                response = generate_content_with_retry(
+                    client=client,
                     model='gemini-2.0-flash',
-                    contents=[MATH_PROMPT, img]
+                    contents=[MATH_PROMPT, img],
+                    log_func=log_func
                 )
                 
                 if response.text:
