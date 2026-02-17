@@ -159,10 +159,10 @@ class ToolkitGUI:
 
         # --- State ---
         self.config = self._load_config()
-        self.target_dir = self.config.get("target_dir", os.path.join(os.path.expanduser("~"), "Desktop")) # Default to Desktop
+        self.target_dir = self.config.get("target_dir", os.path.join(os.path.expanduser("~"), "Desktop"))
         self.api_key = ""
         self.is_running = False
-        self.deferred_review = False # [NEW] Flag for post-task review
+        self.deferred_review = False
         self.current_dialog = None
         
         # UI State
@@ -170,14 +170,14 @@ class ToolkitGUI:
         self.main_content_frame = None
         self.progress_var = tk.DoubleVar(value=0)
         
+        # --- Threading Queues (Initialize BEFORE UI build) ---
+        self.log_queue = queue.Queue()
+        self.gui_handler = ThreadSafeGuiHandler(root, self.log_queue)
+        
         # Check instructions
         if self.config.get("show_instructions", True):
              self.root.after(500, self._show_instructions)
         
-        # --- Threading Queues ---
-        self.log_queue = queue.Queue()
-        self.gui_handler = ThreadSafeGuiHandler(root, self.log_queue)
-
         # --- UI Layout ---
         self._build_styles()
         self._build_menu()
@@ -536,7 +536,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self._switch_view("dashboard")
         
         # Start background network check
-        logging.info("Starting network check...")
+        print("Starting network check...")
         threading.Thread(target=self._check_network_status, daemon=True).start()
 
     def _check_network_status(self):
@@ -1528,25 +1528,34 @@ Website: meri-becomming-code.github.io/mosh
 
 
 
-    def _run_task_in_thread(self, task_func, task_name):
-        if self.is_running: return
+    def _run_task_in_thread(self, task_func, task_name="Task"):
+        """Runs a task in a background thread with safety checks."""
+        if self.is_running:
+            messagebox.showwarning("Busy", "Mosh is already working on a task!")
+            return
+
+        self.is_running = True
+        self.progress_bar.start(10)
+        self.lbl_status_text.config(text=f"Running {task_name}...", fg="blue")
         self._disable_buttons()
-        # [NEW] Sync API Key to handler before starting
-        self.gui_handler.api_key = self.config.get("api_key", "")
         
-        # Sync target_dir from UI only if the widget exists (Course View)
-        if hasattr(self, 'lbl_dir') and self.lbl_dir.winfo_exists():
-            self.target_dir = self.lbl_dir.get().strip()
-        
+        # Check if handler exists (Safety for early calls)
+        if not hasattr(self, 'gui_handler'):
+             print("CRITICAL: GUI Handler missing!")
+             return
+
         def worker():
-            self.gui_handler.log(f"--- Starting {task_name} ---")
-            self.gui_handler.log(f"[DEBUG] Target: {self.target_dir}")
             try:
+                self.gui_handler.log(f"\n--- Started: {task_name} ---")
                 task_func()
-                self.gui_handler.log(f"--- {task_name} Completed ---")
             except Exception as e:
-                self.gui_handler.log(f"[ERROR] {e}")
+                self.gui_handler.log(f"\n[CRITICAL ERROR] {task_name} Failed: {e}")
+                err_msg = f"Error in {task_name}:\n{str(e)}"
+                self.root.after(0, lambda: messagebox.showerror("Error", err_msg))
             finally:
+                self.is_running = False
+                self.root.after(0, self.progress_bar.stop)
+                self.root.after(0, lambda: self.lbl_status_text.config(text="Ready", fg="gray"))
                 self.root.after(0, self._enable_buttons)
 
         thread = threading.Thread(target=worker, daemon=True)
@@ -2683,14 +2692,14 @@ YOUR WORKFLOW:
         try:
             while True:
                 msg = self.log_queue.get_nowait()
+                # Check if UI is ready. If not, print to console as fallback.
                 if hasattr(self, 'txt_log') and self.txt_log.winfo_exists():
                     self.txt_log.config(state='normal')
                     self.txt_log.insert(tk.END, str(msg) + "\n")
                     self.txt_log.see(tk.END)
                     self.txt_log.config(state='disabled')
                 else:
-                    # Fallback if UI not ready
-                    print(msg)
+                    print(f"[PENDING LOG] {msg}")
         except queue.Empty:
             pass
         finally:
