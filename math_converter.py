@@ -342,7 +342,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None)
     output_dir = export_path / "converted_math_pages"
     output_dir.mkdir(exist_ok=True)
     
-    html_files = []
+    conversion_results = [] # List of (source_path, output_path)
     
     for pdf_path in safe_pdf_paths:
         pdf = Path(pdf_path)
@@ -368,17 +368,17 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None)
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_or_error)
             
-            html_files.append(str(html_path))
+            conversion_results.append((str(pdf_path), str(html_path)))
             
             if log_func:
                 log_func(f"   💾 Saved: {html_filename}")
     
-    if html_files:
+    if conversion_results:
         if log_func:
-            log_func(f"\n✅ Converted {len(html_files)} PDFs successfully!")
+            log_func(f"\n✅ Converted {len(conversion_results)} PDFs successfully!")
             log_func(f"📁 Output location: {output_dir}")
             log_func(f"\n⚖️  REMEMBER: Review LICENSING_REPORT.md before publishing!")
-        return True, html_files
+        return True, conversion_results
     else:
         return False, "No PDFs were successfully converted"
 

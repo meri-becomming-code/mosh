@@ -36,6 +36,8 @@ def build():
     args.append('--hidden-import=run_fixer')
     args.append('--hidden-import=run_audit')
     args.append('--hidden-import=canvas_utils')
+    args.append('--hidden-import=converter_utils')  # [NEW]
+    args.append('--hidden-import=math_converter')   # [NEW]
     args.append('--hidden-import=requests')
     args.append('--hidden-import=jeanie_ai')
     args.append('--hidden-import=google')

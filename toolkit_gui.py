@@ -2735,6 +2735,57 @@ YOUR WORKFLOW:
         self.txt_log.pack(fill="both", expand=True, pady=5)
         self.root.after(100, self._sync_logs_to_view)
 
+    def _process_generated_pages(self, file_pairs):
+        """
+        Unified workflow for processing newly generated properties/HTML files.
+        file_pairs: List of (source_path, output_path) tuples.
+        """
+        if not file_pairs: return
+
+        # 1. Auto-Fixer (Structural)
+        self.gui_handler.log(f"   [1/3] Running Auto-Fixer (Headings, Tables)...")
+        total_fixes = 0
+        for source, output in file_pairs:
+            success, fixes = interactive_fixer.run_auto_fixer(output, self.gui_handler)
+            if success and fixes: total_fixes += len(fixes)
+        
+        # 2. Guided Interactive Review
+        if messagebox.askyesno("Review Needed", f"Generated {len(file_pairs)} pages.\n\nWould you like to run the Interactive Review now to check for issues?"):
+            self.gui_handler.log(f"   [2/3] Launching Guided Review...")
+            for source, output in file_pairs:
+                interactive_fixer.scan_and_fix_file(output, self.gui_handler, self.target_dir)
+
+        # 3. Validation & Sync
+        count_updated = 0
+        for source, output in file_pairs:
+            # Update Document Links
+            converter_utils.update_doc_links_to_html(
+                self.target_dir,
+                os.path.basename(source),
+                os.path.basename(output),
+                log_func=self.gui_handler.log
+            )
+
+            # Archive Original
+            converter_utils.archive_source_file(source)
+
+            # Optional: Upload to Canvas
+            api = self._get_canvas_api()
+            if api:
+                msg = f"Ready to upload '{os.path.basename(output)}' to Canvas?"
+                if self.gui_handler.confirm(msg):
+                    self._upload_page_to_canvas(output, source, api, auto_confirm_links=True)
+                    count_updated += 1
+
+        self.gui_handler.log(f"✅ Workflow Complete. {count_updated} pages uploaded to Canvas.")
+        
+        # Open output folder
+        if file_pairs:
+            folder = os.path.dirname(file_pairs[0][1])
+            try: os.startfile(folder)
+            except: pass
+
+
     def _convert_math_canvas_export(self):
         """Processes an entire IMSCC course package for math content."""
         api_key = self.config.get("api_key", "").strip()
@@ -2782,21 +2833,13 @@ YOUR WORKFLOW:
                 )
                 
                 if success:
+                    # Result is now a list of (source, dest) tuples
+                    file_pairs = result 
                     log(f"\n✨ SUCCESS! Converted math in your course project.")
                     
-                    def on_success():
-                        self.progress_var.set(100)
-                        msg = (
-                            f"✨ Bulk Math Conversion Complete!\n\n"
-                            f"Output: {self.target_dir}/converted_math_pages/\n\n"
-                            "Next: Review pages and paste into Canvas."
-                        )
-                        messagebox.showinfo("Success", msg)
-                        try:
-                            os.startfile(os.path.join(self.target_dir, "converted_math_pages"))
-                        except: pass
+                    self.root.after(0, lambda: self._process_generated_pages(file_pairs))
+                    self.progress_var.set(100)
                     
-                    self.root.after(0, on_success)
                 else:
                     log(f"❌ Error: {result}")
                     self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
@@ -2866,13 +2909,16 @@ YOUR WORKFLOW:
             
             if success:
                 # Save output
-                output_path = Path(file_path).with_suffix('.html')
+                output_path = str(Path(file_path).with_suffix('.html'))
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(result)
                 
                 self.gui_handler.log(f"\n✨ SUCCESS! Saved to: {output_path}")
-                msg = f"✨ Gemini converted your math to LaTeX!\n\nSaved as:\n{output_path}\n\nOpen this file and paste into Canvas."
-                self.root.after(0, lambda: messagebox.showinfo("Conversion Complete! 🎉", msg))
+                
+                # Use the unified workflow
+                file_pairs = [(file_path, output_path)]
+                self.root.after(0, lambda: self._process_generated_pages(file_pairs))
+
             else:
                 self.gui_handler.log(f"\n❌ Error: {result}")
                 self.root.after(0, lambda: messagebox.showerror("Conversion Failed", f"Error:\n{result}"))
