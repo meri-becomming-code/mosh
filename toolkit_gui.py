@@ -27,10 +27,7 @@ import queue
 import json
 import darkdetect
 import webbrowser
-import queue
-import json
-import darkdetect
-import webbrowser
+from urllib.parse import urlparse
 import converter_utils
 import urllib.request
 import zipfile
