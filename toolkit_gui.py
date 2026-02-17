@@ -1670,6 +1670,20 @@ Website: meri-becomming-code.github.io/mosh
             self.gui_handler.log(f"\n--- Audit Complete. Course Health Score: {avg_score}% ---")
             self.gui_handler.log(f"Issues found in {len(all_issues)} files. Report saved to {out_file}")
 
+            # [NEW] Visual Report
+            try:
+                import audit_reporter
+                import webbrowser
+                # report_path = audit_reporter.generate_report(all_issues, avg_score, self.target_dir) # Original thought
+                # Better: Pass full list including perfect files for accurate stats?
+                # For now, let's just pass what we have.
+                report_path = audit_reporter.generate_report(all_issues, avg_score, self.target_dir)
+                
+                self.gui_handler.log(f"\n✨ Visual Report Ready: {report_path}")
+                self.root.after(0, lambda: webbrowser.open(report_path))
+            except Exception as e:
+                self.gui_handler.log(f"[Warning] Could not generate visual report: {e}")
+
         self._run_task_in_thread(task, "Audit")
 
     # --- NEW METHODS ---
