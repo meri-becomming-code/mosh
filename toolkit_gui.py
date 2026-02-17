@@ -2,6 +2,7 @@
 # Released freely under the GNU General Public License v3.0. USE AT YOUR OWN RISK.
 
 import tkinter as tk
+VERSION = "0.9.5"
 from tkinter import filedialog, messagebox, simpledialog, scrolledtext, Toplevel, Menu, ttk
 from PIL import Image, ImageTk
 import sys
