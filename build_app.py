@@ -19,7 +19,7 @@ def build():
 
     args = [
         'toolkit_gui.py',
-        '--name=MOSH_ADA_Toolkit_v1.0.0_RC11',
+        '--name=MOSH_ADA_Toolkit_v1.0.0_RC12',
         '--noconfirm',
         '--onefile',
         '--windowed',  # No console window

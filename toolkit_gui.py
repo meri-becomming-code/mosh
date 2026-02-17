@@ -974,7 +974,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
     def _build_math_view(self, content):
         """Dedicated view for AI-powered Math conversion."""
         tk.Label(content, text="📐 Math Remediation Suite", font=("Segoe UI", 24, "bold"), fg="#1B5E20", bg="white").pack(anchor="w", pady=(0, 10))
-        tk.Label(content, text="Gemini-powered conversion of math PDFs and Images to accessible Canvas LaTeX.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
+        tk.Label(content, text="Gemini-powered conversion of math PDFs, Word docs, and Images to accessible Canvas LaTeX.", font=("Segoe UI", 11), fg="#6B7280", bg="white").pack(anchor="w", pady=(0, 30))
 
         # Setup Link Helper
         setup_help_frame = tk.Frame(content, bg="#F0F9FF", padx=15, pady=10)
@@ -990,7 +990,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         tk.Label(self.math_disclaimer, text="✨ MOSH Magic: AI Math",  font=("Segoe UI", 11, "bold"), bg="#E8F5E9", fg="#2E7D32").pack(anchor="w")
         math_desc = (
             "This tool reads handwritten solutions and equations, then converts them to accessible Canvas LaTeX. "
-            "It turns unreadable PDFs into searchable, screen-reader compatible content!"
+            "It turns unreadable PDFs and Word docs into searchable, screen-reader compatible content!"
         )
         tk.Label(self.math_disclaimer, text=math_desc, wraplength=550, bg="#E8F5E9", fg="#1B5E20", justify="left", font=("Segoe UI", 10)).pack(pady=(5,0))
         
@@ -998,7 +998,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         frame_math.pack(fill="x", pady=(0, 20))
         
         ttk.Label(frame_math, text="Option A: Full Course Remediation", font=("bold")).pack(anchor="w", pady=(0, 5))
-        self.btn_math_canvas = ttk.Button(frame_math, text="📚 Convert Math in Canvas Course Export", 
+        self.btn_math_canvas = ttk.Button(frame_math, text="📚 Convert Math in Canvas Course Export (PDF & Word)", 
                                            command=self._convert_math_canvas_export, style="Action.TButton")
         self.btn_math_canvas.pack(fill="x", pady=(0, 15))
         

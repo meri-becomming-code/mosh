@@ -345,51 +345,45 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None)
         try:
             p = Path(file_path)
             ext = p.suffix.lower()
-            if log_func:
-                log_func(f"   ► Converting: {p.name}...")
-
+            
             if ext == '.pdf':
                 success, html_or_error = convert_pdf_to_latex(api_key, str(p), log_func, poppler_path=poppler_path)
             elif ext == '.docx':
                 success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
             else:
                 continue
-            if log_func:
-                log_func(f"   ► Converting: {pdf.name}...")
 
-            success, html_or_error = convert_pdf_to_latex(api_key, str(pdf), log_func, poppler_path=poppler_path)
-            
             if success:
                 # Add attribution footer if needed
-                license_info = next((f for f in safe_files + risky_files if f['path'] == pdf_path), None)
+                license_info = next((f for f in safe_files + risky_files if f['path'] == file_path), None)
                 
                 if license_info and license_info['requires_attribution']:
                     import attribution_checker
                     footer = attribution_checker.generate_attribution_footer(
-                        pdf.name,
+                        p.name,
                         license_info['license']
                     )
                     # Insert footer before </body>
                     html_or_error = html_or_error.replace('</body>', f'{footer}</body>')
                 
-                # Save HTML file IN THE SAME FOLDER as the PDF (for link syncing)
-                html_filename = f"{pdf.stem}.html"
-                html_path = pdf.parent / html_filename
+                # Save HTML file IN THE SAME FOLDER as the source (for link syncing)
+                html_filename = f"{p.stem}.html"
+                html_path = p.parent / html_filename
                 
                 with open(html_path, 'w', encoding='utf-8') as f:
                     f.write(html_or_error)
                 
-                conversion_results.append((str(pdf_path), str(html_path)))
+                conversion_results.append((str(file_path), str(html_path)))
                 
                 if log_func:
                     log_func(f"   ✅ Saved: {html_filename}")
             else:
                  if log_func:
-                    log_func(f"   ⚠️ Skiping file due to error: {html_or_error}")
+                    log_func(f"   ⚠️ Skipping file due to error: {html_or_error}")
         
         except Exception as e_file:
             if log_func:
-                log_func(f"   ❌ Oops! Problem with {Path(pdf_path).name}: {e_file}")
+                log_func(f"   ❌ Oops! Problem with {Path(file_path).name}: {e_file}")
             continue
     
     if conversion_results:
