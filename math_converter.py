@@ -180,7 +180,6 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
             log_func(f"📸 Converting image: {Path(image_path).name}")
         
         img = Image.open(image_path)
-        img = Image.open(image_path)
         response = generate_content_with_retry(
             client=client,
             model='gemini-2.0-flash',
@@ -239,7 +238,6 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                     f.write(image_blob)
                 
                 # Convert with Gemini
-                img = Image.open(temp_img)
                 img = Image.open(temp_img)
                 response = generate_content_with_retry(
                     client=client,

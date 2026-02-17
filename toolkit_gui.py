@@ -2853,78 +2853,93 @@ YOUR WORKFLOW:
 
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
-        api_key = self.config.get("api_key", "").strip()
-        if not api_key:
-            messagebox.showwarning("No Gemini API Key",
-                                  "You need a Gemini API key for math conversion.\n\n"
-                                  "Click '🔗 Connect to My Canvas Playground' and add your key in Step 4.")
-            return
-
-        # [NEW] Proactive Poppler Check (Only for PDFs)
-        if file_type == "pdf" and os.name == "nt" and not self.config.get("poppler_path"):
-            if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nWould you like to run the 'Guided Auto-Setup' now? It doesn't require administrator password."):
-                self._auto_setup_poppler()
-                if not self.config.get("poppler_path"):
-                    return
-        
-        # File picker based on type
-        if file_type == "pdf":
-            file_path = filedialog.askopenfilename(
-                title="Select PDF with Math",
-                filetypes=[("PDF Files", "*.pdf")]
-            )
-        elif file_type == "docx":
-            file_path = filedialog.askopenfilename(
-                title="Select Word Document",
-                filetypes=[("Word Files", "*.docx")]
-            )
-        elif file_type == "images":
-            file_path = filedialog.askopenfilename(
-                title="Select Image",
-                filetypes=[("Images", "*.png *.jpg *.jpeg *.gif")]
-            )
-        else:
-            return
-        
-        if not file_path:
-            return
-        
-        def task():
-            import math_converter
-            self.gui_handler.log(f"\n=== GEMINI MATH CONVERTER ({file_type.upper()}) ===")
+        try:
+            self.gui_handler.log(f"[DEBUG] Math button clicked for type: {file_type}")
             
+            # Check if busy
+            if self.is_running:
+                messagebox.showwarning("Busy", "A task is currently running. Please wait.")
+                return
+
+            api_key = self.config.get("api_key", "").strip()
+            if not api_key:
+                messagebox.showwarning("No Gemini API Key",
+                                      "You need a Gemini API key for math conversion.\n\n"
+                                      "Click '🔗 Connect to My Canvas Playground' and add your key in Step 4.")
+                return
+
+            # [NEW] Proactive Poppler Check (Only for PDFs)
+            if file_type == "pdf" and os.name == "nt" and not self.config.get("poppler_path"):
+                if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nWould you like to run the 'Guided Auto-Setup' now? It doesn't require administrator password."):
+                    self._auto_setup_poppler()
+                    if not self.config.get("poppler_path"):
+                        return
+            
+            # File picker based on type
+            file_path = None
             if file_type == "pdf":
-                success, result = math_converter.convert_pdf_to_latex(
-                    api_key, 
-                    file_path, 
-                    self.gui_handler.log,
-                    poppler_path=self.config.get("poppler_path", "")
+                file_path = filedialog.askopenfilename(
+                    title="Select PDF with Math",
+                    filetypes=[("PDF Files", "*.pdf")]
                 )
             elif file_type == "docx":
-                success, result = math_converter.convert_word_to_latex(api_key, file_path, self.gui_handler.log)
+                file_path = filedialog.askopenfilename(
+                    title="Select Word Document",
+                    filetypes=[("Word Files", "*.docx")]
+                )
             elif file_type == "images":
-                success, result = math_converter.convert_image_to_latex(api_key, file_path, self.gui_handler.log)
+                file_path = filedialog.askopenfilename(
+                    title="Select Image",
+                    filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp"), ("All Files", "*.*")] 
+                )
             else:
-                success = False
-                result = "Unknown file type"
+                self.gui_handler.log(f"[ERROR] Unknown file type requested: {file_type}")
+                return
             
-            if success:
-                # Save output
-                output_path = str(Path(file_path).with_suffix('.html'))
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(result)
+            if not file_path:
+                self.gui_handler.log("[DEBUG] No file selected (cancelled).")
+                return
+            
+            def task():
+                import math_converter
+                self.gui_handler.log(f"\n=== GEMINI MATH CONVERTER ({file_type.upper()}) ===")
                 
-                self.gui_handler.log(f"\n✨ SUCCESS! Saved to: {output_path}")
+                if file_type == "pdf":
+                    success, result = math_converter.convert_pdf_to_latex(
+                        api_key, 
+                        file_path, 
+                        self.gui_handler.log,
+                        poppler_path=self.config.get("poppler_path", "")
+                    )
+                elif file_type == "docx":
+                    success, result = math_converter.convert_word_to_latex(api_key, file_path, self.gui_handler.log)
+                elif file_type == "images":
+                    success, result = math_converter.convert_image_to_latex(api_key, file_path, self.gui_handler.log)
+                else:
+                    success = False
+                    result = "Unknown file type"
                 
-                # Use the unified workflow
-                file_pairs = [(file_path, output_path)]
-                self.root.after(0, lambda: self._process_generated_pages(file_pairs))
+                if success:
+                    # Save output
+                    output_path = str(Path(file_path).with_suffix('.html'))
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(result)
+                    
+                    self.gui_handler.log(f"\n✨ SUCCESS! Saved to: {output_path}")
+                    
+                    # Use the unified workflow
+                    file_pairs = [(file_path, output_path)]
+                    self.root.after(0, lambda: self._process_generated_pages(file_pairs))
 
-            else:
-                self.gui_handler.log(f"\n❌ Error: {result}")
-                self.root.after(0, lambda: messagebox.showerror("Conversion Failed", f"Error:\n{result}"))
-        
-        self._run_task_in_thread(task, f"Math {file_type.upper()} Conversion")
+                else:
+                    self.gui_handler.log(f"\n❌ Error: {result}")
+                    self.root.after(0, lambda: messagebox.showerror("Conversion Failed", f"Error:\n{result}"))
+            
+            self._run_task_in_thread(task, f"Math {file_type.upper()} Conversion")
+
+        except Exception as e:
+            self.gui_handler.log(f"[CRITICAL ERROR] Button handler failed: {e}")
+            messagebox.showerror("Error", f"Something went wrong:\n{e}")
         
 
 
