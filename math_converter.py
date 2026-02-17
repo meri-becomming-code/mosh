@@ -318,36 +318,42 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None)
             log_func("   Proceeding with conversion, but CHECK LICENSING_REPORT.md")
             log_func("   You are responsible for proper attribution!")
         
-        # Get list of safe PDF files (include risky/UNKNOWN files - teacher's own content)
+        # Get list of safe files (include risky/UNKNOWN files - teacher's own content)
         # Only block PROPRIETARY publisher content
         convertible_files = safe_files + risky_files
-        safe_pdf_paths = [f['path'] for f in convertible_files if f['path'].endswith('.pdf')]
+        safe_file_paths = [f['path'] for f in convertible_files if f['path'].lower().endswith(('.pdf', '.docx'))]
         
-        if not safe_pdf_paths:
-            return False, "No safe PDF files found to convert"
+        if not safe_file_paths:
+            return False, "No safe PDF or Word files found to convert"
             
     except Exception as e:
         if log_func:
             log_func(f"\n⚠️  Could not check licensing: {e}")
             log_func("   Proceeding cautiously - YOU must verify licensing manually!")
-        # Fall back to processing all PDFs
-        safe_pdf_paths = [str(p) for p in web_resources.glob('**/*.pdf')]
+        # Fall back to processing all PDFs and Docx
+        safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf')] + [str(p) for p in web_resources.glob('**/*.docx')]
     
     # STEP 2: Convert safe files
     if log_func:
-        log_func(f"\n🤖 STEP 2: Converting {len(safe_pdf_paths)} PDFs with Gemini AI...")
+        log_func(f"\n🤖 STEP 2: Converting {len(safe_file_paths)} files with Gemini AI...")
     
     client = genai.Client(api_key=api_key)
     
-    # Create output directory - REMOVED to keep files in-place for syncing
-    # output_dir = export_path / "converted_math_pages"
-    # output_dir.mkdir(exist_ok=True)
-    
     conversion_results = [] # List of (source_path, output_path)
     
-    for pdf_path in safe_pdf_paths:
+    for file_path in safe_file_paths:
         try:
-            pdf = Path(pdf_path)
+            p = Path(file_path)
+            ext = p.suffix.lower()
+            if log_func:
+                log_func(f"   ► Converting: {p.name}...")
+
+            if ext == '.pdf':
+                success, html_or_error = convert_pdf_to_latex(api_key, str(p), log_func, poppler_path=poppler_path)
+            elif ext == '.docx':
+                success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
+            else:
+                continue
             if log_func:
                 log_func(f"   ► Converting: {pdf.name}...")
 
