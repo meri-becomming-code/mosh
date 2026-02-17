@@ -2,6 +2,17 @@ import requests
 import base64
 import os
 
+def check_connectivity():
+    """
+    Fast check for internet connectivity.
+    Used to warn users if school firewall is blocking access.
+    """
+    try:
+        # Google is the most reliable ping for "is the internet working"
+        requests.get("https://www.google.com", timeout=3)
+        return True
+    except:
+        return False
 def validate_api_key(api_key):
     """
     Sends a minimal request to Gemini to check if the key is valid.
@@ -315,10 +326,10 @@ def generate_alt_text_from_image(image_path, api_key, context=None):
             "Content-Type": "application/json"
         }
         
-        prompt = "You are an accessibility expert. Write a concise, descriptive alt text for this image (intended for use in a Canvas course). "
+        prompt = "You are an accessibility expert. Write a very brief, concise alt text for this image (under 120 characters if possible). "
         if context:
-            prompt += f"Context from the surrounding text: '{context}'. Use this to understand the image's purpose if relevant. "
-        prompt += "Return ONLY the descriptive text. Do not include 'Image of...', 'Alt text:', or explanations. If the image is purely decorative (like a spacer or line), return 'Decorative'."
+            prompt += f"Context: '{context}'. "
+        prompt += "Return ONLY the text. No 'Image of', 'Alt text:', or period at the end unless it's a full sentence. If decorative, return 'Decorative'."
 
         payload = {
             "contents": [

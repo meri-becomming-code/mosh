@@ -2,7 +2,7 @@
 # Released freely under the GNU General Public License v3.0. USE AT YOUR OWN RISK.
 
 import tkinter as tk
-VERSION = "0.9.5"
+VERSION = "0.9.6"
 from tkinter import filedialog, messagebox, simpledialog, scrolledtext, Toplevel, Menu, ttk
 from PIL import Image, ImageTk
 import sys
@@ -154,9 +154,12 @@ class ToolkitGUI:
         self.root.geometry("1000x650") # Wider for dual-card dashboard
         self.root.minsize(1000, 600) # prevent cutting off buttons
 
+        # [NEW] Safe Exit Protocol
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
         # --- State ---
         self.config = self._load_config()
-        self.target_dir = self.config.get("target_dir", os.getcwd()) # Persistence!
+        self.target_dir = self.config.get("target_dir", os.path.join(os.path.expanduser("~"), "Desktop")) # Default to Desktop
         self.api_key = ""
         self.is_running = False
         self.deferred_review = False # [NEW] Flag for post-task review
@@ -201,19 +204,28 @@ class ToolkitGUI:
             "poppler_path": ""
         }
 
-    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id="", poppler_path="", target_dir=None):
-        self.config["api_key"] = key
-        self.gui_handler.api_key = key # Sync to handler immediately
-        self.config["show_instructions"] = start_show
-        self.config["theme"] = theme
-        self.config["canvas_url"] = canvas_url
-        self.config["canvas_token"] = canvas_token
-        self.config["canvas_course_id"] = canvas_course_id
-        self.config["poppler_path"] = poppler_path
-        if target_dir:
-            self.config["target_dir"] = target_dir
-            self.target_dir = target_dir
+    def _update_config(self, **kwargs):
+        """Safe update that only changes provided keys."""
+        self.config.update(kwargs)
+        # Sync specific fields that might need immediate side effects
+        if "api_key" in kwargs:
+            self.gui_handler.api_key = kwargs["api_key"]
+        if "target_dir" in kwargs:
+            self.target_dir = kwargs["target_dir"]
         self._save_config_simple()
+
+    def _save_config(self, key, start_show, theme="light", canvas_url="", canvas_token="", canvas_course_id="", poppler_path="", target_dir=None):
+        """Legacy support wrapper around _update_config."""
+        self._update_config(
+            api_key=key,
+            show_instructions=start_show,
+            theme=theme,
+            canvas_url=canvas_url,
+            canvas_token=canvas_token,
+            canvas_course_id=canvas_course_id,
+            poppler_path=poppler_path,
+            target_dir=target_dir
+        )
 
     def _save_config_simple(self):
         """Saves current self.config to the JSON file."""
@@ -222,6 +234,25 @@ class ToolkitGUI:
                 json.dump(self.config, f)
         except Exception as e:
             messagebox.showerror("Error", f"Could not save settings: {e}")
+
+    def _quick_save_inputs(self):
+        """Scrapes current values from Setup inputs and saves them."""
+        # Only run if widgets exist
+        if not hasattr(self, 'ent_url') or not self.ent_url.winfo_exists():
+            return
+            
+        try:
+            self._update_config(
+                canvas_url=self.ent_url.get().strip(),
+                canvas_token=self.ent_token.get().strip(),
+                canvas_course_id=self.ent_course.get().strip(),
+                api_key=self.ent_api.get().strip(),
+                # Poppler path is handled by its own entry
+                # Target Dir is handled by its own label/var
+            )
+            # No popup, just save
+        except Exception as e:
+            print(f"Quick save error: {e}")
 
     def _build_menu(self):
         menubar = Menu(self.root)
@@ -239,6 +270,13 @@ class ToolkitGUI:
         help_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Welcome / Dedication", command=lambda: self._show_instructions(force=True))
+
+    def _on_close(self):
+        """Safe exit handler to prevent accidental closing during tasks."""
+        if getattr(self, "is_running", False):
+            if not messagebox.askyesno("Task Running", "Mosh is currently working on your files!\n\nIf you close now, the process will stop and might leave half-finished files.\n\nAre you sure you want to exit?"):
+                return
+        self.root.destroy()
 
     def _show_documentation(self):
         """Phase 12: Shows documentation directly in the app."""
@@ -378,7 +416,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
     def _toggle_theme(self):
         current = self.config.get("theme", "light")
         new_theme = "dark" if current == "light" else "light"
-        self._save_config("", self.config.get("show_instructions", True), new_theme)
+        self._update_config(theme=new_theme)
         self._build_styles() # Re-apply styles
 
     def _build_ui_modern(self):
@@ -390,9 +428,37 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", width=200)
         sidebar.pack(side="left", fill="y")
 
-        # 2. Main View Container (Right)
-        self.view_container = tk.Frame(self.root, bg="white")
-        self.view_container.pack(side="right", fill="both", expand=True)
+        # 2. Main Container (Right)
+        self.right_panel = tk.Frame(self.root, bg="white")
+        self.right_panel.pack(side="right", fill="both", expand=True)
+        
+        # We need to expose this for older methods that might reference it (Safety)
+        self.view_container = self.right_panel
+
+        # Content Pane (Middle, Expands)
+        self.pane_content = tk.Frame(self.right_panel, bg="white")
+        self.pane_content.pack(side="top", fill="both", expand=True)
+        
+        # Log Pane (Bottom, Fixed Height)
+        self.pane_log = tk.Frame(self.right_panel, height=140, bg="#f8f9fa", borderwidth=1, relief="sunken")
+        self.pane_log.pack(side="bottom", fill="x")
+        self.pane_log.pack_propagate(False) # Fixed height
+        
+        # Log Label and Clear Button
+        log_header = tk.Frame(self.pane_log, bg="#f8f9fa", height=20)
+        log_header.pack(fill="x", padx=5, pady=2)
+        tk.Label(log_header, text="📋 Activity Log", font=("Segoe UI", 9, "bold"), bg="#f8f9fa", fg="#555").pack(side="left")
+        
+        def clear_log():
+            self.txt_log.config(state='normal')
+            self.txt_log.delete(1.0, tk.END)
+            self.txt_log.config(state='disabled')
+            
+        tk.Button(log_header, text="Clear", command=clear_log, font=("Segoe UI", 8), bg="#eee", borderwidth=0, cursor="hand2").pack(side="right")
+        
+        # Persistent Log Widget
+        self.txt_log = scrolledtext.ScrolledText(self.pane_log, state='disabled', font=("Consolas", 9), bg="white")
+        self.txt_log.pack(fill="both", expand=True, padx=5, pady=5)
 
         # Logo Area
         # [NEW] Mosh Mascot
@@ -438,18 +504,27 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         btn_math.pack(pady=5, padx=10, fill="x")
         ToolTip(btn_math, "Gemini-powered conversion of Math from PDF or Images")
 
+        # [NEW] Upload Button (Moved to sidebar per user request)
+        btn_upload = ttk.Button(sidebar, text="🚀 UPLOAD TO CANVAS", command=self._show_preflight_dialog, style="Sidebar.TButton")
+        btn_upload.pack(pady=5, padx=10, fill="x")
+        ToolTip(btn_upload, "Final Step: Check your course and create the upload file")
+
         ttk.Separator(sidebar, orient='horizontal').pack(fill='x', padx=20, pady=10)
 
         # [NEW] Share Button
         self.btn_share = ttk.Button(sidebar, text="📣 SPREAD THE WORD", command=self._show_share_dialog, style="Action.TButton")
         self.btn_share.pack(pady=10, padx=10, fill="x")
 
-        # Header Banner with Logo & Progress
-        header_frame = tk.Frame(self.view_container, height=60, bg="white")
-        header_frame.pack(side="top", fill="x")
+        # Header Banner with Logo & Progress (Top of Right Panel)
+        header_frame = tk.Frame(self.right_panel, height=60, bg="white")
+        header_frame.pack(side="top", fill="x", before=self.pane_content)
         header_frame.pack_propagate(False)
         
         tk.Label(header_frame, text="✨ MOSH Toolkit", font=("Segoe UI", 12, "bold"), bg="white", fg="#4B3190").pack(side="left", padx=20)
+        
+        # [NEW] Network Status
+        self.lbl_network = tk.Label(header_frame, text="Checking Net...", font=("Segoe UI", 8), bg="white", fg="gray")
+        self.lbl_network.pack(side="left", padx=5)
         
         self.progress_bar = ttk.Progressbar(header_frame, variable=self.progress_var, maximum=100, length=200)
         self.progress_bar.pack(side="right", padx=20, pady=15)
@@ -457,7 +532,30 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.lbl_status_text.pack(side="right")
 
         # Show initial view
+        # Show initial view
         self._switch_view("dashboard")
+        
+        # Start background network check
+        logging.info("Starting network check...")
+        threading.Thread(target=self._check_network_status, daemon=True).start()
+
+    def _check_network_status(self):
+        """Runs in background to check internet."""
+        try:
+            import jeanie_ai
+            is_online = jeanie_ai.check_connectivity()
+            
+            def update_ui():
+                if is_online:
+                    self.lbl_network.config(text="🟢 Online", fg="green")
+                    ToolTip(self.lbl_network, "Internet Connected via Google.com")
+                else:
+                    self.lbl_network.config(text="🔴 Offline", fg="red")
+                    ToolTip(self.lbl_network, "No Internet Access. AI features will fail.")
+            
+            self.root.after(0, update_ui)
+        except Exception as e:
+            print(f"Net check error: {e}")
 
     def _switch_view(self, view_name):
         """Standard method to swap the main content area."""
@@ -467,7 +565,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.current_view = view_name
         
         # Create a new scrollable container for the view
-        container = ttk.Frame(self.view_container)
+        container = ttk.Frame(self.pane_content)
         container.pack(fill="both", expand=True)
         self.main_content_frame = container
         
@@ -521,30 +619,36 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         frame_canvas.pack(fill="x", pady=(0, 20))
 
         tk.Label(frame_canvas, text="School Canvas URL:", bg="white", fg="#4B3190", font=("bold")).pack(anchor="w")
-        ent_url = tk.Entry(frame_canvas, width=60)
-        ent_url.insert(0, self.config.get("canvas_url", ""))
-        ent_url.pack(pady=(2, 10), fill="x")
+        self.ent_url = tk.Entry(frame_canvas, width=60)
+        self.ent_url.insert(0, self.config.get("canvas_url", ""))
+        self.ent_url.pack(pady=(2, 10), fill="x")
+        self.ent_url.bind("<FocusOut>", lambda e: self._quick_save_inputs())
 
         tk.Label(frame_canvas, text="Canvas Digital Key (Token):", bg="white", fg="#4B3190", font=("bold")).pack(anchor="w")
         frame_token = tk.Frame(frame_canvas, bg="white")
         frame_token.pack(fill="x")
-        ent_token = tk.Entry(frame_token, width=45, show="*")
-        ent_token.insert(0, self.config.get("canvas_token", ""))
-        ent_token.pack(side="left", pady=5, fill="x", expand=True)
+        self.ent_token = tk.Entry(frame_token, width=45, show="*")
+        self.ent_token.insert(0, self.config.get("canvas_token", ""))
+        self.ent_token.pack(side="left", pady=5, fill="x", expand=True)
+        self.ent_token.bind("<FocusOut>", lambda e: self._quick_save_inputs())
         
         def open_token_help():
             url = ent_url.get().strip()
             if not url: url = "https://canvas.instructure.com"
             webbrowser.open(f"{url}/profile/settings")
             messagebox.showinfo("Help", "I've opened your Canvas Settings.\n\n1. Scroll to 'Approved Integrations'.\n2. Click '+ New Access Token'.\n3. Copy the key and paste it here.")
-        tk.Button(frame_token, text="❓ Help", command=open_token_help, font=("Segoe UI", 8), cursor="hand2").pack(side="left", padx=5)
+        
+        btn_help_token = tk.Button(frame_token, text="Show Me How 🎥", command=open_token_help, font=("Segoe UI", 9, "bold"), bg="#E1F5FE", cursor="hand2")
+        btn_help_token.pack(side="left", padx=5)
+        ToolTip(btn_help_token, "Open Canvas Settings to get a token")
 
         tk.Label(frame_canvas, text="Course ID (Numbers):", bg="white", fg="#4B3190", font=("bold")).pack(anchor="w")
         frame_course = tk.Frame(frame_canvas, bg="white")
         frame_course.pack(fill="x")
-        ent_course = tk.Entry(frame_course, width=15)
-        ent_course.insert(0, self.config.get("canvas_course_id", ""))
-        ent_course.pack(side="left", pady=5)
+        self.ent_course = tk.Entry(frame_course, width=15)
+        self.ent_course.insert(0, self.config.get("canvas_course_id", ""))
+        self.ent_course.pack(side="left", pady=5)
+        self.ent_course.bind("<FocusOut>", lambda e: self._quick_save_inputs())
 
         def open_course_help():
             messagebox.showinfo("Finding Your Course ID", "Look at your browser address bar while in the course.\n\nThe ID is the numbers at the very end (e.g. .../courses/12345).")
@@ -581,18 +685,19 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         frame_ai = ttk.Frame(content, style="Card.TFrame", padding=20)
         frame_ai.pack(fill="x", pady=(0, 20))
 
-        tk.Label(frame_ai, text="Gemini API Key (Google):", bg="white", fg="#1B5E20", font=("bold")).pack(anchor="w")
+        tk.Label(frame_ai, text="Google AI Link Key (Technical Name: API Key):", bg="white", fg="#1B5E20", font=("bold")).pack(anchor="w")
         tk.Label(frame_ai, text="Enables automatic Image Alt-Text and Math OCR.", bg="white", fg="gray", font=("Segoe UI", 8)).pack(anchor="w")
-        ent_api = tk.Entry(frame_ai, width=60, show="*")
-        ent_api.insert(0, self.config.get("api_key", ""))
-        ent_api.pack(pady=(5, 10), fill="x")
+        self.ent_api = tk.Entry(frame_ai, width=60, show="*")
+        self.ent_api.insert(0, self.config.get("api_key", ""))
+        self.ent_api.pack(pady=(5, 10), fill="x")
+        self.ent_api.bind("<FocusOut>", lambda e: self._quick_save_inputs())
 
         btn_ai_frame = tk.Frame(frame_ai, bg="white")
         btn_ai_frame.pack(anchor="w")
         
         def open_api_help():
             webbrowser.open("https://aistudio.google.com/app/apikey")
-            messagebox.showinfo("MOSH Magic Help", "1. Click 'Create API key'\n2. Copy the key and paste it here.")
+            messagebox.showinfo("MOSH Magic Help", "1. Log in with Google.\n2. Click 'Create API key'.\n(Note: You may need to click 'Create Project' first!)\n3. Copy the key and paste it here.")
 
         # Status Label for AI Check
         self.lbl_ai_status = tk.Label(btn_ai_frame, text="", bg="white", font=("Segoe UI", 9, "bold"))
@@ -644,7 +749,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         btn_import_row = tk.Frame(frame_project, bg="white")
         btn_import_row.pack(fill="x", pady=(0, 10))
 
-        btn_import = ttk.Button(btn_import_row, text="📦 IMPORT: Select .imscc File (Canvas Export)", 
+        btn_import = ttk.Button(btn_import_row, text="📂 Open Course Export (IMSCC from Settings)", 
                                  command=self._import_package, style="Action.TButton")
         btn_import.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
@@ -661,14 +766,12 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         lbl_global_status.pack(pady=10)
 
         def save_all():
-            self._save_config(
-                ent_api.get().strip(),
-                self.config.get("show_instructions", True),
-                self.config.get("theme", "light"),
-                ent_url.get().strip(),
-                ent_token.get().strip(),
-                ent_course.get().strip(),
-                self.ent_poppler_setup.get().strip(),
+            self._update_config(
+                api_key=ent_api.get().strip(),
+                canvas_url=ent_url.get().strip(),
+                canvas_token=ent_token.get().strip(),
+                canvas_course_id=ent_course.get().strip(),
+                poppler_path=self.ent_poppler_setup.get().strip(),
                 target_dir=self.target_dir
             )
             lbl_global_status.config(text="✅ All Settings Saved!", fg="green")
@@ -920,8 +1023,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             self._log(f"Selected project folder: {path}")
             
             # Persistent Save
-            self.config["target_dir"] = path
-            self._save_config_simple()
+            self._update_config(target_dir=path)
 
     def _import_package(self):
         """Allows user to select .imscc or .zip and extracts it with duplicate detection."""
@@ -931,17 +1033,22 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         if not path: return
         
         # Determine extraction folder
-        directory = os.path.dirname(path)
+        # If a valid Project Folder is set, extract there. Otherwise use source folder.
+        if self.target_dir and os.path.isdir(self.target_dir):
+            base_dir = self.target_dir
+        else:
+            base_dir = os.path.dirname(path)
+
         filename = os.path.basename(path)
         folder_name = os.path.splitext(filename)[0] + "_extracted"
-        extract_to = os.path.join(directory, folder_name)
+        extract_to = os.path.join(base_dir, folder_name)
         
         # [NEW] Duplicate Detection
         if os.path.exists(extract_to):
             choice = messagebox.askquestion("Folder Exists", 
-                                          f"The folder '{folder_name}' already exists.\n\n"
-                                          "Yes: Overwrite existing files (Dangerous!)\n"
-                                          "No: Create a new unique copy (e.g. folder(1))",
+                                          f"I found a folder with this name already!\n\n"
+                                          "Yes: Erase it and start fresh.\n"
+                                          "No: Make a new copy next to it.",
                                           icon='warning')
             
             if choice == "no":
@@ -952,7 +1059,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 extract_to = f"{extract_to}({count})"
         
         # Confirm (Must be on main thread)
-        msg_confirm = f"Extract package to:\n{extract_to}?"
+        msg_confirm = f"Found it! Ready to unpack this course?\n\nTarget:\n{extract_to}"
         if not messagebox.askyesno("Confirm Import", msg_confirm):
             return
 
@@ -973,8 +1080,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
     def _finalize_import(self, extract_to):
         """Updates UI after successful import (runs on main thread)."""
         self.target_dir = extract_to
-        self.config["target_dir"] = extract_to
-        self._save_config_simple()
+        self.target_dir = extract_to
+        self._update_config(target_dir=extract_to)
         
         # Refresh current view if it's the Setup view to show the new folder
         self._switch_view("setup")
@@ -1031,7 +1138,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         """Poll the log queue and update the text widget (Throttled)."""
         try:
             processed = 0
-            while processed < 50: # Limit per cycle to keep UI fluid
+            while processed < 200: # Increased limit to ensure no logs are dropped
                 msg = self.log_queue.get_nowait()
                 self._log(msg)
                 processed += 1
@@ -1591,38 +1698,20 @@ Website: meri-becomming-code.github.io/mosh
         
         # Content
         intro = """
-        Welcome to MOSH's Toolkit
-        (Making Online Spaces Helpful)
+        HI FRIEND! 👋
+        Welcome to the MOSH Toolkit.
+        This tool helps you fix your Canvas classes so everyone can read them.
 
-        🎯 THE MISSION:
-        April 2026 is the Federal ADA deadline for institutions. 
-        This toolkit is designed to help teachers reach compliance 
-        without spending hundreds of hours on manual labor.
+        HERE IS WHAT YOU DO:
+        1.  START: Click 'CONNECT & SETUP' on the left side of the screen.
+        2.  LOAD: Put your Canvas course file (.imscc) in box #4.
+        3.  FIX: Click 'CANVAS REMEDIATION' and press the buttons.
+        4.  DONE: Put the fixed file back into Canvas.
 
-        🚀 QUICK START WORKFLOW:
-        Step 1: Select .imscc File - Click "Step 1: Select .imscc File" at the top.
-        Step 2: Convert Files - Use Section 2 buttons to build your Canvas Pages.
-        Step 3: Fix & Review - Run "Auto-Fix" and then "Guided Review" to check everything.
-        Step 4: Final Step - Click "Step 4: Am I Ready to Upload?" to Push to Canvas.
-
-        📦 SAFETY ARCHIVE:
-        Original files (Word, PPT, PDF) are automatically moved to a hidden 
-        '_mosh_source_archive' folder. This ensures they aren't uploaded to 
-        Canvas accidentally, while keeping them safe on your local computer.
-
-        ⚠️ ALPHA TEST WARNING:
-        Always test your remediated files in a NEW EMPTY CANVAS COURSE 
-        before moving them into a live semester.
+        EASY PEASY! 🍋
         
-        📦 MOSH MAGIC (AI ASSISTANCE):
-        If you provide a Gemini API Key in Box #4, MOSH Magic can write your 
-        Alt Tags and Math LaTeX for you! Note: Free tier keys work great (50 pages/day).
-
-        🤖 AI COLLABORATOR:
-        This toolkit was co-authored by Antigravity, an advanced coding AI 
-        from Google DeepMind. Together, we are making education accessible.
-
-        🐛 Support: meredithkasprak@gmail.com
+        NEED HELP?
+        If you get stuck, just ask Mosh! (Or email Meredith)
         """
         
         # Title at top (outside scrollable area)
@@ -1662,15 +1751,7 @@ Website: meri-becomming-code.github.io/mosh
         var_show = tk.BooleanVar(value=True if force else self.config.get("show_instructions", True))
         
         def on_close():
-            # Keep existing API key/settings
-            self._save_config(
-                self.config.get("api_key", ""), 
-                var_show.get(), 
-                self.config.get("theme", "light"),
-                self.config.get("canvas_url", ""),
-                self.config.get("canvas_token", ""),
-                self.config.get("canvas_course_id", "")
-            )
+            self._update_config(show_instructions=var_show.get())
             dialog.destroy()
             
         chk = tk.Checkbutton(dialog, text="Show this message on startup", variable=var_show, bg=colors["bg"], fg=colors["fg"], selectcolor=colors["bg"], activebackground=colors["bg"])
@@ -1817,11 +1898,11 @@ YOUR WORKFLOW:
                 err = None
                 
                 if ext == "docx":
-                    output_path, err = converter_utils.convert_docx_to_html(fpath, self.gui_handler)
+                    output_path, err = converter_utils.convert_docx_to_html(fpath, self.gui_handler, log_func=self.gui_handler.log)
                 elif ext == "xlsx":
                     output_path, err = converter_utils.convert_excel_to_html(fpath)
                 elif ext == "pptx":
-                     output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler)
+                     output_path, err = converter_utils.convert_ppt_to_html(fpath, self.gui_handler, log_func=self.gui_handler.log)
                 elif ext == "pdf":
                      output_path, err = converter_utils.convert_pdf_to_html(fpath, self.gui_handler)
 
@@ -1909,11 +1990,11 @@ YOUR WORKFLOW:
             output_path, err = None, None
             
             if ext == "docx":
-                output_path, err = converter_utils.convert_docx_to_html(file_path, self.gui_handler)
+                output_path, err = converter_utils.convert_docx_to_html(file_path, self.gui_handler, log_func=self.gui_handler.log)
             elif ext == "xlsx":
                 output_path, err = converter_utils.convert_excel_to_html(file_path)
             elif ext == "pptx":
-                output_path, err = converter_utils.convert_ppt_to_html(file_path, self.gui_handler)
+                output_path, err = converter_utils.convert_ppt_to_html(file_path, self.gui_handler, log_func=self.gui_handler.log)
             elif ext == "pdf":
                 output_path, err = converter_utils.convert_pdf_to_html(file_path, self.gui_handler)
 
@@ -2596,6 +2677,51 @@ YOUR WORKFLOW:
             total_updated = 0
             doc_count = 0
             
+    # --- [NEW] Process Logs ---
+    def _process_logs(self):
+        """Polls queue for log messages and updates the persistent log widget."""
+        try:
+            while True:
+                msg = self.log_queue.get_nowait()
+                if hasattr(self, 'txt_log') and self.txt_log.winfo_exists():
+                    self.txt_log.config(state='normal')
+                    self.txt_log.insert(tk.END, str(msg) + "\n")
+                    self.txt_log.see(tk.END)
+                    self.txt_log.config(state='disabled')
+                else:
+                    # Fallback if UI not ready
+                    print(msg)
+        except queue.Empty:
+            pass
+        finally:
+            self.root.after(100, self._process_logs)
+
+    def _process_inputs(self):
+        """Polls for input requests from threads."""
+        try:
+            while True:
+                req = self.gui_handler.input_request_queue.get_nowait()
+                rtype, msg, args = req
+                
+                result = None
+                if rtype == 'prompt':
+                    result = simpledialog.askstring("Input Needed", msg, parent=self.root) or ""
+                elif rtype == 'confirm':
+                    result = messagebox.askyesno("Confirm", msg, parent=self.root)
+                elif rtype == 'prompt_image':
+                    # args = (image_path, context, suggestion)
+                    result = self._show_image_dialog(msg, args[0], args[1], args[2])
+                elif rtype == 'prompt_link':
+                    # args = (help_url, context)
+                    result = self._show_link_dialog(msg, args[0], args[1])
+                
+                self.gui_handler.input_response_queue.put(result)
+        except queue.Empty:
+            pass
+        finally:
+            self.root.after(100, self._process_inputs)
+
+            
             # Step 2: Compare and Update O(M) where M is document count
             for base, original_file in doc_map.items():
                 if base in html_map:
@@ -2616,81 +2742,7 @@ YOUR WORKFLOW:
         
         self._run_task_in_thread(task, "Global Link Repair")
 
-    def _convert_math_canvas_export(self):
-        """Convert all PDFs in Canvas export using Gemini."""
-        self.target_dir = self.lbl_dir.get().strip()
-        if not os.path.isdir(self.target_dir):
-            messagebox.showerror("Error", "Please select a Canvas export folder first (Step 1).")
-            return
-        
-        # Check Gemini API key
-        api_key = self.config.get("api_key", "").strip()
-        if not api_key:
-            messagebox.showwarning("No Gemini API Key",
-                                  "You need a Gemini API key for math conversion.\n\n"
-                                  "Click '🔗 Connect to My Canvas Playground' and add your key in Step 4.")
-            return
 
-        # [NEW] Proactive Poppler Check
-        if os.name == "nt" and not self.config.get("poppler_path"):
-            if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nWould you like to run the 'Guided Auto-Setup' now? It doesn't require administrator password."):
-                self._auto_setup_poppler()
-                # If they cancelled the download or it failed, the config still won't have it
-                if not self.config.get("poppler_path"):
-                    return
-        
-        if not messagebox.askyesno("Start Math Conversion?",
-                                   f"This will use Gemini AI to convert all PDFs in:\\n{self.target_dir}\\n\\n"
-                                   "This may take several minutes and will use your Gemini API quota.\\n\\n"
-                                   "Continue?"):
-            return
-        
-        def task():
-            import math_converter
-            self.gui_handler.log("\\n=== GEMINI MATH CONVERTER ===")
-            self.gui_handler.log("🤖 Using AI to read handwritten math and convert to LaTeX...")
-            
-            success, result = math_converter.process_canvas_export(
-                api_key, 
-                self.target_dir, 
-                log_func=self.gui_handler.log,
-                poppler_path=self.config.get("poppler_path", "")
-            )
-            
-            if success:
-                html_files = result
-                self.gui_handler.log(f"\n✨ SUCCESS! Created {len(html_files)} Canvas pages with accessible LaTeX math!")
-                self.gui_handler.log("\nNEXT STEPS:")
-                self.gui_handler.log("1. Review HTML files in converted_math_pages/ folder")
-                self.gui_handler.log("2. Copy content into Canvas pages")
-                self.gui_handler.log("3. Verify LaTeX renders correctly")
-                
-                # Update progress
-                self.progress_var.set(100)
-                self.lbl_status_text.config(text="Done!", fg="green")
-                
-                msg = (
-                    f"✨ Gemini converted {len(html_files)} PDFs to accessible Canvas LaTeX!\n\n"
-                    f"Output location: {self.target_dir}/converted_math_pages/\n\n"
-                    "WHAT'S NEXT?\n"
-                    "1. Open the HTML files in your browser.\n"
-                    "2. Copy the content (Ctrl+A, Ctrl+C).\n"
-                    "3. Paste directly into a new Canvas Page!"
-                )
-                self.root.after(0, lambda: messagebox.showinfo("Conversion Complete! 🎉", msg))
-                
-                # Open folder automatically (PROACTIVE UX)
-                os.startfile(os.path.join(self.target_dir, "converted_math_pages"))
-            else:
-                self.progress_var.set(0)
-                self.lbl_status_text.config(text="Error", fg="red")
-                self.gui_handler.log(f"\n❌ Error: {result}")
-                self.root.after(0, lambda: messagebox.showerror("Conversion Failed", 
-                    f"Could not convert PDFs:\n{result}\n\nCheck Activity Log for details."))
-        
-        self.progress_var.set(10)
-        self.lbl_status_text.config(text="Reading PDFs...", fg="blue")
-        self._run_task_in_thread(task, "Math PDF Conversion")
 
     def _build_files_view(self, content):
         """Dedicated view for standard file conversion (Word/PPT)."""
@@ -2786,6 +2838,14 @@ YOUR WORKFLOW:
             try: os.startfile(folder)
             except: pass
 
+            # [FIX] Explicit "Upload Needed" Warning for cloud-expecting users
+            msg_upload = (
+                "✅ FILE SAVED TO YOUR COMPUTER.\n\n"
+                "IMPORTANT: This change is LOCAL only.\n"
+                "You must now UPLOAD this file to Canvas to see it online."
+            )
+            self.root.after(0, lambda: messagebox.showinfo("Step Complete", msg_upload))
+
 
     def _convert_math_canvas_export(self):
         """Processes an entire IMSCC course package for math content."""
@@ -2810,6 +2870,9 @@ YOUR WORKFLOW:
         # 1. Immediate UI Feedback
         self.progress_var.set(5)
         self.root.after(0, lambda: messagebox.showinfo("Started", "Math Conversion Started!\n\nCheck the log for progress."))
+        
+        # [FIX] Disable buttons to prevent double-click issues
+        self._disable_buttons()
 
         def task():
             try:
@@ -2846,7 +2909,11 @@ YOUR WORKFLOW:
                     self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
             
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Critical Error", f"An unexpected error occurred:\n{str(e)}"))
+                self.root.after(0, lambda: messagebox.showerror("Conversion Issue", f"An unexpected error occurred:\n{str(e)}"))
+            
+            finally:
+                # [FIX] Re-enable buttons
+                self.root.after(0, self._enable_buttons)
 
         # 2. Explicit Threading (Bypassing internal queue)
         threading.Thread(target=task, daemon=True).start()
@@ -2938,22 +3005,25 @@ YOUR WORKFLOW:
             self._run_task_in_thread(task, f"Math {file_type.upper()} Conversion")
 
         except Exception as e:
-            self.gui_handler.log(f"[CRITICAL ERROR] Button handler failed: {e}")
+            self.gui_handler.log(f"[Handler Error] Button handler failed: {e}")
             messagebox.showerror("Error", f"Something went wrong:\n{e}")
         
 
 
     def _auto_setup_poppler(self):
         """Robust, standalone Poppler downloader with explicit error handling."""
+        # [FIX] Save inputs before starting, so we don't lose them on refresh
+        self._quick_save_inputs()
+
         if os.name != "nt":
-            messagebox.showinfo("Platform Info", "Poppler Auto-Setup is for Windows only.\nMac users: run 'brew install poppler'.")
+            messagebox.showinfo("Not for Mac", "Uh oh! This button is for Windows computers only.\n\nOn a Mac? Ask your IT person to install 'Poppler'.")
             return
 
         link = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
         explanation = (
-            "This will download Poppler (~20MB) and configure it automatically.\n\n"
-            "Target: ~/.mosh_helpers/poppler\n\n"
-            "Ready to start?"
+            "I need to download a little helper tool called Poppler to read PDF math.\n\n"
+            "It takes about 1 minute.\n\n"
+            "Ready to download?"
         )
         
         if not messagebox.askyesno("Poppler Setup", explanation):
@@ -3020,8 +3090,7 @@ YOUR WORKFLOW:
                     progress_win.destroy()
                     
                     # Update Config & UI
-                    self.config["poppler_path"] = poppler_bin
-                    self._save_config_simple()
+                    self._update_config(poppler_path=poppler_bin)
                     
                     if hasattr(self, "ent_poppler_setup") and self.ent_poppler_setup.winfo_exists():
                         self.ent_poppler_setup.delete(0, tk.END)

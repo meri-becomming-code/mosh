@@ -39,6 +39,17 @@ class FixerIO:
         self.alt_memory_file = os.path.join(os.path.expanduser("~"), ".mosh_alt_memory.json")
         self.memory = self._load_memory()
         self.api_key = "" # Gemini API Key for Jeanie Magic
+        
+        # [NEW] Mitigation for Duplicate Fatigue
+        # If an image filename matches these, we auto-mark as decorative without asking.
+        self.ignore_patterns = [
+            r'divider.*', 
+            r'spacer.*', 
+            r'line.*', 
+            r'shim.*', 
+            r'transparent.*',
+            r'white_pixel.*'
+        ]
 
     def _load_memory(self):
         if os.path.exists(self.alt_memory_file):
@@ -64,7 +75,11 @@ class FixerIO:
             print(f"[Warning] Could not save memory file: {e}")
 
     def log(self, message):
-        print(message)
+        try:
+            print(message)
+        except UnicodeEncodeError:
+            # Fallback for Windows consoles that hate emojis
+            print(message.encode('utf-8', errors='ignore').decode('utf-8'))
 
     def is_stopped(self):
         """Check if skip or stop was requested."""
@@ -273,9 +288,33 @@ def fetch_youtube_title(url):
     
     return None
 
+def ensure_short_path(filepath):
+    """Truncates filename if path is too long for Windows (MAX_PATH=260)."""
+    if len(filepath) < 240: return filepath
+    
+    dirname = os.path.dirname(filepath)
+    basename = os.path.basename(filepath)
+    name, ext = os.path.splitext(basename)
+    
+    # Calculate overflow
+    overflow = len(filepath) - 240
+    if overflow > 0:
+        import hashlib
+        short_hash = hashlib.md5(basename.encode()).hexdigest()[:6]
+        # Try to keep start of name
+        keep_len = len(name) - overflow - 10
+        if keep_len < 2: keep_len = 2 # minimum
+        
+        new_name = name[:keep_len] + f"_{short_hash}" + ext
+        return os.path.join(dirname, new_name)
+    return filepath
+
 def save_html(filepath, soup, io_handler):
     """Saves the modified soup to the file."""
     try:
+        # [FIX] Ensure path is safe for Windows
+        filepath = ensure_short_path(filepath)
+
         io_handler.log(f"  [DEBUG] Attempting to save file: {filepath}")
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(str(soup))
@@ -432,7 +471,19 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
     for i, img in enumerate(images):
         src = img.get('src', 'MISSING_SRC')
         img_filename = os.path.basename(src)
-        alt = img.get('alt', '').strip()
+        alt = urllib.parse.unquote(img.get('alt', '')).strip()
+        
+        # [NEW] Auto-Ignore Pattern Check
+        for pattern in io_handler.ignore_patterns:
+            if re.match(pattern, img_filename, re.IGNORECASE):
+                # It's a known decorative file pattern.
+                if not alt:
+                    img['alt'] = ""
+                    img['role'] = "presentation"
+                    modified = True
+                    # Log once per file to avoid spam, or just silent?
+                    # io_handler.log(f"    [Auto-Decor] Matched pattern '{pattern}'. marked as decorative.")
+                    continue
         
         issue = None
 

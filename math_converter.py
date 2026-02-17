@@ -336,49 +336,63 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None)
     
     client = genai.Client(api_key=api_key)
     
-    # Create output directory
-    output_dir = export_path / "converted_math_pages"
-    output_dir.mkdir(exist_ok=True)
+    # Create output directory - REMOVED to keep files in-place for syncing
+    # output_dir = export_path / "converted_math_pages"
+    # output_dir.mkdir(exist_ok=True)
     
     conversion_results = [] # List of (source_path, output_path)
     
     for pdf_path in safe_pdf_paths:
-        pdf = Path(pdf_path)
-        success, html_or_error = convert_pdf_to_latex(api_key, str(pdf), log_func, poppler_path=poppler_path)
-        
-        if success:
-            # Add attribution footer if needed
-            license_info = next((f for f in safe_files + risky_files if f['path'] == pdf_path), None)
-            
-            if license_info and license_info['requires_attribution']:
-                import attribution_checker
-                footer = attribution_checker.generate_attribution_footer(
-                    pdf.name,
-                    license_info['license']
-                )
-                # Insert footer before </body>
-                html_or_error = html_or_error.replace('</body>', f'{footer}</body>')
-            
-            # Save HTML file
-            html_filename = f"{pdf.stem}.html"
-            html_path = output_dir / html_filename
-            
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(html_or_error)
-            
-            conversion_results.append((str(pdf_path), str(html_path)))
-            
+        try:
+            pdf = Path(pdf_path)
             if log_func:
-                log_func(f"   💾 Saved: {html_filename}")
+                log_func(f"   ► Converting: {pdf.name}...")
+
+            success, html_or_error = convert_pdf_to_latex(api_key, str(pdf), log_func, poppler_path=poppler_path)
+            
+            if success:
+                # Add attribution footer if needed
+                license_info = next((f for f in safe_files + risky_files if f['path'] == pdf_path), None)
+                
+                if license_info and license_info['requires_attribution']:
+                    import attribution_checker
+                    footer = attribution_checker.generate_attribution_footer(
+                        pdf.name,
+                        license_info['license']
+                    )
+                    # Insert footer before </body>
+                    html_or_error = html_or_error.replace('</body>', f'{footer}</body>')
+                
+                # Save HTML file IN THE SAME FOLDER as the PDF (for link syncing)
+                html_filename = f"{pdf.stem}.html"
+                html_path = pdf.parent / html_filename
+                
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(html_or_error)
+                
+                conversion_results.append((str(pdf_path), str(html_path)))
+                
+                if log_func:
+                    log_func(f"   ✅ Saved: {html_filename}")
+            else:
+                 if log_func:
+                    log_func(f"   ⚠️ Skiping file due to error: {html_or_error}")
+        
+        except Exception as e_file:
+            if log_func:
+                log_func(f"   ❌ Oops! Problem with {Path(pdf_path).name}: {e_file}")
+            continue
     
     if conversion_results:
         if log_func:
             log_func(f"\n✅ Converted {len(conversion_results)} PDFs successfully!")
-            log_func(f"📁 Output location: {output_dir}")
+            log_func(f"📁 Files saved in their original folders (ready for sync)")
             log_func(f"\n⚖️  REMEMBER: Review LICENSING_REPORT.md before publishing!")
         return True, conversion_results
     else:
-        return False, "No PDFs were successfully converted"
+        if log_func:
+             log_func(f"\n❌ Note: No PDF files were converted. (See detailed log above)")
+        return False, "No files processed successfully."
 
 def create_canvas_html(content, title="Canvas Math Content"):
     """
