@@ -440,3 +440,4 @@ def create_canvas_html(content, title="Canvas Math Content"):
 </body>
 </html>
 """
+    return html

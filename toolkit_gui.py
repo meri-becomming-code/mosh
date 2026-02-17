@@ -942,13 +942,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.btn_check.pack(fill="x")
 
 
-        # -- Logs --
-        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
-        self.txt_log = scrolledtext.ScrolledText(content, height=8, state='disabled', font=("Consolas", 9), relief="flat", borderwidth=1)
-        self.txt_log.pack(fill="both", expand=True, pady=5)
 
-        # Apply log sync
-        self.root.after(100, self._sync_logs_to_view)
 
     def _build_math_view(self, content):
         """Dedicated view for AI-powered Math conversion."""
@@ -991,19 +985,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ttk.Button(frame_math_singles, text="📝 Select Word", command=lambda: self._convert_math_files("docx")).pack(side="left", fill="x", expand=True, padx=2)
         ttk.Button(frame_math_singles, text="🖼️ Select Image", command=lambda: self._convert_math_files("images")).pack(side="left", fill="x", expand=True, padx=2)
 
-        # Activity Log
-        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(20, 0))
-        self.txt_log = scrolledtext.ScrolledText(content, height=10, state='disabled', font=("Consolas", 9))
-        self.txt_log.pack(fill="both", expand=True, pady=5)
-        self.root.after(100, self._sync_logs_to_view)
 
-    def _sync_logs_to_view(self):
-         """Ensures the log widget in the current view is updated."""
-         # Check if log widget exists in current view
-         if hasattr(self, "txt_log") and self.txt_log.winfo_exists():
-             self.txt_log.configure(state='normal')
-             # Re-populate or just keep running
-             self.txt_log.configure(state='disabled')
+
+
 
     def _browse_folder(self):
         """Standard folder browser that updates UI across views."""
@@ -2791,11 +2775,7 @@ YOUR WORKFLOW:
         ttk.Button(frame_btns, text="📽️ PowerPoint", command=lambda: self._show_conversion_wizard("pptx")).pack(side="left", fill="x", expand=True, padx=2)
         ttk.Button(frame_btns, text="📄 Standard PDF", command=lambda: self._show_conversion_wizard("pdf")).pack(side="left", fill="x", expand=True, padx=2)
 
-        # --- Logs ---
-        ttk.Label(content, text="Activity Log", style="SubHeader.TLabel").pack(anchor="w", pady=(10, 0))
-        self.txt_log = scrolledtext.ScrolledText(content, height=10, state='disabled', font=("Consolas", 9))
-        self.txt_log.pack(fill="both", expand=True, pady=5)
-        self.root.after(100, self._sync_logs_to_view)
+
 
     def _process_generated_pages(self, file_pairs):
         """
@@ -2910,7 +2890,8 @@ YOUR WORKFLOW:
                     file_pairs = result 
                     log(f"\n✨ SUCCESS! Converted math in your course project.")
                     
-                    self.root.after(0, lambda: self._process_generated_pages(file_pairs))
+                    self.root.after(0, lambda: self.progress_var.set(100))
+                    self._process_generated_pages(file_pairs)
                     self.progress_var.set(100)
                     
                 else:
@@ -3003,9 +2984,9 @@ YOUR WORKFLOW:
                     
                     self.gui_handler.log(f"\n✨ SUCCESS! Saved to: {output_path}")
                     
-                    # Use the unified workflow
+                    # Use the unified workflow (DIRECT call to avoid deadlock)
                     file_pairs = [(file_path, output_path)]
-                    self.root.after(0, lambda: self._process_generated_pages(file_pairs))
+                    self._process_generated_pages(file_pairs)
 
                 else:
                     self.gui_handler.log(f"\n❌ Error: {result}")
