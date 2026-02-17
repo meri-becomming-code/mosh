@@ -5,11 +5,29 @@ from urllib.parse import urlparse
 
 class CanvasAPI:
     def __init__(self, base_url, token, course_id):
-        # [FIX] Strictly parse base URL to remove any path components (like /courses/xxx)
-        parsed = urlparse(base_url)
-        self.base_url = f"{parsed.scheme}://{parsed.netloc}"
+        # 1. Clean Base URL: Ensure it's just the domain (scheme + netloc)
+        # Even if they paste a course URL, we grab the root
+        try:
+            base_url = base_url.strip().rstrip('/')
+            if not base_url.startswith(('http://', 'https://')):
+                base_url = f"https://{base_url}"
+            parsed = urlparse(base_url)
+            self.base_url = f"{parsed.scheme}://{parsed.netloc}"
+        except:
+            self.base_url = base_url
+
+        # 2. Clean Course ID: In case they paste a full URL
+        # e.g. https://school.instructure.com/courses/12345/modules -> 12345
+        try:
+            cid_str = str(course_id).strip().split('?')[0].rstrip('/')
+            if '/courses/' in cid_str:
+                self.course_id = cid_str.split('/courses/')[-1].split('/')[0]
+            else:
+                self.course_id = cid_str
+        except:
+            self.course_id = course_id
+
         self.token = token
-        self.course_id = course_id
         self.headers = {
             "Authorization": f"Bearer {self.token}"
         }

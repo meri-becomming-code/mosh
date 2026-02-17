@@ -242,10 +242,24 @@ class ToolkitGUI:
             return
             
         try:
+            # Clean Course ID immediately if it's a URL
+            cid = self.ent_course.get().strip().split('?')[0].rstrip('/')
+            if '/courses/' in cid:
+                cid = cid.split('/courses/')[-1].split('/')[0]
+            
+            # Clean Canvas URL (Domain only)
+            url = self.ent_url.get().strip().rstrip('/')
+            if url and not url.startswith(('http://', 'https://')):
+                url = f"https://{url}"
+            if url:
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                url = f"{parsed.scheme}://{parsed.netloc}"
+
             self._update_config(
-                canvas_url=self.ent_url.get().strip(),
+                canvas_url=url,
                 canvas_token=self.ent_token.get().strip(),
-                canvas_course_id=self.ent_course.get().strip(),
+                canvas_course_id=cid,
                 api_key=self.ent_api.get().strip(),
                 # Poppler path is handled by its own entry
                 # Target Dir is handled by its own label/var
@@ -658,9 +672,25 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.lbl_canvas_status = tk.Label(frame_course, text="", bg="white", font=("Segoe UI", 9, "bold"))
 
         def check_canvas():
-            url = ent_url.get().strip()
-            token = ent_token.get().strip()
-            cid = ent_course.get().strip()
+            url = self.ent_url.get().strip().rstrip('/')
+            token = self.ent_token.get().strip()
+            cid = self.ent_course.get().strip().split('?')[0].rstrip('/')
+            
+            # Auto-Clean Course ID if URL pasted
+            if '/courses/' in cid:
+                cid = cid.split('/courses/')[-1].split('/')[0]
+                self.ent_course.delete(0, tk.END)
+                self.ent_course.insert(0, cid)
+            
+            # Auto-Clean URL
+            if url and not url.startswith(('http://', 'https://')):
+                url = f"https://{url}"
+            if url:
+                parsed = urlparse(url)
+                url = f"{parsed.scheme}://{parsed.netloc}"
+                self.ent_url.delete(0, tk.END)
+                self.ent_url.insert(0, url)
+
             if not url or not token or not cid:
                 messagebox.showwarning("Incomplete", "Please fill out Canvas settings (Step 1).")
                 return
