@@ -2961,12 +2961,17 @@ YOUR WORKFLOW:
                 import math_converter
                 self.gui_handler.log(f"\n=== GEMINI MATH CONVERTER ({file_type.upper()}) ===")
                 
+                def update_progress(current, total):
+                    pct = (current / total) * 100
+                    self.root.after(0, lambda: self.progress_var.set(pct))
+
                 if file_type == "pdf":
                     success, result = math_converter.convert_pdf_to_latex(
                         api_key, 
                         file_path, 
                         self.gui_handler.log,
-                        poppler_path=self.config.get("poppler_path", "")
+                        poppler_path=self.config.get("poppler_path", ""),
+                        progress_callback=update_progress
                     )
                 elif file_type == "docx":
                     success, result = math_converter.convert_word_to_latex(api_key, file_path, self.gui_handler.log)

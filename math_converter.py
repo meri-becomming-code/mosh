@@ -80,7 +80,7 @@ def generate_content_with_retry(client, model, contents, log_func=None):
     
     raise Exception("API Quota Exceeded. Please try again later.")
 
-def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
+def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None):
     """
     Convert a PDF with handwritten math to Canvas LaTeX.
     
@@ -125,6 +125,9 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None):
         for i, img_path in enumerate(sorted(temp_dir.glob('*.png')), 1):
             if log_func:
                 log_func(f"   [{i}/{len(images)}] Converting page {i}...")
+
+            if progress_callback:
+                progress_callback(i, len(images))
             
             img = Image.open(img_path)
             response = generate_content_with_retry(
