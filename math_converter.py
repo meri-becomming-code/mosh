@@ -382,58 +382,49 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None)
     else:
         return False, "No PDFs were successfully converted"
 
-def create_canvas_html(title, content):
-    """Wrap content in Canvas-friendly HTML template."""
+def create_canvas_html(content, title="Canvas Math Content"):
+    """
+    Creates a standalone HTML file with the converted content.
+    Uses INLINE STYLES for maximum compatibility with Canvas LMS.
+    """
+    import re
+    
+    # Inject inline styles into standard elements returned by Gemini
+    content = re.sub(
+        r'<details\s*>', 
+        r'<details style="background: #f8f9fa; padding: 15px; margin: 15px 0; border-left: 4px solid #4b3190; border-radius: 4px;">', 
+        content,
+        flags=re.IGNORECASE
+    )
+    
+    content = re.sub(
+        r'<summary\s*>', 
+        r'<summary style="cursor: pointer; font-weight: bold; color: #4b3190;">', 
+        content,
+        flags=re.IGNORECASE
+    )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            line-height: 1.6;
-        }}
-        h1 {{
-            color: #4b3190;
-            border-bottom: 2px solid #4b3190;
-            padding-bottom: 10px;
-        }}
-        details {{
-            background: #f8f9fa;
-            padding: 15px;
-            margin: 15px 0;
-            border-left: 4px solid #4b3190;
-            border-radius: 4px;
-        }}
-        summary {{
-            cursor: pointer;
-            font-weight: bold;
-            color: #4b3190;
-        }}
-        summary:hover {{
-            color: #6b4fc0;
-        }}
-        .problem {{
-            margin: 20px 0;
-        }}
-    </style>
-    <!-- MathJax for local preview (Canvas has this built-in) -->
+    <!-- MathJax for local preview -->
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
-<body>
-    <h1>{title}</h1>
-    {content}
-    <hr>
-    <p style="font-size: 0.9em; color: #666; font-style: italic;">
+<body style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; line-height: 1.6;">
+    <h1 style="color: #4b3190; border-bottom: 2px solid #4b3190; padding-bottom: 10px;">{title}</h1>
+    
+    <div style="margin: 20px 0;">
+        {content}
+    </div>
+    
+    <hr style="border: 0; border-top: 1px solid #eee; margin: 40px 0;">
+    <p style="font-size: 0.9em; color: #666; font-style: italic; text-align: center;">
         ✨ Converted to accessible LaTeX by MOSH Toolkit with Gemini AI
     </p>
 </body>
 </html>
 """
-    return html

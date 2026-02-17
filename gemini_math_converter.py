@@ -200,28 +200,44 @@ def batch_convert_folder(client, folder_path: str, output_file: str):
     print(f"      OR just copy the equations you need.")
 
 def create_html_wrapper(title, content):
-    """Creates a previewable HTML file with MathJax."""
+    """
+    Creates a previewable HTML file with MathJax and inline styles.
+    Designed for easy copy-pasting into Canvas LMS.
+    """
+    import re
+    
+    # Inject inline styles into tags returned by Gemini
+    content = re.sub(
+        r'<details\s*>', 
+        r'<details style="background: #f8f9fa; padding: 1rem; border-left: 4px solid #4b3190; margin: 1rem 0; border-radius: 4px;">', 
+        content,
+        flags=re.IGNORECASE
+    )
+    
+    content = re.sub(
+        r'<summary\s*>', 
+        r'<summary style="cursor: pointer; font-weight: bold; color: #4b3190;">', 
+        content,
+        flags=re.IGNORECASE
+    )
+    
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    <style>
-        body {{ font-family: sans-serif; max-width: 800px; margin: 2rem auto; line-height: 1.6; padding: 1rem; }}
-        h1 {{ color: #4b3190; border-bottom: 2px solid #4b3190; }}
-        details {{ background: #f8f9fa; padding: 1rem; border-left: 4px solid #4b3190; margin: 1rem 0; }}
-        summary {{ cursor: pointer; font-weight: bold; color: #4b3190; }}
-    </style>
     <!-- MathJax for local preview -->
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
-<body>
-    <h1>{title}</h1>
-    <p><em>Copy the content below into Canvas HTML Editor</em></p>
-    <hr>
-    {content}
+<body style="font-family: sans-serif; max-width: 800px; margin: 2rem auto; line-height: 1.6; padding: 1rem;">
+    <h1 style="color: #4b3190; border-bottom: 2px solid #4b3190;">{title}</h1>
+    <p style="color: #666; font-style: italic;">Note: Copy everything below the line into Canvas HTML Editor</p>
+    <hr style="border: 0; border-top: 1px solid #eee; margin: 2rem 0;">
+    <div class="canvas-content">
+        {content}
+    </div>
 </body>
 </html>"""
 
