@@ -19,7 +19,7 @@ def build():
 
     args = [
         'toolkit_gui.py',
-        '--name=MOSH_ADA_Toolkit_v1.0.0_RC15',
+        '--name=MOSH_ADA_Toolkit_v1.0.0_RC16',
         '--noconfirm',
         '--onefile',
         '--windowed',  # No console window
@@ -35,6 +35,8 @@ def build():
     args.append('--hidden-import=interactive_fixer')
     args.append('--hidden-import=run_fixer')
     args.append('--hidden-import=run_audit')
+    args.append('--hidden-import=audit_reporter')   # [NEW]
+    args.append('--hidden-import=attribution_checker') # [NEW]
     args.append('--hidden-import=canvas_utils')
     args.append('--hidden-import=converter_utils')  # [NEW]
     args.append('--hidden-import=math_converter')   # [NEW]
@@ -42,6 +44,8 @@ def build():
     args.append('--hidden-import=jeanie_ai')
     args.append('--hidden-import=google')
     args.append('--hidden-import=google.genai')
+    args.append('--hidden-import=darkdetect')      # [NEW]
+    args.append('--hidden-import=pdf2image')        # [NEW]
     
     # PDF Processing Libraries
     args.append('--hidden-import=fitz')  # PyMuPDF

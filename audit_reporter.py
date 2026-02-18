@@ -3,24 +3,14 @@ import os
 import datetime
 import json
 
-def generate_report(all_issues, total_score, target_dir):
+def generate_report(all_issues, total_score, target_dir, total_files=None):
     """
     Generates a beautiful HTML report from the audit findings.
     """
     
     # Calculate Stats
-    total_files_audited = len(all_issues) # Approximate, since we only get issues here? 
-    # Actually, all_issues only contains files with issues. 
-    # We should pass total_files_audited properly if we want accurate stats.
-    # For now, let's assume all_issues IS the full list (which it is in the GUI logic)
-    
-    # Wait, looking at toolkit_gui logic:
-    # It loops over ALL html_files.
-    # If a file has issues, it adds to all_issues.
-    # If a file is PERFECT, it does NOT add to all_issues.
-    # So we need to pass the total count explicitly.
-    
     files_with_issues = len(all_issues)
+    total_files_audited = total_files if total_files is not None else files_with_issues
     
     # Determine Status Color
     if total_score >= 90:
@@ -234,7 +224,7 @@ def generate_report(all_issues, total_score, target_dir):
                  <div>Files with Issues</div>
             </div>
              <div class="stat-card">
-                 <div class="stat-val">{len(all_issues)}</div>
+                 <div class="stat-val">{total_files_audited}</div>
                  <div>Total Files Audited</div>
             </div>
         </div>

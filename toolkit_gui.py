@@ -2,7 +2,7 @@
 # Released freely under the GNU General Public License v3.0. USE AT YOUR OWN RISK.
 
 import tkinter as tk
-VERSION = "1.0.0-RC15"
+VERSION = "1.0.0-RC16"
 from tkinter import filedialog, messagebox, simpledialog, scrolledtext, Toplevel, Menu, ttk
 from PIL import Image, ImageTk
 import sys
@@ -1646,7 +1646,7 @@ Website: meri-becomming-code.github.io/mosh
             dirs[:] = [d for d in dirs if d not in skip_dirs]
             
             for file in files:
-                if file.endswith('.html'):
+                if file.lower().endswith(('.html', '.htm')):
                     html_files.append(os.path.join(root, file))
         return html_files
 
@@ -1757,10 +1757,7 @@ Website: meri-becomming-code.github.io/mosh
             try:
                 import audit_reporter
                 import webbrowser
-                # report_path = audit_reporter.generate_report(all_issues, avg_score, self.target_dir) # Original thought
-                # Better: Pass full list including perfect files for accurate stats?
-                # For now, let's just pass what we have.
-                report_path = audit_reporter.generate_report(all_issues, avg_score, self.target_dir)
+                report_path = audit_reporter.generate_report(all_issues, avg_score, self.target_dir, total_files=len(html_files))
                 
                 self.gui_handler.log(f"\n✨ Visual Report Ready: {report_path}")
                 self.root.after(0, lambda: webbrowser.open(report_path))
@@ -2863,9 +2860,17 @@ YOUR WORKFLOW:
         
         frame_btns = ttk.Frame(frame_convert)
         frame_btns.pack(fill="x")
-        ttk.Button(frame_btns, text="📝 Word Doc", command=lambda: self._show_conversion_wizard("docx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_btns, text="📽️ PowerPoint", command=lambda: self._show_conversion_wizard("pptx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_btns, text="📄 Standard PDF", command=lambda: self._show_conversion_wizard("pdf")).pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_word = ttk.Button(frame_btns, text="📝 Word Doc", command=lambda: self._show_conversion_wizard("docx"))
+        self.btn_word.pack(side="left", fill="x", expand=True, padx=2)
+        
+        self.btn_excel = ttk.Button(frame_btns, text="📈 Excel", command=lambda: self._show_conversion_wizard("xlsx"))
+        self.btn_excel.pack(side="left", fill="x", expand=True, padx=2)
+        
+        self.btn_ppt = ttk.Button(frame_btns, text="📽️ PowerPoint", command=lambda: self._show_conversion_wizard("pptx"))
+        self.btn_ppt.pack(side="left", fill="x", expand=True, padx=2)
+        
+        self.btn_pdf = ttk.Button(frame_btns, text="📄 Standard PDF", command=lambda: self._show_conversion_wizard("pdf"))
+        self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
 
 
 

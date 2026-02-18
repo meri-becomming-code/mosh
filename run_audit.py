@@ -343,15 +343,16 @@ def run_audit_v3(directory):
     print(f"Auditing {directory}...")
     all_issues = {}
     archive_name = "_ORIGINALS_DO_NOT_UPLOAD_"
+    total_files = 0
     
     for root, dirs, files in os.walk(directory):
         if archive_name in root: continue
         for file in files:
-             if file.endswith('.html'):
-
+             if file.lower().endswith(('.html', '.htm')):
+                total_files += 1
                 path = os.path.join(root, file)
                 res = audit_file(path)
-                if res:
+                if res and (res["technical"] or res["subjective"]):
                     rel_path = os.path.relpath(path, directory)
                     all_issues[rel_path] = res
     
@@ -359,7 +360,7 @@ def run_audit_v3(directory):
     with open(out_file, 'w', encoding='utf-8') as f:
         json.dump(all_issues, f, indent=2)
     
-    print(f"Audit Complete. Issues found in {len(all_issues)} files.")
+    print(f"Audit Complete. Scanned {total_files} files. Issues found in {len(all_issues)} files.")
     print(f"Report saved to {out_file}")
 
 if __name__ == "__main__":
