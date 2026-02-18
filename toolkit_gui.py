@@ -513,9 +513,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         btn_canvas.pack(pady=3, padx=10, fill="x")
         ToolTip(btn_canvas, "Bulk audit and fix your Canvas course pages")
 
-        btn_files = ttk.Button(sidebar, text="📄 FILE CONVERSION", command=lambda: self._switch_view("files"), style="Sidebar.TButton")
-        btn_files.pack(pady=3, padx=10, fill="x")
-        ToolTip(btn_files, "Convert PowerPoint or Word files to clean HTML")
+        # [NEW] Audit Button (Replaces File Conversion per user request)
+        btn_audit = ttk.Button(sidebar, text="🔎 AUDIT & CHECK", command=lambda: self._switch_view("audit"), style="Sidebar.TButton")
+        btn_audit.pack(pady=3, padx=10, fill="x")
+        ToolTip(btn_audit, "Run accessibility checks on your content")
 
         btn_math = ttk.Button(sidebar, text="📐 MATH CONVERTER", command=lambda: self._switch_view("math"), style="Sidebar.TButton")
         btn_math.pack(pady=3, padx=10, fill="x")
