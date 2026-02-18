@@ -7,6 +7,11 @@ This guide will help you build the Mac version of the MOSH ADA Toolkit.
 1. **macOS** (any recent version)
 2. **Python 3.9 or higher** (check with `python3 --version`)
 3. **Git** (should be pre-installed)
+4. **Poppler** (CRITICAL for PDF conversion):
+   ```bash
+   brew install poppler
+   ```
+   *(If you don't have Homebrew, install it first from brew.sh)*
 
 ## Step-by-Step Instructions
 
@@ -58,13 +63,13 @@ This will take a few minutes. You'll see PyInstaller processing all the modules.
 ### 5. Find Your Application
 
 When the build completes, you'll find:
-- **Location**: `dist/MOSH_ADA_Toolkit.app`
-- **Size**: ~50-60 MB
+- **Location**: `dist/MOSH_ADA_Toolkit_v1.0.0_RC16.app`
+- **Size**: ~60-80 MB
 
 ### 6. Test the Application
 
 ```bash
-open dist/MOSH_ADA_Toolkit.app
+open dist/MOSH_ADA_Toolkit_v1.0.0_RC16.app
 ```
 
 The toolkit GUI should launch!
@@ -86,7 +91,7 @@ After the first launch, they can open it normally from then on.
 
 Users can also run this command to allow the app:
 ```bash
-xattr -cr /path/to/MOSH_ADA_Toolkit.app
+xattr -cr /path/to/MOSH_ADA_Toolkit_v1.0.0_RC16.app
 ```
 
 ## Uploading to GitHub
@@ -107,10 +112,10 @@ To create a release with the Mac version:
 ```bash
 # Create a zip file for easier distribution
 cd dist
-zip -r MOSH_ADA_Toolkit_Mac.zip MOSH_ADA_Toolkit.app
+zip -r MOSH_ADA_Toolkit_v1.0.0_RC16_Mac.zip MOSH_ADA_Toolkit_v1.0.0_RC16.app
 ```
 
-Then upload `MOSH_ADA_Toolkit_Mac.zip` to the GitHub release.
+Then upload `MOSH_ADA_Toolkit_v1.0.0_RC16_Mac.zip` to the GitHub release.
 
 ## Troubleshooting
 

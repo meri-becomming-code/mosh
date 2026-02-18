@@ -53,8 +53,12 @@ RULES:
 2. TRANSCRIBE any standard text exactly as it appears.
 3. If the image contains NO MATH, just transcribe the text or describe the image. DO NOT REFUSE.
 4. GRAPHS & DIAGRAMS:
-   - If the image contains a graph, chart, or diagram, provide a DETAILED text description.
-   - Example: <p><em>[Graph Description: A parabola opening upwards with vertex at (0,0)...]</em></p>
+   - Provide a DETAILED text description of the graph/diagram.
+   - CRITICAL: Calculate the bounding box of the graph (0-1000 scale).
+   - Output the code: [GRAPH_BBOX: ymin, xmin, ymax, xmax]
+   - Example: [GRAPH_BBOX: 150, 100, 450, 900]
+   - I will use this to auto-crop the image.
+   - Example: <p><em>[Graph Description: A parabola...]</em></p> [GRAPH_BBOX: 200, 200, 500, 500]
    - Do NOT ignore visual elements.
 5. HANDWRITING / TEACHER NOTES:
    - If you detect handwritten notes or solutions, style them in BLUE.
@@ -115,6 +119,69 @@ def generate_content_with_retry(client, model, contents, log_func=None):
                 raise e
     
     raise Exception("MOSH Magic failed after multiple retries. The AI server might be too busy or your connection is unstable. Please try again in a few minutes.")
+
+def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, page_num):
+    """
+    Parses [GRAPH_BBOX] tokens, crops images from the source page, 
+    saves them to web_resources, and replaces tokens with <img> tags.
+    """
+    if '[GRAPH_BBOX:' not in html_content:
+        return html_content
+        
+    try:
+        # 1. Ensure web_resources exists
+        res_dir = Path(output_dir) / 'web_resources'
+        res_dir.mkdir(exist_ok=True)
+        
+        # 2. Open Source Image
+        with Image.open(image_path) as img:
+            width, height = img.size
+            
+            # 3. Find all BBOX tokens
+            # Format: [GRAPH_BBOX: ymin, xmin, ymax, xmax] (0-1000 scale)
+            matches = re.finditer(r'\[GRAPH_BBOX:\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]', html_content)
+            
+            for i, match in enumerate(matches):
+                try:
+                    full_token = match.group(0)
+                    ymin_rel, xmin_rel, ymax_rel, xmax_rel = map(int, match.groups())
+                    
+                    # 4. Convert to Pixels with Padding
+                    ymin = int((ymin_rel / 1000) * height)
+                    xmin = int((xmin_rel / 1000) * width)
+                    ymax = int((ymax_rel / 1000) * height)
+                    xmax = int((xmax_rel / 1000) * width)
+                    
+                    # Add 20px padding
+                    ymin = max(0, ymin - 20)
+                    xmin = max(0, xmin - 20)
+                    ymax = min(height, ymax + 20)
+                    xmax = min(width, xmax + 20)
+                    
+                    if (xmax - xmin) < 50 or (ymax - ymin) < 50:
+                        continue # Skip tiny crops
+                        
+                    # 5. Crop and Save
+                    crop = img.crop((xmin, ymin, xmax, ymax))
+                    
+                    # Unique filename
+                    graph_filename = f"{base_name}_p{page_num + 1}_graph{i + 1}.png"
+                    save_path = res_dir / graph_filename
+                    crop.save(save_path)
+                    
+                    # 6. Replace Token with Image Tag
+                    img_tag = f'<br><img src="web_resources/{graph_filename}" alt="Graph from Page {page_num + 1}" style="max-width: 600px; border: 1px solid #ccc;"><br>'
+                    html_content = html_content.replace(full_token, img_tag)
+                    
+                except Exception as e:
+                    print(f"Crop Error: {e}")
+                    # Remove token on error to clean up
+                    html_content = html_content.replace(full_token, "")
+                    
+    except Exception as e:
+        print(f"Graph extraction failed: {e}")
+        
+    return html_content
 
 def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None):
     """
@@ -179,9 +246,12 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                 return index, f"<p>[Error converting page {index+1}: {e}]</p>"
 
         # Use 1 worker for stability (prevents Poppler/Tkinter crashes)
+        # Sort images to ensure index matches sorted(glob)
+        sorted_image_paths = sorted(temp_dir.glob('*.png'))
+        
         with ThreadPoolExecutor(max_workers=1) as executor:
             futures = []
-            for i, img_path in enumerate(sorted(temp_dir.glob('*.png'))):
+            for i, img_path in enumerate(sorted_image_paths):
                 futures.append(executor.submit(process_page, i, img_path))
             
             for future in as_completed(futures):
@@ -193,8 +263,23 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                 if log_func:
                     log_func(f"   ✅ Finished processing page {idx+1}/{len(images)}")
         
+        # [NEW] Post-Processing: Extract and Crop Graphs
+        if log_func: log_func("   ✂️  Auto-cropping graphs from pages...")
+        output_dir = Path(pdf_path).parent
+        pdf_stem = Path(pdf_path).stem
+        
+        final_pages = []
+        for i, content in enumerate(all_content):
+            if content:
+                # Use the original temp image for cropping
+                try:
+                    content = extract_and_crop_graphs(content, sorted_image_paths[i], output_dir, pdf_stem, i)
+                except Exception as e:
+                     if log_func: log_func(f"   ⚠️ Graph crop warning p{i+1}: {e}")
+                final_pages.append(content)
+                
         # Combine everything
-        final_html_content = "\n<hr>\n".join([c for c in all_content if c])
+        final_html_content = "\n<hr>\n".join(final_pages)
         
         # Clean up temp images
         try:
@@ -209,7 +294,7 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         
         # Create HTML
         title = Path(pdf_path).stem.replace('_', ' ').title()
-        html = create_canvas_html("\n".join(all_content), title=title)
+        html = create_canvas_html(final_html_content, title=title)
         
         if log_func:
             log_func(f"✅ Conversion complete: {len(all_content)} pages")
@@ -399,6 +484,16 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             p = Path(file_path)
             ext = p.suffix.lower()
             
+            html_output_path = p.parent / f"{p.stem}.html"
+            if html_output_path.exists():
+                if log_func: log_func(f"   ⏩ Skipping: {p.name} (Already converted)")
+                # Still trigger callback to ensure upload happens if needed
+                if on_file_converted:
+                    try:
+                        on_file_converted(str(file_path), str(html_output_path))
+                    except: pass
+                continue
+
             if log_func:
                 log_func(f"   🔄 Converting: {p.name} ...")
 

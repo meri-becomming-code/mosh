@@ -576,13 +576,24 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             print(f"Net check error: {e}")
 
     def _switch_view(self, view_name):
-        """Standard method to swap the main content area."""
-        if self.main_content_frame:
-            self.main_content_frame.destroy()
-        
-        self.current_view = view_name
-        
-        # Create a new scrollable container for the view
+        """Switches the main content area based on sidebar selection."""
+        # 1. Hide all frames
+        for frame in self.main_frames.values():
+            frame.pack_forget()
+            
+        # 2. Show selected
+        if view_name in self.main_frames:
+            self.main_frames[view_name].pack(fill="both", expand=True)
+        elif view_name == "audit":
+             # [FIX] If audit view is requested, run the audit task immediately
+             # or show a specific frame if one exists.
+             # Since we don't have a dedicated "audit" frame yet, let's run the report.
+             self._run_audit()
+             # Keep the current view or switch to console?
+             # Let's switch to 'course' view so they can see the log
+             self.main_frames["course"].pack(fill="both", expand=True)
+             
+        # 3. Update Title...w scrollable container for the view
         container = ttk.Frame(self.pane_content)
         container.pack(fill="both", expand=True)
         self.main_content_frame = container
