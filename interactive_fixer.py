@@ -34,11 +34,13 @@ def sanitize_filename(base_name):
 class FixerIO:
     """Handles Input/Output. Subclass this for GUI integration."""
     def __init__(self):
+        self.is_running = True
         self.stop_requested = False
-        # Use user's home directory for global memory
-        self.alt_memory_file = os.path.join(os.path.expanduser("~"), ".mosh_alt_memory.json")
+        self.api_key = ""
+        self.memory = {} # basename|sz -> alt_text
+        self.global_decorative_keys = set() # Keys to automatically mark as decorative session-wide
+        self.mem_path = os.path.join(os.path.expanduser("~"), ".mosh_alt_memory.json")
         self.memory = self._load_memory()
-        self.api_key = "" # Gemini API Key for Jeanie Magic
         
         # [NEW] Mitigation for Duplicate Fatigue
         # If an image filename matches these, we auto-mark as decorative without asking.
@@ -52,9 +54,9 @@ class FixerIO:
         ]
 
     def _load_memory(self):
-        if os.path.exists(self.alt_memory_file):
+        if os.path.exists(self.mem_path):
             try:
-                with open(self.alt_memory_file, 'r', encoding='utf-8') as f:
+                with open(self.mem_path, 'r', encoding='utf-8') as f:
                     raw_memory = json.load(f)
                     # Normalize keys for consistent matching (URL decode + lowercase)
                     normalized = {}
@@ -69,7 +71,7 @@ class FixerIO:
 
     def save_memory(self):
         try:
-            with open(self.alt_memory_file, 'w', encoding='utf-8') as f:
+            with open(self.mem_path, 'w', encoding='utf-8') as f:
                 json.dump(self.memory, f, indent=4)
         except Exception as e:
             print(f"[Warning] Could not save memory file: {e}")
@@ -481,29 +483,38 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                     img['alt'] = ""
                     img['role'] = "presentation"
                     modified = True
-                    # Log once per file to avoid spam, or just silent?
-                    # io_handler.log(f"    [Auto-Decor] Matched pattern '{pattern}'. marked as decorative.")
                     continue
         
         issue = None
 
         # [SILENT MEMORY CHECK] 
-        # Before we even flag an issue, check if this image/alt combo is already in our memories.
-        # This prevents prompting the user twice (once during conversion, once during review).
         img_full_path = resolve_image_path(src, filepath, root_dir, io_handler)
-        mem_key = normalize_image_key(src, img_full_path) # [FIX] Always define mem_key
+        mem_key = normalize_image_key(src, img_full_path)
 
+        # 0. Check Session-Global Memory (Smart Ignore)
+        if mem_key in io_handler.global_decorative_keys:
+             img['alt'] = ""
+             img['role'] = "presentation"
+             io_handler.log(f"    [SMART IGNORE] Auto-marked decorative: {os.path.basename(src)}")
+             modified = True
+             continue
+
+        # 1. Check Long-Term Memory (Persistent)
         if img_full_path:
             if mem_key in io_handler.memory:
                 saved_alt = io_handler.memory[mem_key]
-                # If what's in the file already matches our memory, or if we have a memory for it,
-                # we don't need to "Review" it unless it's a critical error (like empty alt).
-                if alt == saved_alt and alt:
-                    # Silence - user already did this.
+                
+                # Check if it was saved as decorative
+                if saved_alt == "__DECORATIVE__":
+                    img['alt'] = ""
+                    img['role'] = "presentation"
+                    io_handler.log(f"    [MEMORY] Auto-marked decorative: {os.path.basename(src)}")
+                    modified = True
                     continue
-                elif saved_alt and not alt:
-                    # The file is missing it but we have it in memory - auto-fill silently
+
+                if saved_alt and saved_alt != "__SKIP__":
                     img['alt'] = saved_alt
+                    io_handler.log(f"    [MEMORY] Auto-filled: \"{saved_alt}\"")
                     modified = True
                     continue
 
@@ -543,10 +554,16 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             
             # Final check of memory before prompting (in case it was just added in this session)
             if mem_key in io_handler.memory:
-                suggested_alt = io_handler.memory[mem_key]
-                img['alt'] = suggested_alt
-                modified = True
-                continue
+                saved_alt = io_handler.memory[mem_key]
+                if saved_alt == "__DECORATIVE__":
+                    img['alt'] = ""
+                    img['role'] = "presentation"
+                    modified = True
+                    continue
+                elif saved_alt and saved_alt != "__SKIP__":
+                    img['alt'] = saved_alt
+                    modified = True
+                    continue
 
             if not img_full_path:
                  io_handler.log(f"    [Warning] Could not find local image file.")
@@ -648,14 +665,20 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 if choice == "__DECORATIVE__":
                     img['alt'] = ""
                     # [PANORAMA MATCH] Add role="presentation" to explicitly hide from screen readers
-                    img['role'] = "presentation" 
-                    io_handler.log(f"    -> Marked as DECORATIVE (Saved to Memory)")
+                    img['role'] = "presentation"
+                    io_handler.log("    -> Marked as decorative.")
                     
-                    # Save exact token OR empty string?
-                    # If we save "", next time it auto-applies "".
-                    # If we save "__DECORATIVE__", next time we see it, we apply "".
-                    # Let's save "" so it's transparent.
-                    io_handler.memory[mem_key] = "" 
+                    # [NEW] SMART IGNORE PROMPT
+                    if mem_key not in io_handler.global_decorative_keys:
+                        msg = f"Would you like to automatically mark all identical images ('{os.path.basename(src)}') as decorative in the rest of this course?"
+                        if io_handler.confirm(msg):
+                            io_handler.global_decorative_keys.add(mem_key)
+                            io_handler.memory[mem_key] = "__DECORATIVE__" # Also save to persistent memory
+                            io_handler.save_memory()
+                    
+                    modified = True
+                    io_handler.memory[mem_key] = "__DECORATIVE__"
+                    io_handler.save_memory()
                 else:
                     img['alt'] = choice
                     io_handler.memory[mem_key] = choice

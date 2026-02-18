@@ -17,6 +17,7 @@ except ImportError:
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def clean_gemini_response(text):
     """
@@ -134,33 +135,44 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         if log_func:
             log_func(f"   ✅ Created {len(images)} page images")
         
-        # Process each page
-        all_content = []
-        for i, img_path in enumerate(sorted(temp_dir.glob('*.png')), 1):
-            if log_func:
-                log_func(f"   [{i}/{len(images)}] Converting page {i}...")
+        # Process each page using Multi-threading (3x Faster!)
+        all_content = [None] * len(images) # Preschool for ordered results
+        progress_count = 0
+        
+        def process_page(index, img_path):
+            try:
+                img = Image.open(img_path)
+                response = generate_content_with_retry(
+                    client=client,
+                    model='gemini-2.0-flash',
+                    contents=[MATH_PROMPT, img],
+                    log_func=log_func
+                )
+                return index, clean_gemini_response(response.text)
+            except Exception as e:
+                if log_func:
+                    log_func(f"   [Error] Page {index+1} failed: {e}")
+                return index, f"<p>[Error converting page {index+1}: {e}]</p>"
 
-            if progress_callback:
-                progress_callback(i, len(images))
+        # Use 3 concurrent workers (Safe for rate limits)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = []
+            for i, img_path in enumerate(sorted(temp_dir.glob('*.png'))):
+                futures.append(executor.submit(process_page, i, img_path))
             
-            img = Image.open(img_path)
-            response = generate_content_with_retry(
-                client=client,
-                model='gemini-2.0-flash',
-                contents=[MATH_PROMPT, img],
-                log_func=log_func
-            )
-            
-            if response.text:
-                cleaned_text = clean_gemini_response(response.text)
-                all_content.append(f"\n<!-- Page {i} -->\n{cleaned_text}\n")
-            else:
-                all_content.append(f"\n<!-- Page {i}: No response from Gemini -->\n")
+            for future in as_completed(futures):
+                idx, content = future.result()
+                all_content[idx] = content
+                progress_count += 1
+                if progress_callback:
+                    progress_callback(progress_count, len(images))
+                if log_func:
+                    log_func(f"   ✅ Finished processing page {idx+1}/{len(images)}")
+        
+        # Combine everything
+        final_html_content = "\n<hr>\n".join([c for c in all_content if c])
         
         # Clean up temp images
-        import time
-        
-        # Close any open file handles
         try:
              del images
         except: pass

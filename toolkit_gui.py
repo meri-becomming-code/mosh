@@ -2,7 +2,7 @@
 # Released freely under the GNU General Public License v3.0. USE AT YOUR OWN RISK.
 
 import tkinter as tk
-VERSION = "0.9.6"
+VERSION = "1.0.0-RC15"
 from tkinter import filedialog, messagebox, simpledialog, scrolledtext, Toplevel, Menu, ttk
 from PIL import Image, ImageTk
 import sys
@@ -148,8 +148,8 @@ class ToolkitGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("MOSH's Toolkit: Making Online Spaces Helpful")
-        self.root.geometry("1000x650") # Wider for dual-card dashboard
-        self.root.minsize(1000, 600) # prevent cutting off buttons
+        self.root.geometry("1150x800") # Expanded for better visibility
+        self.root.minsize(1100, 700) # Prevents cutting off buttons
 
         # [NEW] Safe Exit Protocol
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -183,6 +183,12 @@ class ToolkitGUI:
         # --- Start Polling Loops ---
         self.root.after(100, self._process_logs)
         self.root.after(100, self._process_inputs)
+        
+        # [NEW] Tag configuration for Clickable Log
+        self.txt_log.tag_config("link", foreground="blue", underline=True)
+        self.txt_log.tag_bind("link", "<Enter>", lambda e: self.txt_log.config(cursor="hand2"))
+        self.txt_log.tag_bind("link", "<Leave>", lambda e: self.txt_log.config(cursor="xterm"))
+        self.txt_log.tag_bind("link", "<Button-1>", self._on_log_click)
 
     def _load_config(self):
         try:
@@ -436,7 +442,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         colors = THEMES[mode]
         
         # 1. Sidebar
-        sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", width=200)
+        sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", width=220)
         sidebar.pack(side="left", fill="y")
 
         # 2. Main Container (Right)
@@ -476,11 +482,11 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         try:
             mosh_path = resource_path("mosh_pilot.png")
             mosh_img = Image.open(mosh_path)
-            # Make it small for the sidebar
-            mosh_img = mosh_img.resize((120, 120), Image.Resampling.LANCZOS)
+            # Make it slightly smaller to save vertical space
+            mosh_img = mosh_img.resize((100, 100), Image.Resampling.LANCZOS)
             self.sidebar_mosh_tk = ImageTk.PhotoImage(mosh_img)
             self.lbl_mosh_icon = ttk.Label(sidebar, image=self.sidebar_mosh_tk, style="Sidebar.TLabel", cursor="hand2")
-            self.lbl_mosh_icon.pack(pady=(20, 0))
+            self.lbl_mosh_icon.pack(pady=(15, 0))
             self.lbl_mosh_icon.bind("<Button-1>", lambda e: self._switch_view("dashboard"))
             ToolTip(self.lbl_mosh_icon, "Back to Home Dashboard")
         except:
@@ -492,39 +498,39 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         
         lbl_tagline = ttk.Label(sidebar, text="Built by a teacher with AI, for teachers", 
                                 style="Sidebar.TLabel", font=("Segoe UI", 9, "italic"), 
-                                wraplength=180, justify="center")
-        lbl_tagline.pack(pady=(0, 20), padx=10)
+                                wraplength=200, justify="center")
+        lbl_tagline.pack(pady=(0, 15), padx=10)
         
-        ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 5))
-        tk.Label(sidebar, text="Powered by Antigravity 🚀", bg=colors["sidebar"], fg="#AAA", font=("Segoe UI", 7)).pack(pady=(0, 10))
+        ttk.Label(sidebar, text="v2026.1", style="Sidebar.TLabel", font=("Segoe UI", 8)).pack(pady=(0, 2))
+        tk.Label(sidebar, text="Powered by Antigravity 🚀", bg=colors["sidebar"], fg="#AAA", font=("Segoe UI", 7)).pack(pady=(0, 5))
         
-        # [NEW] Navigation Buttons
+        # [NEW] Navigation Buttons (Tightened pady)
         btn_setup = ttk.Button(sidebar, text="🛠️ CONNECT & SETUP", command=lambda: self._switch_view("setup"), style="Sidebar.TButton")
-        btn_setup.pack(pady=5, padx=10, fill="x")
+        btn_setup.pack(pady=3, padx=10, fill="x")
         ToolTip(btn_setup, "Configure your Canvas, AI Key, and load your project")
         
         btn_canvas = ttk.Button(sidebar, text="🎨 CANVAS REMEDIATION", command=lambda: self._switch_view("course"), style="Sidebar.TButton")
-        btn_canvas.pack(pady=5, padx=10, fill="x")
+        btn_canvas.pack(pady=3, padx=10, fill="x")
         ToolTip(btn_canvas, "Bulk audit and fix your Canvas course pages")
 
         btn_files = ttk.Button(sidebar, text="📄 FILE CONVERSION", command=lambda: self._switch_view("files"), style="Sidebar.TButton")
-        btn_files.pack(pady=5, padx=10, fill="x")
+        btn_files.pack(pady=3, padx=10, fill="x")
         ToolTip(btn_files, "Convert PowerPoint or Word files to clean HTML")
 
         btn_math = ttk.Button(sidebar, text="📐 MATH CONVERTER", command=lambda: self._switch_view("math"), style="Sidebar.TButton")
-        btn_math.pack(pady=5, padx=10, fill="x")
+        btn_math.pack(pady=3, padx=10, fill="x")
         ToolTip(btn_math, "Gemini-powered conversion of Math from PDF or Images")
 
         # [NEW] Upload Button (Moved to sidebar per user request)
         btn_upload = ttk.Button(sidebar, text="🚀 UPLOAD TO CANVAS", command=self._show_preflight_dialog, style="Sidebar.TButton")
-        btn_upload.pack(pady=5, padx=10, fill="x")
+        btn_upload.pack(pady=3, padx=10, fill="x")
         ToolTip(btn_upload, "Final Step: Check your course and create the upload file")
 
-        ttk.Separator(sidebar, orient='horizontal').pack(fill='x', padx=20, pady=10)
+        ttk.Separator(sidebar, orient='horizontal').pack(fill='x', padx=20, pady=8)
 
         # [NEW] Share Button
         self.btn_share = ttk.Button(sidebar, text="📣 SPREAD THE WORD", command=self._show_share_dialog, style="Action.TButton")
-        self.btn_share.pack(pady=10, padx=10, fill="x")
+        self.btn_share.pack(pady=8, padx=10, fill="x")
 
         # Header Banner with Logo & Progress (Top of Right Panel)
         header_frame = tk.Frame(self.right_panel, height=60, bg="white")
@@ -1152,9 +1158,70 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
     def _log(self, msg):
         self.txt_log.configure(state='normal')
+        
+        # [MODIFIED] Detect file paths for clickability
+        import re
+        # Look for [SAVED], Created:, or general file paths in the message
+        path_patterns = [
+            r'\[SAVED\]\s+([^\n]+)', 
+            r'Created:\s+([^\n]+)',
+            r'Project folder:\s+([^\n]+)',
+            r'Processing:\s+([^\n]+\.html)'
+        ]
+        
+        start_index = self.txt_log.index(tk.END + "-1c")
         self.txt_log.insert(tk.END, msg + "\n")
+        
+        for pattern in path_patterns:
+            for match in re.finditer(pattern, msg):
+                path_str = match.group(1).strip()
+                # If it's just a filename, it might be harder to resolve, but we can try
+                # For now, we tag the matched group
+                m_start, m_end = match.span(1)
+                
+                # Convert string index to Tkinter index
+                # This is tricky with multiple lines, so we just apply to the whole line if match found
+                line_no = int(start_index.split('.')[0])
+                tag_start = f"{line_no}.{m_start}"
+                tag_end = f"{line_no}.{m_end}"
+                self.txt_log.tag_add("link", tag_start, tag_end)
+        
         self.txt_log.see(tk.END)
         self.txt_log.configure(state='disabled')
+
+    def _on_log_click(self, event):
+        """Handle clicking a link in the log."""
+        # Get index of click
+        idx = self.txt_log.index(f"@{event.x},{event.y}")
+        # Find the word under the click that has the 'link' tag
+        tags = self.txt_log.tag_names(idx)
+        if "link" in tags:
+            # We need to extract the actual text of the link
+            # Search backward and forward for the start/end of the tag
+            start = self.txt_log.tag_prevrange("link", idx + "+1c")[0]
+            end = self.txt_log.tag_nextrange("link", idx + "-1c")[1]
+            path_val = self.txt_log.get(start, end).strip().strip('"').strip("'")
+            
+            # Resolve relative path if needed
+            if not os.path.isabs(path_val):
+                # Try relative to target_dir
+                full_p = os.path.join(self.target_dir, path_val)
+                if not os.path.exists(full_p):
+                    # Try searching for it (expensive but helpful)
+                    for root, dirs, files in os.walk(self.target_dir):
+                         if path_val in files:
+                             full_p = os.path.join(root, path_val)
+                             break
+                path_val = full_p
+
+            if os.path.exists(path_val):
+                if path_val.lower().endswith('.html'):
+                    webbrowser.open(f"file:///{os.path.abspath(path_val)}")
+                else:
+                    os.startfile(os.path.dirname(path_val) if os.path.isfile(path_val) else path_val)
+            else:
+                self.gui_handler.log(f"⚠️ Could not open: {path_val}")
+
 
     def _show_image_dialog(self, message, image_path, context=None, suggestion=None):
         """Custom dialog to show an image and prompt for alt text."""
