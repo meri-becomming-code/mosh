@@ -53,32 +53,46 @@ Return ready-to-paste HTML/LaTeX for Canvas."""
 
 def generate_content_with_retry(client, model, contents, log_func=None):
     """
-    Wraps Gemini generation with exponential backoff for 429 errors.
+    Wraps Gemini generation with exponential backoff for rate limits and connection issues.
     """
-    max_retries = 5
-    base_delay = 4  # Start with 4 seconds
+    max_retries = 6
+    base_delay = 5  # Start with 5 seconds
     
     for attempt in range(max_retries):
         try:
-            # Proactive delay to avoid hitting rate limits
+            # Proactive delay to avoid hitting rate limits (Increased for stability)
             if attempt == 0:
-                time.sleep(1.5)
+                time.sleep(2.0)
             
             return client.models.generate_content(
                 model=model,
                 contents=contents
             )
         except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                wait_time = base_delay * (2 ** attempt) # 4, 8, 16, 32, 64
+            error_str = str(e).lower()
+            
+            # Check for Rate Limits (429) OR Connection Resets (10054) OR Timeout
+            is_retryable = (
+                "429" in error_str or 
+                "resource_exhausted" in error_str or
+                "connection" in error_str or 
+                "10054" in error_str or
+                "remote host" in error_str or
+                "deadline" in error_str or
+                "timeout" in error_str
+            )
+
+            if is_retryable:
+                wait_time = base_delay * (2 ** attempt) # 5, 10, 20, 40, 80...
                 if log_func:
-                    log_func(f"   ⏳ Rate Limit Hit. Pausing for {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                    reason = "Quota" if ("429" in error_str or "exhausted" in error_str) else "Network"
+                    log_func(f"   ⏳ {reason} Hiccup. Pausing for {wait_time}s... (Attempt {attempt+1}/{max_retries})")
                 time.sleep(wait_time)
             else:
+                # If it's a real Auth error or something else, don't wait 2 minutes
                 raise e
     
-    raise Exception("API Quota Exceeded. Please try again later.")
+    raise Exception("MOSH Magic failed after multiple retries. The AI server might be too busy or your connection is unstable. Please try again in a few minutes.")
 
 def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None):
     """
