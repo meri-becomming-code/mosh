@@ -11,9 +11,13 @@ from PIL import Image
 try:
     from google import genai
     from google.genai import types
-    from pdf2image import convert_from_path
 except ImportError:
     genai = None
+
+try:
+    from pdf2image import convert_from_path
+except ImportError:
+    convert_from_path = None
 
 import re
 import time
@@ -40,17 +44,26 @@ def clean_gemini_response(text):
         
     return text.strip()
 
-MATH_PROMPT = """Convert ALL mathematical content in this image to Canvas-compatible LaTeX format.
+MATH_PROMPT = """Convert the content of this image to Canvas-compatible HTML/LaTeX.
 
 RULES:
-1. Use \\(...\\) for inline equations
-2. Use $$...$$ for display equations  
-3. Preserve problem numbers and steps
-4. Add <details><summary>Solution</summary>...</details> for solutions
-5. Be 100% accurate
-6. DO NOT return a full HTML document (no <html>, <head>, <body> tags). Return ONLY the content.
+1. Identify all mathematical content and convert to LaTeX:
+   - Use \\(...\\) for inline equations
+   - Use $$...$$ for display equations
+2. TRANSCRIBE any standard text exactly as it appears.
+3. If the image contains NO MATH, just transcribe the text or describe the image. DO NOT REFUSE.
+4. Preserve problem numbers (e.g., "1.", "a)") and layout structure.
+5. Formatting:
+   - Use <h3> for section headers
+   - Use <b> for bold text
+   - Use <i> for italics
+   - Use <table> for tabular data
+6. Solutions/Answers:
+   - Wrap solutions in <details><summary>View Solution</summary>...</details>
+7. Output MUST be valid HTML snippet (no <html> cards). 
+8. DO NOT include markdown code blocks (```html).
 
-Return ready-to-paste HTML/LaTeX for Canvas."""
+Goal: A perfect accessible digital version of this document."""
 
 def generate_content_with_retry(client, model, contents, log_func=None):
     """
@@ -107,6 +120,9 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
     
     if log_func:
         log_func(f"📄 Processing PDF: {Path(pdf_path).name}")
+    
+    if not convert_from_path:
+        return False, "pdf2image library not installed or import failed."
     
     try:
         # Configure Gemini
@@ -185,7 +201,7 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         
         # Create HTML
         title = Path(pdf_path).stem.replace('_', ' ').title()
-        html = create_canvas_html(title, "\n".join(all_content))
+        html = create_canvas_html("\n".join(all_content), title=title)
         
         if log_func:
             log_func(f"✅ Conversion complete: {len(all_content)} pages")
@@ -219,7 +235,7 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
         if response.text:
             cleaned_text = clean_gemini_response(response.text)
             title = Path(image_path).stem.replace('_', ' ').title()
-            html = create_canvas_html(title, cleaned_text)
+            html = create_canvas_html(cleaned_text, title=title)
             
             if log_func:
                 log_func(f"✅ Conversion complete")
@@ -283,7 +299,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
         
         if all_content:
             title = Path(doc_path).stem.replace('_', ' ').title()
-            html = create_canvas_html(title, "\n".join(all_content))
+            html = create_canvas_html("\n".join(all_content), title=title)
             
             if log_func:
                 log_func(f"✅ Converted {len(all_content)} equations from Word doc")
@@ -375,6 +391,9 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             p = Path(file_path)
             ext = p.suffix.lower()
             
+            if log_func:
+                log_func(f"   🔄 Converting: {p.name} ...")
+
             if ext == '.pdf':
                 success, html_or_error = convert_pdf_to_latex(api_key, str(p), log_func, poppler_path=poppler_path)
             elif ext == '.docx':
@@ -458,16 +477,81 @@ def create_canvas_html(content, title="Canvas Math Content"):
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
-<body style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; line-height: 1.6;">
-    <h1 style="color: #4b3190; border-bottom: 2px solid #4b3190; padding-bottom: 10px;">{title}</h1>
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px;
+            line-height: 1.6;
+            color: #2D2D2D;
+            background-color: #ffffff;
+        }
+        h1 {
+            color: #4b3190;
+            border-bottom: 2px solid #4b3190;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+            font-size: 28px; /* Reduced from browser default */
+            font-weight: 700;
+        }
+        h2, h3 { color: #2c3e50; margin-top: 30px; }
+        
+        /* Table Handling - Prevent Cutoff */
+        table {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            border-collapse: collapse;
+            margin: 20px 0;
+            -webkit-overflow-scrolling: touch;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th { background-color: #f8f9fa; color: #4b3190; }
+        
+        /* Interactive Solutions */
+        details {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-left: 5px solid #4b3190;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+            transition: all 0.2s ease;
+        }
+        summary {
+            font-weight: 600;
+            color: #4b3190;
+            cursor: pointer;
+            padding-bottom: 5px;
+        }
+        summary:hover { color: #2c3e50; }
+        
+        /* Images */
+        img {{ max-width: 100%; height: auto; border-radius: 4px; }}
+        
+        /* Print Friendly */
+        @media print {{
+            body {{ max-width: 100%; padding: 0; }}
+            details {{ display: block !important; border: none; }}
+            summary {{ display: none; }}
+        }}
+    </style>
+</head>
+<body>
+    <h1>{title}</h1>
     
-    <div style="margin: 20px 0;">
+    <div class="content-wrapper">
         {content}
     </div>
     
-    <hr style="border: 0; border-top: 1px solid #eee; margin: 40px 0;">
-    <p style="font-size: 0.9em; color: #666; font-style: italic; text-align: center;">
-        ✨ Converted to accessible LaTeX by MOSH Toolkit with Gemini AI
+    <hr style="border: 0; border-top: 1px solid #eee; margin: 50px 0;">
+    <p style="font-size: 0.85em; color: #7f8c8d; text-align: center; font-family: monospace;">
+        Accessible format created by MOSH Toolkit using Gemini AI
     </p>
 </body>
 </html>

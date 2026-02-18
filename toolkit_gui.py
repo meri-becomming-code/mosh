@@ -2935,17 +2935,21 @@ YOUR WORKFLOW:
 
     def _convert_math_canvas_export(self):
         """Processes an entire IMSCC course package for math content."""
+        self.gui_handler.log("DEBUG: _convert_math_canvas_export triggered")
         api_key = self.config.get("api_key", "").strip()
         if not api_key:
+            self.gui_handler.log("ERROR: No Gemini API Key found.")
             messagebox.showwarning("Setup Required", "Please set your Gemini API Key in the 'CONNECT & SETUP' view first.")
             return
 
         if not self.target_dir or not os.path.exists(self.target_dir):
+            self.gui_handler.log("ERROR: No project loaded.")
             messagebox.showwarning("No Project", "Please load a course project (.imscc) in the 'CONNECT & SETUP' view first.")
             return
 
         # Poppler check
         if os.name == "nt" and not self.config.get("poppler_path"):
+            self.gui_handler.log("DEBUG: Poppler path not set. Prompting user.")
             if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nRun 'Auto-Setup' in the 'CONNECT & SETUP' view?"):
                 self._switch_view("setup")
             return
@@ -2967,6 +2971,9 @@ YOUR WORKFLOW:
                 pct = (current / total) * 100
                 self.root.after(0, lambda: self.progress_var.set(pct))
                 self.root.after(0, lambda: self.lbl_status_text.config(text=f"Converting File {current}/{total}...", fg="blue"))
+                # [NEW] Log periodic updates to keep user informed
+                if current % 5 == 0 or current == 1 or current == total:
+                     log(f"   ... Processing file {current} of {total} ...")
 
             log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
             

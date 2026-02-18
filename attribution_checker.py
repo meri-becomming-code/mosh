@@ -109,18 +109,13 @@ def extract_text(file_path):
         return ""
 
 def extract_text_from_pdf(pdf_path):
-    """Extract text from PDF (first 3 pages only for speed)."""
+    """Extract text from PDF (first page only for speed)."""
     try:
         from pdf2image import convert_from_path
-        from google import genai
-        
         # Only check first page for licensing info
-        images = convert_from_path(str(pdf_path), dpi=150, last_page=1)
-        
-        # Use OCR if available
-        # Fallback: return empty (will trigger "UNKNOWN" license)
+        # images = convert_from_path(str(pdf_path), dpi=150, last_page=1)
+        # Placeholder: Real OCR would go here. For now, return empty.
         return ""
-        
     except:
         return ""
 
