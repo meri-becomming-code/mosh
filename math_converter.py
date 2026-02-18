@@ -52,16 +52,20 @@ RULES:
    - Use $$...$$ for display equations
 2. TRANSCRIBE any standard text exactly as it appears.
 3. If the image contains NO MATH, just transcribe the text or describe the image. DO NOT REFUSE.
-4. Preserve problem numbers (e.g., "1.", "a)") and layout structure.
-5. Formatting:
+4. GRAPHS & DIAGRAMS:
+   - If the image contains a graph, chart, or diagram, provide a DETAILED text description.
+   - Example: <p><em>[Graph Description: A parabola opening upwards with vertex at (0,0)...]</em></p>
+   - Do NOT ignore visual elements.
+5. Preserve problem numbers (e.g., "1.", "a)") and layout structure.
+6. Formatting:
    - Use <h3> for section headers
    - Use <b> for bold text
    - Use <i> for italics
    - Use <table> for tabular data
-6. Solutions/Answers:
+7. Solutions/Answers:
    - Wrap solutions in <details><summary>View Solution</summary>...</details>
-7. Output MUST be valid HTML snippet (no <html> cards). 
-8. DO NOT include markdown code blocks (```html).
+8. Output MUST be valid HTML snippet (no <html> cards). 
+9. DO NOT include markdown code blocks (```html).
 
 Goal: A perfect accessible digital version of this document."""
 
@@ -170,8 +174,8 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                     log_func(f"   [Error] Page {index+1} failed: {e}")
                 return index, f"<p>[Error converting page {index+1}: {e}]</p>"
 
-        # Use 3 concurrent workers (Safe for rate limits)
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        # Use 1 worker for stability (prevents Poppler/Tkinter crashes)
+        with ThreadPoolExecutor(max_workers=1) as executor:
             futures = []
             for i, img_path in enumerate(sorted(temp_dir.glob('*.png'))):
                 futures.append(executor.submit(process_page, i, img_path))
@@ -313,7 +317,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"❌ Error: {e}")
         return False, str(e)
 
-def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None):
+def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None):
     """
     Process all PDFs in a Canvas export (IMSCC) structure.
     Includes licensing/attribution checking to protect teachers.
@@ -425,6 +429,13 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 
                 if log_func:
                     log_func(f"   ✅ Saved: {html_filename}")
+                
+                # [NEW] Call immediate callback for upload/sync
+                if on_file_converted:
+                    try:
+                        on_file_converted(str(file_path), str(html_path))
+                    except Exception as e_cb:
+                        if log_func: log_func(f"   ⚠️ Post-processing error: {e_cb}")
             else:
                  if log_func:
                     log_func(f"   ⚠️ Skipping file due to error: {html_or_error}")
@@ -478,7 +489,7 @@ def create_canvas_html(content, title="Canvas Math Content"):
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
     <style>
-        body {
+        body {{
             font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
             max-width: 1100px;
             margin: 0 auto;
@@ -486,35 +497,35 @@ def create_canvas_html(content, title="Canvas Math Content"):
             line-height: 1.6;
             color: #2D2D2D;
             background-color: #ffffff;
-        }
-        h1 {
+        }}
+        h1 {{
             color: #4b3190;
             border-bottom: 2px solid #4b3190;
             padding-bottom: 15px;
             margin-bottom: 30px;
             font-size: 28px; /* Reduced from browser default */
             font-weight: 700;
-        }
-        h2, h3 { color: #2c3e50; margin-top: 30px; }
+        }}
+        h2, h3 {{ color: #2c3e50; margin-top: 30px; }}
         
         /* Table Handling - Prevent Cutoff */
-        table {
+        table {{
             display: block;
             width: 100%;
             overflow-x: auto;
             border-collapse: collapse;
             margin: 20px 0;
             -webkit-overflow-scrolling: touch;
-        }
-        th, td {
+        }}
+        th, td {{
             border: 1px solid #ddd;
             padding: 12px;
             text-align: left;
-        }
-        th { background-color: #f8f9fa; color: #4b3190; }
+        }}
+        th {{ background-color: #f8f9fa; color: #4b3190; }}
         
         /* Interactive Solutions */
-        details {
+        details {{
             background-color: #f8f9fa;
             border: 1px solid #e9ecef;
             border-left: 5px solid #4b3190;
@@ -522,14 +533,14 @@ def create_canvas_html(content, title="Canvas Math Content"):
             padding: 15px;
             margin: 20px 0;
             transition: all 0.2s ease;
-        }
-        summary {
+        }}
+        summary {{
             font-weight: 600;
             color: #4b3190;
             cursor: pointer;
             padding-bottom: 5px;
-        }
-        summary:hover { color: #2c3e50; }
+        }}
+        summary:hover {{ color: #2c3e50; }}
         
         /* Images */
         img {{ max-width: 100%; height: auto; border-radius: 4px; }}

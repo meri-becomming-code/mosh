@@ -1550,38 +1550,39 @@ Website: meri-becomming-code.github.io/mosh
     def _disable_buttons(self):
         """Gray out all action buttons while a task is running."""
         # [EXPANDED] Include all possible action buttons across all views
-        btn_list = [
-            self.btn_auto, self.btn_inter, self.btn_audit, 
-            self.btn_wizard, self.btn_word, self.btn_excel, 
-            self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check,
-            getattr(self, 'btn_math_canvas', None),
-            getattr(self, 'btn_math_pdf', None),
-            getattr(self, 'btn_math_docx', None),
-            getattr(self, 'btn_math_img', None)
+        # Use getattr for everything to avoid AttributeErrors if view hasn't loaded
+        btn_list_names = [
+            'btn_auto', 'btn_inter', 'btn_audit', 
+            'btn_wizard', 'btn_word', 'btn_excel', 
+            'btn_ppt', 'btn_pdf', 'btn_batch', 'btn_check',
+            'btn_math_canvas', 'btn_math_pdf', 'btn_math_docx', 'btn_math_img'
         ]
-        for btn in btn_list:
-            try: 
-                if btn: btn.config(state='disabled')
-            except: pass
+        
+        for name in btn_list_names:
+            btn = getattr(self, name, None)
+            if btn:
+                try: btn.config(state='disabled')
+                except: pass
+                
         self.gui_handler.stop_requested = False
-        self.is_running = True
+        # self.is_running = True # Managed by caller or thread
 
     def _enable_buttons(self):
         """Restore all action buttons."""
-        btn_list = [
-            self.btn_auto, self.btn_inter, self.btn_audit, 
-            self.btn_wizard, self.btn_word, self.btn_excel, 
-            self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check,
-            getattr(self, 'btn_math_canvas', None),
-            getattr(self, 'btn_math_pdf', None),
-            getattr(self, 'btn_math_docx', None),
-            getattr(self, 'btn_math_img', None)
+        btn_list_names = [
+            'btn_auto', 'btn_inter', 'btn_audit', 
+            'btn_wizard', 'btn_word', 'btn_excel', 
+            'btn_ppt', 'btn_pdf', 'btn_batch', 'btn_check',
+            'btn_math_canvas', 'btn_math_pdf', 'btn_math_docx', 'btn_math_img'
         ]
-        for btn in btn_list:
-            try: 
-                if btn: btn.config(state='normal')
-            except: pass
-        self.is_running = False
+        
+        for name in btn_list_names:
+            btn = getattr(self, name, None)
+            if btn:
+                try: btn.config(state='normal')
+                except: pass
+                
+        # self.is_running = False # Managed by caller or thread
 
         # [NEW] Reliable Post-Task Review Prompt
         if getattr(self, "auto_prompt_review", False):
@@ -1606,6 +1607,8 @@ Website: meri-becomming-code.github.io/mosh
         self.lbl_status_text.config(text=f"Running {task_name}...", fg="blue")
         self._disable_buttons()
         
+        self.gui_handler.log(f"DEBUG: Preparing thread for {task_name}...")
+    
         # Check if handler exists (Safety for early calls)
         if not hasattr(self, 'gui_handler'):
              print("CRITICAL: GUI Handler missing!")
@@ -1613,10 +1616,17 @@ Website: meri-becomming-code.github.io/mosh
 
         def worker():
             try:
+                print(f"DEBUG: Thread {task_name} started execution.") # Console backup
+                self.gui_handler.log(f"DEBUG: Thread {task_name} started execution.")
                 self.gui_handler.log(f"\n--- Started: {task_name} ---")
                 task_func()
-            except Exception as e:
+                self.gui_handler.log(f"DEBUG: Thread {task_name} finished successfully.")
+            except BaseException as e:
+                import traceback
+                err_details = traceback.format_exc()
+                print(f"CRITICAL THREAD ERROR: {e}\n{err_details}")
                 self.gui_handler.log(f"\n[CRITICAL ERROR] {task_name} Failed: {e}")
+                self.gui_handler.log(f"Details: {err_details}")
                 err_msg = f"Error in {task_name}:\n{str(e)}"
                 self.root.after(0, lambda: messagebox.showerror("Error", err_msg))
             finally:
@@ -1626,7 +1636,9 @@ Website: meri-becomming-code.github.io/mosh
                 self.root.after(0, self._enable_buttons)
 
         thread = threading.Thread(target=worker, daemon=True)
+        self.gui_handler.log(f"DEBUG: Starting thread {task_name}...")
         thread.start()
+        self.gui_handler.log(f"DEBUG: Thread {task_name} start() called.")
 
     def _get_all_html_files(self):
         """Standardized helper to find all HTML files in the target directory (Optimized)."""
@@ -2942,20 +2954,31 @@ YOUR WORKFLOW:
             messagebox.showwarning("Setup Required", "Please set your Gemini API Key in the 'CONNECT & SETUP' view first.")
             return
 
+        self.gui_handler.log(f"DEBUG: API Key OK. Checking project: {self.target_dir}")
+
         if not self.target_dir or not os.path.exists(self.target_dir):
             self.gui_handler.log("ERROR: No project loaded.")
             messagebox.showwarning("No Project", "Please load a course project (.imscc) in the 'CONNECT & SETUP' view first.")
             return
+
+        self.gui_handler.log("DEBUG: Project OK. Checking Poppler...")
 
         # Poppler check
         if os.name == "nt" and not self.config.get("poppler_path"):
             self.gui_handler.log("DEBUG: Poppler path not set. Prompting user.")
             if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nRun 'Auto-Setup' in the 'CONNECT & SETUP' view?"):
                 self._switch_view("setup")
+            else:
+                 self.gui_handler.log("DEBUG: User declined Poppler setup.")
             return
 
+        self.gui_handler.log("DEBUG: Poppler OK. Requesting confirmation...")
+
         if not messagebox.askyesno("Confirm", "This will convert ALL math in your project using AI.\n\nIt may take a while. Continue?"):
+             self.gui_handler.log("DEBUG: User cancelled or closed confirmation dialog.")
              return
+             
+        self.gui_handler.log("DEBUG: Confirmed. Starting background task...")
 
         def task():
             import math_converter
@@ -2975,6 +2998,29 @@ YOUR WORKFLOW:
                 if current % 5 == 0 or current == 1 or current == total:
                      log(f"   ... Processing file {current} of {total} ...")
 
+            # [NEW] Callback for immediate processing
+            def on_file_complete(source, dest):
+                # 1. Auto-Fixer (Silent)
+                success, fixes = interactive_fixer.run_auto_fixer(dest, self.gui_handler)
+                
+                # 2. Update Links
+                converter_utils.update_doc_links_to_html(
+                    self.target_dir,
+                    os.path.basename(source),
+                    os.path.basename(dest),
+                    log_func=log
+                )
+
+                # 3. Archive Original
+                converter_utils.archive_source_file(source)
+
+                # 4. Auto-Upload to Canvas (if API connected)
+                api = self._get_canvas_api()
+                if api:
+                    # Silent upload with auto-confirm
+                    log(f"   ☁️ Uploading to Canvas: {os.path.basename(dest)}...")
+                    self._upload_page_to_canvas(dest, source, api, auto_confirm_links=True)
+
             log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
             
             success, result = math_converter.process_canvas_export(
@@ -2982,21 +3028,41 @@ YOUR WORKFLOW:
                 self.target_dir, 
                 log_func=log,
                 poppler_path=self.config.get("poppler_path", ""),
-                progress_callback=update_progress
+                progress_callback=update_progress,
+                on_file_converted=on_file_complete
             )
             
             if success:
-                # Result is now a list of (source, dest) tuples
-                file_pairs = result 
-                log(f"\n✨ SUCCESS! Converted math in your course project.")
+                # result is list of (source, dest)
+                log(f"\n✨ SUCCESS! Converted {len(result)} files.")
                 
+                # We already processed them one-by-one, so just open the folder
                 self.root.after(0, lambda: self.progress_var.set(100))
-                self.root.after(0, lambda: self._process_generated_pages(file_pairs))
+                
+                if result:
+                    folder = os.path.dirname(result[0][1])
+                    try: os.startfile(folder)
+                    except: pass
+                
+                msg_done = (
+                    "✅ ALL FILES PROCESSED & UPLOADED.\n\n"
+                    "Your math content is now accessible on Canvas!"
+                )
+                self.root.after(0, lambda: messagebox.showinfo("Mission Complete", msg_done))
             else:
                 log(f"❌ Error: {result}")
                 self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
 
-        self._run_task_in_thread(task, "Bulk Math Conversion")
+        self.gui_handler.log("DEBUG: Task defined. Attempting to launch thread...")
+        try:
+            self._run_task_in_thread(task, "Bulk Math Conversion")
+            self.gui_handler.log("DEBUG: Thread launch command issued.")
+        except Exception as e:
+            import traceback
+            err = traceback.format_exc()
+            self.gui_handler.log(f"CRITICAL ERROR launching thread: {e}")
+            self.gui_handler.log(f"{err}")
+            messagebox.showerror("Thread Error", f"Could not start background task:\n{e}")
 
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
