@@ -644,7 +644,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.ent_token.bind("<FocusOut>", lambda e: self._quick_save_inputs())
         
         def open_token_help():
-            url = ent_url.get().strip()
+            url = self.ent_url.get().strip()
             if not url: url = "https://canvas.instructure.com"
             webbrowser.open(f"{url}/profile/settings")
             messagebox.showinfo("Help", "I've opened your Canvas Settings.\n\n1. Scroll to 'Approved Integrations'.\n2. Click '+ New Access Token'.\n3. Copy the key and paste it here.")
@@ -730,7 +730,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.lbl_ai_status = tk.Label(btn_ai_frame, text="", bg="white", font=("Segoe UI", 9, "bold"))
 
         def test_api_key():
-            key = ent_api.get().strip()
+            key = self.ent_api.get().strip()
             if not key:
                 messagebox.showwarning("No Key", "Please paste a key first.")
                 return
@@ -794,10 +794,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         def save_all():
             self._update_config(
-                api_key=ent_api.get().strip(),
-                canvas_url=ent_url.get().strip(),
-                canvas_token=ent_token.get().strip(),
-                canvas_course_id=ent_course.get().strip(),
+                api_key=self.ent_api.get().strip(),
+                canvas_url=self.ent_url.get().strip(),
+                canvas_token=self.ent_token.get().strip(),
+                canvas_course_id=self.ent_course.get().strip(),
                 poppler_path=self.ent_poppler_setup.get().strip(),
                 target_dir=self.target_dir
             )
