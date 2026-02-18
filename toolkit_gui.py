@@ -613,6 +613,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         else: # Default/Dashboard
             self._build_dashboard(content)
         
+        # [NEW] Safety: If a task is running, ensure newly built buttons are disabled
+        if self.is_running:
+            self.root.after(0, self._disable_buttons)
+        
     def _build_setup_view(self, content):
         """Unified 'Command Center' for all credentials and project loading."""
         tk.Label(content, text="🛠️ Connect & Setup", font=("Segoe UI", 24, "bold"), fg="#4B3190", bg="white").pack(anchor="w", pady=(0, 10))
@@ -1010,9 +1014,14 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         frame_math_singles = ttk.Frame(frame_math)
         frame_math_singles.pack(fill="x")
         
-        ttk.Button(frame_math_singles, text="📄 Select PDF", command=lambda: self._convert_math_files("pdf")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_math_singles, text="📝 Select Word", command=lambda: self._convert_math_files("docx")).pack(side="left", fill="x", expand=True, padx=2)
-        ttk.Button(frame_math_singles, text="🖼️ Select Image", command=lambda: self._convert_math_files("images")).pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_math_pdf = ttk.Button(frame_math_singles, text="📄 Select PDF", command=lambda: self._convert_math_files("pdf"))
+        self.btn_math_pdf.pack(side="left", fill="x", expand=True, padx=2)
+        
+        self.btn_math_docx = ttk.Button(frame_math_singles, text="📝 Select Word", command=lambda: self._convert_math_files("docx"))
+        self.btn_math_docx.pack(side="left", fill="x", expand=True, padx=2)
+        
+        self.btn_math_img = ttk.Button(frame_math_singles, text="🖼️ Select Image", command=lambda: self._convert_math_files("images"))
+        self.btn_math_img.pack(side="left", fill="x", expand=True, padx=2)
 
 
 
@@ -1473,9 +1482,17 @@ Website: meri-becomming-code.github.io/mosh
 
     def _disable_buttons(self):
         """Gray out all action buttons while a task is running."""
-        for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
-                   self.btn_wizard, self.btn_word, self.btn_excel, 
-                   self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check]:
+        # [EXPANDED] Include all possible action buttons across all views
+        btn_list = [
+            self.btn_auto, self.btn_inter, self.btn_audit, 
+            self.btn_wizard, self.btn_word, self.btn_excel, 
+            self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check,
+            getattr(self, 'btn_math_canvas', None),
+            getattr(self, 'btn_math_pdf', None),
+            getattr(self, 'btn_math_docx', None),
+            getattr(self, 'btn_math_img', None)
+        ]
+        for btn in btn_list:
             try: 
                 if btn: btn.config(state='disabled')
             except: pass
@@ -1484,9 +1501,16 @@ Website: meri-becomming-code.github.io/mosh
 
     def _enable_buttons(self):
         """Restore all action buttons."""
-        for btn in [self.btn_auto, self.btn_inter, self.btn_audit, 
-                   self.btn_wizard, self.btn_word, self.btn_excel, 
-                   self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check]:
+        btn_list = [
+            self.btn_auto, self.btn_inter, self.btn_audit, 
+            self.btn_wizard, self.btn_word, self.btn_excel, 
+            self.btn_ppt, self.btn_pdf, self.btn_batch, self.btn_check,
+            getattr(self, 'btn_math_canvas', None),
+            getattr(self, 'btn_math_pdf', None),
+            getattr(self, 'btn_math_docx', None),
+            getattr(self, 'btn_math_img', None)
+        ]
+        for btn in btn_list:
             try: 
                 if btn: btn.config(state='normal')
             except: pass

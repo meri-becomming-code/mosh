@@ -116,23 +116,35 @@ def generate_latex_from_image(image_path, api_key):
             }
         }
 
-        # 3. Call Gemini with Retry
+        # 3. Call Gemini with Retry (Enhanced Resilience)
         import time
-        max_retries = 3
+        max_retries = 5
+        base_delay = 3
+        
         for attempt in range(max_retries):
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                break
-            elif response.status_code == 429:
-                if attempt < max_retries - 1:
-                    wait_time = 3 * (attempt + 1)  # Backoff: 3s, 6s, 9s
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 429:
+                    wait_time = base_delay * (2 ** attempt)
+                    print(f"    ⏳ Rate limit hit. Pausing for {wait_time}s...")
                     time.sleep(wait_time)
                     continue
                 else:
-                    return None, f"Quota Exceeded (429): You're hitting rate limits. Please wait 1-2 minutes."
-            else:
-                return None, f"Gemini API Error ({response.status_code}): {response.text}"
+                    return None, f"Gemini API Error ({response.status_code}): {response.text}"
+            except Exception as e:
+                error_str = str(e).lower()
+                is_retryable = "10054" in error_str or "connection" in error_str or "timeout" in error_str or "remote host" in error_str
+                
+                if is_retryable and attempt < max_retries - 1:
+                    wait_time = base_delay * (2 ** attempt)
+                    print(f"    ⏳ Network hiccup ({error_str[:30]}...). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise e
         
         if response.status_code != 200:
             return None, f"Gemini API Error ({response.status_code}): {response.text}"
@@ -353,23 +365,33 @@ def generate_alt_text_from_image(image_path, api_key, context=None):
             }
         }
 
-        # 3. Call Gemini with Retry Logic
+        # 3. Call Gemini with Retry Logic (Enhanced)
         import time
-        max_retries = 3
+        max_retries = 5
+        base_delay = 3
+        
         for attempt in range(max_retries):
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                break
-            elif response.status_code == 429:
-                if attempt < max_retries - 1:
-                    wait_time = 3 * (attempt + 1)  # Backoff: 3s, 6s, 9s
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 429:
+                    wait_time = base_delay * (2 ** attempt)
                     time.sleep(wait_time)
                     continue
                 else:
-                    return None, f"Quota Exceeded (429): You're hitting rate limits. Please wait 1-2 minutes before continuing."
-            else:
-                return None, f"Gemini API Error ({response.status_code}): {response.text}"
+                    return None, f"Gemini API Error ({response.status_code}): {response.text}"
+            except Exception as e:
+                error_str = str(e).lower()
+                is_retryable = "10054" in error_str or "connection" in error_str or "timeout" in error_str or "remote host" in error_str
+                
+                if is_retryable and attempt < max_retries - 1:
+                    wait_time = base_delay * (2 ** attempt)
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise e
 
         if response.status_code != 200:
              return None, f"Gemini API Error ({response.status_code}): {response.text}"

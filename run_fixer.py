@@ -333,7 +333,17 @@ def remediate_html_file(filepath):
             if first_row:
                 # Convert first row to a header row
                 thead = soup.new_tag('thead')
-                first_row.wrap(thead)
+                
+                # [FIX] If the row is in a tbody, extract it first to avoid nesting thead inside tbody
+                tbody = first_row.find_parent('tbody')
+                if tbody:
+                    first_row.extract()
+                    tbody.insert_before(thead)
+                else:
+                    first_row.wrap(thead)
+                
+                thead.append(first_row)
+                
                 for cell in first_row.find_all('td'):
                     cell.name = 'th'
                     cell['scope'] = "col"
@@ -703,6 +713,19 @@ def remediate_html_file(filepath):
     unique_fixes = list(set(fixes))
     return str(soup), unique_fixes
 
+def batch_remediate_v3(directory):
+    """Processes all HTML files in a directory."""
+    report = {}
+    for root, dirs, files in os.walk(directory):
+        if "_ORIGINALS_DO_NOT_UPLOAD_" in root: continue
+        for file in files:
+            if file.endswith('.html'):
+                path = os.path.join(root, file)
+                remediated, fixes = remediate_html_file(path)
+                if fixes:
+                    with open(path, 'w', encoding='utf-8') as f:
+                        f.write(remediated)
+                    report[file] = fixes
     return report
 
 # [REMOVED] strip_ada_markers and batch_strip_markers per user request. 
