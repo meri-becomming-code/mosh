@@ -2899,57 +2899,43 @@ YOUR WORKFLOW:
         if not messagebox.askyesno("Confirm", "This will convert ALL math in your project using AI.\n\nIt may take a while. Continue?"):
              return
 
-        # 1. Immediate UI Feedback
-        self.progress_var.set(5)
-        self.root.after(0, lambda: messagebox.showinfo("Started", "Math Conversion Started!\n\nCheck the log for progress."))
-        
-        # [FIX] Disable buttons to prevent double-click issues
-        self._disable_buttons()
-
         def task():
-            try:
-                import threading
-                import math_converter
-                
-                def log(msg):
-                    self.gui_handler.log(msg)
-                
-                log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
-                log("--- Starting Standalone Worker ---")
-                
-                # Verify Logic
-                if not api_key:
-                     raise Exception("No API Key provided.")
-                
-                success, result = math_converter.process_canvas_export(
-                    api_key, 
-                    self.target_dir, 
-                    log_func=log,
-                    poppler_path=self.config.get("poppler_path", "")
-                )
-                
-                if success:
-                    # Result is now a list of (source, dest) tuples
-                    file_pairs = result 
-                    log(f"\n✨ SUCCESS! Converted math in your course project.")
-                    
-                    self.root.after(0, lambda: self.progress_var.set(100))
-                    self._process_generated_pages(file_pairs)
-                    self.progress_var.set(100)
-                    
-                else:
-                    log(f"❌ Error: {result}")
-                    self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
+            import math_converter
             
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Conversion Issue", f"An unexpected error occurred:\n{str(e)}"))
-            
-            finally:
-                # [FIX] Re-enable buttons
-                self.root.after(0, self._enable_buttons)
+            # [FIX] Stop the automatic pulse so we can show real progress
+            self.root.after(0, self.progress_bar.stop)
+            self.root.after(0, lambda: self.progress_var.set(0))
 
-        # 2. Explicit Threading (Bypassing internal queue)
-        threading.Thread(target=task, daemon=True).start()
+            def log(msg):
+                self.gui_handler.log(msg)
+            
+            def update_progress(current, total):
+                pct = (current / total) * 100
+                self.root.after(0, lambda: self.progress_var.set(pct))
+                self.root.after(0, lambda: self.lbl_status_text.config(text=f"Converting File {current}/{total}...", fg="blue"))
+
+            log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
+            
+            success, result = math_converter.process_canvas_export(
+                api_key, 
+                self.target_dir, 
+                log_func=log,
+                poppler_path=self.config.get("poppler_path", ""),
+                progress_callback=update_progress
+            )
+            
+            if success:
+                # Result is now a list of (source, dest) tuples
+                file_pairs = result 
+                log(f"\n✨ SUCCESS! Converted math in your course project.")
+                
+                self.root.after(0, lambda: self.progress_var.set(100))
+                self.root.after(0, lambda: self._process_generated_pages(file_pairs))
+            else:
+                log(f"❌ Error: {result}")
+                self.root.after(0, lambda: messagebox.showerror("Math Error", f"Could not process course math:\n{result}"))
+
+        self._run_task_in_thread(task, "Bulk Math Conversion")
 
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
@@ -3009,6 +2995,10 @@ YOUR WORKFLOW:
                     self.root.after(0, lambda: self.progress_var.set(pct))
 
                 if file_type == "pdf":
+                    # [FIX] Stop the pulse so we can show real page-by-page progress
+                    self.root.after(0, self.progress_bar.stop)
+                    self.root.after(0, lambda: self.progress_var.set(0))
+                    
                     success, result = math_converter.convert_pdf_to_latex(
                         api_key, 
                         file_path, 

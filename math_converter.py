@@ -271,7 +271,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"❌ Error: {e}")
         return False, str(e)
 
-def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None):
+def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None):
     """
     Process all PDFs in a Canvas export (IMSCC) structure.
     Includes licensing/attribution checking to protect teachers.
@@ -340,8 +340,11 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None)
     client = genai.Client(api_key=api_key)
     
     conversion_results = [] # List of (source_path, output_path)
+    total_files = len(safe_file_paths)
     
-    for file_path in safe_file_paths:
+    for i, file_path in enumerate(safe_file_paths, 1):
+        if progress_callback:
+            progress_callback(i, total_files)
         try:
             p = Path(file_path)
             ext = p.suffix.lower()
