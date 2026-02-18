@@ -740,8 +740,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             is_valid, msg = jeanie_ai.validate_api_key(key)
             if is_valid:
                 self.lbl_ai_status.config(text="✅ Valid Key!", fg="green")
+                messagebox.showinfo("Success", "Google AI Link is working perfectly! ✨")
             else:
                 self.lbl_ai_status.config(text="❌ Invalid Key", fg="red")
+                messagebox.showerror("Key Error", f"Validation Failed:\n\n{msg}")
 
         tk.Button(btn_ai_frame, text="🔑 Get Key", command=open_api_help, font=("Segoe UI", 9), fg="#0369A1", bg="#F0F9FF", cursor="hand2").pack(side="left", padx=(0, 10))
         tk.Button(btn_ai_frame, text="🧪 Test Key", command=test_api_key, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left", padx=5)
