@@ -56,8 +56,11 @@ RULES:
    - If the image contains a graph, chart, or diagram, provide a DETAILED text description.
    - Example: <p><em>[Graph Description: A parabola opening upwards with vertex at (0,0)...]</em></p>
    - Do NOT ignore visual elements.
-5. Preserve problem numbers (e.g., "1.", "a)") and layout structure.
-6. Formatting:
+5. HANDWRITING / TEACHER NOTES:
+   - If you detect handwritten notes or solutions, style them in BLUE.
+   - Use: <br><span style="color: #0066cc; font-family: 'Comic Sans MS', cursive, sans-serif;">[Note: ...]</span><br>
+6. Preserve problem numbers (e.g., "1.", "a)") and layout structure.
+7. Formatting:
    - Use <h3> for section headers
    - Use <b> for bold text
    - Use <i> for italics
@@ -78,9 +81,10 @@ def generate_content_with_retry(client, model, contents, log_func=None):
     
     for attempt in range(max_retries):
         try:
-            # Proactive delay to avoid hitting rate limits (Increased for stability)
+            # Proactive pacing: 4.0s delay guarantees <15 RPM (Free Tier Limit)
+            # This is actually FASTER than hitting a rate limit and waiting 60s.
             if attempt == 0:
-                time.sleep(2.0)
+                time.sleep(4.0)
             
             return client.models.generate_content(
                 model=model,

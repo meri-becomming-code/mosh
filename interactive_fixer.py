@@ -160,31 +160,35 @@ def get_suggested_title(tag):
     return None
 
 
-def get_link_suggestion(href):
-    """Generates a smart suggestion for link text based on the href."""
+def get_link_suggestion(href, context=None):
+    """Generates a smart suggestion for link text based on the href and context."""
     if not href: return None
     
     clean_href = href.strip()
     
     # 1. Handle File Links (extensions)
-    # List of common document extensions
     doc_exts = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.zip', '.rtf']
     base, ext = os.path.splitext(clean_href)
     
     if ext.lower() in doc_exts:
         # Strategy: Filename -> Title Case + (EXT)
         filename = os.path.basename(clean_href)
-        # Remove extension for formatting
         name_only = os.path.splitext(filename)[0]
         # Replace common separators with spaces
         suggestion = name_only.replace('_', ' ').replace('-', ' ').replace('.', ' ')
         # Capitalize words
         suggestion = suggestion.title()
-        # Add the extension hint
-        # [CLEAN FIX] Return just the suggestion without the (EXT) hint.
-        return suggestion
+        return f"{suggestion} ({ext.upper().replace('.', '')})"
 
-    # 2. Handle Web Links
+    # 2. Handle "View Solution" or generic links using context
+    if context and ("solution" in context.lower() or "answer" in context.lower()):
+        # Try to extract a problem number or section from context
+        match = re.search(r'(\d+[\.]?|[a-z]\))', context[:20]) # Look near start
+        if match:
+             return f"View Solution for Problem {match.group(1).strip('.')}"
+        return "View Solution"
+
+    # 3. Handle Web Links
     if clean_href.lower().startswith('http'):
         try:
             parsed = urllib.parse.urlparse(clean_href)
@@ -217,9 +221,9 @@ def get_link_suggestion(href):
                 page_part = name_only.title()
                 
             if site_name and page_part:
-                return f"{site_name} {page_part}"
+                return f"{site_name}: {page_part}"
             elif site_name:
-                return site_name
+                return f"{site_name} (External Site)"
             elif page_part:
                 return page_part
                 
@@ -739,8 +743,8 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             io_handler.log(f"    Current Text: '{text}'")
             
             # Generate Suggestion
-            suggestion = get_link_suggestion(href)
             context = get_context(a)
+            suggestion = get_link_suggestion(href, context)
             
             # Resolve Link Path for "Clickable" help
             # (Reusing image resolution logic since it does good absolute path finding)

@@ -1707,10 +1707,10 @@ def create_course_package(source_dir, output_path, log_func=None):
     except Exception as e:
         return False, str(e)
 
-def archive_source_file(file_path):
+def archive_source_file(file_path, log_func=None):
     """
     Moves an original source file to the archive folder.
-    Returns the new path.
+    Returns the new path. includes retry logic for Windows file locks.
     """
     try:
         if not os.path.exists(file_path):
@@ -1724,14 +1724,34 @@ def archive_source_file(file_path):
             
         new_path = os.path.join(archive_dir, os.path.basename(file_path))
         
-        # If file already exists in archive, add a timestamp or just overwrite
+        # Handle collision (overwrite or unique)
         if os.path.exists(new_path):
-            # For simplicity, we just move it. Shutil.move handles destination objects.
-            pass
-            
-        shutil.move(file_path, new_path)
-        return new_path
+            try:
+                os.remove(new_path)
+            except:
+                base, ext = os.path.splitext(new_path)
+                timestamp = datetime.now().strftime("%H%M%S")
+                new_path = f"{base}_{timestamp}{ext}"
+
+        # Retry logic for Windows file locks
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                shutil.move(file_path, new_path)
+                if log_func: log_func(f"   📦 Archived original to: {ARCHIVE_FOLDER_NAME}/")
+                return new_path
+            except PermissionError:
+                if attempt < max_retries - 1:
+                    if log_func: log_func(f"   ⏳ File locked, retrying archive ({attempt+1}/{max_retries})...")
+                    time.sleep(1.0)
+                else:
+                    raise
+            except Exception:
+                raise
+
     except Exception as e:
+        if log_func: log_func(f"   ⚠️ Could not archive file (it may be open?): {e}")
         print(f"Error archiving {file_path}: {e}")
         return None
 

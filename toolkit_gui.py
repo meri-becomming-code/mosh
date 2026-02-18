@@ -3013,7 +3013,7 @@ YOUR WORKFLOW:
                 )
 
                 # 3. Archive Original
-                converter_utils.archive_source_file(source)
+                converter_utils.archive_source_file(source, log_func=log)
 
                 # 4. Auto-Upload to Canvas (if API connected)
                 api = self._get_canvas_api()
