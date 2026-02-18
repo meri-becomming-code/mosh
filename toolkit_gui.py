@@ -1147,43 +1147,6 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.txt_log.see(tk.END)
         self.txt_log.configure(state='disabled')
 
-    def _process_logs(self):
-        """Poll the log queue and update the text widget (Throttled)."""
-        try:
-            processed = 0
-            while processed < 200: # Increased limit to ensure no logs are dropped
-                msg = self.log_queue.get_nowait()
-                self._log(msg)
-                processed += 1
-        except queue.Empty:
-            pass
-        self.root.after(100, self._process_logs)
-
-    def _process_inputs(self):
-        """Poll for input requests from the worker thread."""
-        try:
-            while True:
-                req = self.gui_handler.input_request_queue.get_nowait()
-                kind, message, payload = req
-                
-                response = None
-                if kind == 'prompt':
-                    response = simpledialog.askstring("Input Required", message, parent=self.root)
-                    if response is None: response = "" 
-                elif kind == 'confirm':
-                    response = messagebox.askyesno("Confirm", message, parent=self.root)
-                elif kind == 'prompt_image':
-                    path, context, suggestion = payload
-                    response = self._show_image_dialog(message, path, context, suggestion)
-                elif kind == 'prompt_link':
-                    href, context = payload
-                    response = self._show_link_dialog(message, href, context)
-                
-                self.gui_handler.input_response_queue.put(response)
-        except queue.Empty:
-            pass
-        self.root.after(100, self._process_inputs)
-        
     def _show_image_dialog(self, message, image_path, context=None, suggestion=None):
         """Custom dialog to show an image and prompt for alt text."""
         dialog = Toplevel(self.root)
@@ -2713,7 +2676,25 @@ YOUR WORKFLOW:
             total_updated = 0
             doc_count = 0
             
-    # --- [NEW] Process Logs ---
+            # Step 2: Compare and Update O(M) where M is document count
+            for base, original_file in doc_map.items():
+                if base in html_map:
+                    found_html = html_map[base]
+                    doc_count += 1
+                    updated = converter_utils.update_doc_links_to_html(
+                        self.target_dir, 
+                        original_file, 
+                        found_html, 
+                        log_func=self.gui_handler.log
+                    )
+                    total_updated += updated
+            
+            msg = f"Global Link Fix Complete.\nRepaired links for {doc_count} different documents across {total_updated} instances."
+            self.gui_handler.log(f"\n--- {msg} ---")
+            self.root.after(0, lambda: messagebox.showinfo("Complete", msg))
+
+        self._run_task_in_thread(task, "Global Link Repair")
+
     def _process_logs(self):
         """Polls queue for log messages and updates the persistent log widget."""
         try:
@@ -2721,10 +2702,7 @@ YOUR WORKFLOW:
                 msg = self.log_queue.get_nowait()
                 # Check if UI is ready. If not, print to console as fallback.
                 if hasattr(self, 'txt_log') and self.txt_log.winfo_exists():
-                    self.txt_log.config(state='normal')
-                    self.txt_log.insert(tk.END, str(msg) + "\n")
-                    self.txt_log.see(tk.END)
-                    self.txt_log.config(state='disabled')
+                    self._log(msg)
                 else:
                     print(f"[PENDING LOG] {msg}")
         except queue.Empty:
@@ -2757,26 +2735,6 @@ YOUR WORKFLOW:
         finally:
             self.root.after(100, self._process_inputs)
 
-            
-            # Step 2: Compare and Update O(M) where M is document count
-            for base, original_file in doc_map.items():
-                if base in html_map:
-                    found_html = html_map[base]
-                    doc_count += 1
-                    updated = converter_utils.update_doc_links_to_html(
-                        self.target_dir, 
-                        original_file, 
-                        found_html, 
-                        log_func=self.gui_handler.log
-                    )
-                    total_updated += updated
-            
-            msg = f"Global Link Fix Complete.\nRepaired links for {doc_count} different documents across {total_updated} instances."
-            self.gui_handler.log(f"\n--- {msg} ---")
-            self.root.after(0, lambda: messagebox.showinfo("Complete", msg))
-
-        
-        self._run_task_in_thread(task, "Global Link Repair")
 
 
 
