@@ -199,8 +199,10 @@ def scan_export_for_licensing(export_dir, log_func=None):
     risky_files = []
     blocked_files = []
     
-    # Check all PDFs and Word docs
-    files = list(web_resources.glob('**/*.pdf')) + list(web_resources.glob('**/*.docx'))
+    # Check all PDFs and Word docs, but EXCLUDE archived files
+    ARCHIVE_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
+    all_files = list(web_resources.glob('**/*.pdf')) + list(web_resources.glob('**/*.docx'))
+    files = [f for f in all_files if ARCHIVE_NAME not in str(f)]
     
     if log_func:
         log_func(f"\n📋 Scanning {len(files)} files for licensing...")

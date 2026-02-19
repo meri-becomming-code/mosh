@@ -576,24 +576,18 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             print(f"Net check error: {e}")
 
     def _switch_view(self, view_name):
-        """Switches the main content area based on sidebar selection."""
-        # 1. Hide all frames
-        for frame in self.main_frames.values():
-            frame.pack_forget()
-            
-        # 2. Show selected
-        if view_name in self.main_frames:
-            self.main_frames[view_name].pack(fill="both", expand=True)
-        elif view_name == "audit":
-             # [FIX] If audit view is requested, run the audit task immediately
-             # or show a specific frame if one exists.
-             # Since we don't have a dedicated "audit" frame yet, let's run the report.
-             self._run_audit()
-             # Keep the current view or switch to console?
-             # Let's switch to 'course' view so they can see the log
-             self.main_frames["course"].pack(fill="both", expand=True)
-             
-        # 3. Update Title...w scrollable container for the view
+        """Standard method to swap the main content area."""
+        # [NEW] Audit Shortcut: If audit is requested, run it and switch to log view
+        if view_name == "audit":
+            self.root.after(100, self._run_audit)
+            view_name = "course"
+
+        if self.main_content_frame:
+            self.main_content_frame.destroy()
+        
+        self.current_view = view_name
+        
+        # Create a new scrollable container for the view
         container = ttk.Frame(self.pane_content)
         container.pack(fill="both", expand=True)
         self.main_content_frame = container
@@ -1627,6 +1621,14 @@ Website: meri-becomming-code.github.io/mosh
              return
 
         def worker():
+            # [NEW] Prevent Windows sleep during task
+            if os.name == "nt":
+                try:
+                    import ctypes
+                    # ES_CONTINUOUS | ES_SYSTEM_REQUIRED (0x80000000 | 0x00000001)
+                    ctypes.windll.kernel32.SetThreadExecutionState(0x80000001)
+                except: pass
+
             try:
                 print(f"DEBUG: Thread {task_name} started execution.") # Console backup
                 self.gui_handler.log(f"DEBUG: Thread {task_name} started execution.")
@@ -1642,6 +1644,14 @@ Website: meri-becomming-code.github.io/mosh
                 err_msg = f"Error in {task_name}:\n{str(e)}"
                 self.root.after(0, lambda: messagebox.showerror("Error", err_msg))
             finally:
+                # [NEW] Restore Windows sleep state
+                if os.name == "nt":
+                    try:
+                        import ctypes
+                        # ES_CONTINUOUS (0x80000000)
+                        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+                    except: pass
+                
                 self.is_running = False
                 self.root.after(0, self.progress_bar.stop)
                 self.root.after(0, lambda: self.lbl_status_text.config(text="Ready", fg="gray"))
@@ -2230,9 +2240,16 @@ YOUR WORKFLOW:
                         else:
                             self.gui_handler.log(f"      [WARNING] Image upload failed: {res_img}")
             
-            # 3. Create Page
+            # 3. Create or Update Page (Upsert Strategy)
             page_title = os.path.splitext(fname)[0]
-            success_page, res_page = api.create_page(page_title, str(soup))
+            
+            # Check if page exists to avoid duplicates
+            success_get, res_get = api.get_page(page_title)
+            if success_get and 'url' in res_get:
+                self.gui_handler.log(f"   [Sync] Updating existing page: {page_title}")
+                success_page, res_page = api.update_page(res_get['url'], page_title, str(soup))
+            else:
+                success_page, res_page = api.create_page(page_title, str(soup))
             
             if success_page:
                 canvas_page_url = res_page.get('html_url')
@@ -2254,7 +2271,10 @@ YOUR WORKFLOW:
                     self.gui_handler.log(f"   [Sync] Updated links in {count} files to point to Canvas.")
                 return True
             else:
-                self.gui_handler.log(f"   [ERROR] Page creation failed: {res_page}")
+                # Handle Token Expiry
+                if "401" in str(res_page) or "Invalid access token" in str(res_page):
+                    self.gui_handler.log(f"   [CRITICAL] Canvas Token Expired. Please check your setup.")
+                self.gui_handler.log(f"   [ERROR] Page update/creation failed: {res_page}")
                 return False
                 
         except Exception as e:
@@ -2994,6 +3014,15 @@ YOUR WORKFLOW:
 
         def task():
             import math_converter
+            
+            # [NEW] Validate Canvas Token early if connected
+            api = self._get_canvas_api()
+            if api:
+                self.gui_handler.log("   [Check] Validating Canvas connection before starting...")
+                valid, msg = api.validate_credentials()
+                if not valid:
+                    self.gui_handler.log(f"   [CRITICAL] Canvas Connection Failed: {msg}")
+                    self.gui_handler.log("   [INFO] I will continue converting files locally, but uploads will be skipped.")
             
             # [FIX] Stop the automatic pulse so we can show real progress
             self.root.after(0, self.progress_bar.stop)

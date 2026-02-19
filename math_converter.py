@@ -152,11 +152,11 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     ymax = int((ymax_rel / 1000) * height)
                     xmax = int((xmax_rel / 1000) * width)
                     
-                    # Add 20px padding
-                    ymin = max(0, ymin - 20)
-                    xmin = max(0, xmin - 20)
-                    ymax = min(height, ymax + 20)
-                    xmax = min(width, xmax + 20)
+                    # Add 80px padding (user requested extra 50-100px)
+                    ymin = max(0, ymin - 80)
+                    xmin = max(0, xmin - 80)
+                    ymax = min(height, ymax + 80)
+                    xmax = min(width, xmax + 80)
                     
                     if (xmax - xmin) < 50 or (ymax - ymin) < 50:
                         continue # Skip tiny crops
@@ -207,12 +207,14 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         if log_func:
             log_func("   Converting PDF pages to images...")
         
-        temp_dir = Path(pdf_path).parent / f"{Path(pdf_path).stem}_temp"
+        # [FIX] Use unique temp dir to avoid WinError 32 (file lock) from previous runs
+        import uuid
+        temp_dir = Path(pdf_path).parent / f"{Path(pdf_path).stem}_temp_{uuid.uuid4().hex[:8]}"
         
-        # Clean up previous temp dir if it exists to avoid stale images
+        # Clean up previous temp dir if it exists (highly unlikely with UUID but good practice)
         import shutil
         if temp_dir.exists():
-            shutil.rmtree(temp_dir)
+            shutil.rmtree(temp_dir, ignore_errors=True)
         temp_dir.mkdir(exist_ok=True)
         
         images = convert_from_path(
@@ -232,14 +234,15 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         
         def process_page(index, img_path):
             try:
-                img = Image.open(img_path)
-                response = generate_content_with_retry(
-                    client=client,
-                    model='gemini-2.0-flash',
-                    contents=[MATH_PROMPT, img],
-                    log_func=log_func
-                )
-                return index, clean_gemini_response(response.text)
+                # [FIX] Use context manager to ensure file handle is closed
+                with Image.open(img_path) as img:
+                    response = generate_content_with_retry(
+                        client=client,
+                        model='gemini-2.0-flash',
+                        contents=[MATH_PROMPT, img],
+                        log_func=log_func
+                    )
+                    return index, clean_gemini_response(response.text)
             except Exception as e:
                 if log_func:
                     log_func(f"   [Error] Page {index+1} failed: {e}")
@@ -470,8 +473,25 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
     
     # STEP 2: Convert safe files
     if log_func:
-        log_func(f"\n🤖 STEP 2: Converting {len(safe_file_paths)} files with Gemini AI...")
+        log_func(f"\n🤖 STEP 2: Converting files with Gemini AI...")
     
+    # [NEW] Pre-check: How many are actually left?
+    already_done = 0
+    remaining_paths = []
+    for fp in safe_file_paths:
+        p = Path(fp)
+        html_out = p.parent / f"{p.stem}.html"
+        if html_out.exists():
+            already_done += 1
+        else:
+            remaining_paths.append(fp)
+    
+    if log_func:
+        log_func(f"   📊 Status: {already_done} already converted, {len(remaining_paths)} remaining.")
+        if not remaining_paths:
+            log_func("   ✨ Everything is already up to date!")
+            return True, []
+
     client = genai.Client(api_key=api_key)
     
     conversion_results = [] # List of (source_path, output_path)

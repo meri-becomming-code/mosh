@@ -123,6 +123,36 @@ class CanvasAPI:
         except Exception as e:
             return False, str(e)
 
+    def get_page(self, title_or_url):
+        """Fetches a page by its URL-friendly title (slug)."""
+        import urllib.parse
+        # Slugs are usually lowercase with hyphens
+        slug = urllib.parse.quote(title_or_url.lower().replace(" ", "-"))
+        url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages/{slug}"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=15)
+            if response.status_code == 200:
+                return True, response.json()
+            return False, f"Page not found (Status {response.status_code})"
+        except Exception as e:
+            return False, str(e)
+
+    def update_page(self, slug, title, body):
+        """Updates an existing WikiPage."""
+        url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages/{slug}"
+        payload = {
+            "wiki_page[title]": title,
+            "wiki_page[body]": body,
+            "wiki_page[published]": False
+        }
+        try:
+            response = requests.put(url, headers=self.headers, data=payload, timeout=30)
+            if response.status_code in [200, 201]:
+                return True, response.json()
+            return False, f"Update failed (Status {response.status_code}): {response.text}"
+        except Exception as e:
+            return False, str(e)
+
     def create_page(self, title, body):
         """Creates a new WikiPage in the specified course."""
         url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages"
@@ -135,6 +165,8 @@ class CanvasAPI:
             response = requests.post(url, headers=self.headers, data=payload, timeout=30)
             if response.status_code in [200, 201]:
                 return True, response.json()
+            if response.status_code == 401:
+                return False, "Error 401: Invalid or expired Canvas access token."
             return False, f"Error {response.status_code}: {response.text}"
         except Exception as e:
             return False, f"Page creation failed: {e}"
