@@ -365,24 +365,30 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
         doc = Document(doc_path)
         client = genai.Client(api_key=api_key)
         
+        # [FIX] Use dedicated isolated temp dir for Word images (safety for WinError 32)
+        import uuid
+        import shutil
+        session_id = uuid.uuid4().hex[:8]
+        output_dir = Path(doc_path).parent
+        temp_dir = output_dir / f"temp_word_{session_id}"
+        temp_dir.mkdir(exist_ok=True)
+        
         # Extract text and images
         all_content = []
-        
-        import uuid
-        session_id = uuid.uuid4().hex[:6]
+        doc_stem = Path(doc_path).stem
 
         for i, rel in enumerate(doc.part.rels.values(), 1):
             if "image" in rel.target_ref:
                 # Extract image
                 image_blob = rel.target_part.blob
                 
-                # [FIX] Unique name and proper cleanup
-                temp_img = Path(doc_path).parent / f"temp_math_{session_id}_{i}.png"
-                with open(temp_img, 'wb') as f:
+                # [FIX] Save to isolated temp folder
+                temp_img_path = temp_dir / f"img_{i}.png"
+                with open(temp_img_path, 'wb') as f:
                     f.write(image_blob)
                 
-                # [FIX] Use context manager to release file handle immediately
-                with Image.open(temp_img) as img:
+                # [FIX] Use context manager + immediate processing
+                with Image.open(temp_img_path) as img:
                     response = generate_content_with_retry(
                         client=client,
                         model='gemini-2.0-flash',
@@ -392,18 +398,33 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                 
                 if response.text:
                     cleaned_text = clean_gemini_response(response.text)
-                    all_content.append(f"\n<!-- Image {i} -->\n{cleaned_text}\n")
-                
-                try:
-                    temp_img.unlink()  # Clean up
-                except: pass
+                    
+                    # [NEW] Check for graphs and crop them if found!
+                    # This was missing in Word conversion but existed in PDF
+                    try:
+                        processed_content = extract_and_crop_graphs(
+                            cleaned_text, 
+                            temp_img_path, 
+                            output_dir, 
+                            doc_stem, 
+                            999 + i # Unique ID offset for Word images
+                        )
+                        all_content.append(f"\n<!-- Image {i} -->\n{processed_content}\n")
+                    except Exception as e:
+                        if log_func: log_func(f"   ⚠️ Image processing warning: {e}")
+                        all_content.append(f"\n{cleaned_text}\n")
         
+        # Cleanup isolated temp dir
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except: pass
+
         if all_content:
             title = Path(doc_path).stem.replace('_', ' ').title()
             html = create_canvas_html("\n".join(all_content), title=title)
             
             if log_func:
-                log_func(f"✅ Converted {len(all_content)} equations from Word doc")
+                log_func(f"✅ Converted {len(all_content)} images/equations from Word doc")
             
             return True, html
         else:
