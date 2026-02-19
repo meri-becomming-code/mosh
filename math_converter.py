@@ -368,30 +368,35 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
         # Extract text and images
         all_content = []
         
+        import uuid
+        session_id = uuid.uuid4().hex[:6]
+
         for i, rel in enumerate(doc.part.rels.values(), 1):
             if "image" in rel.target_ref:
                 # Extract image
                 image_blob = rel.target_part.blob
                 
-                # Save temporarily
-                temp_img = Path(doc_path).parent / f"temp_img_{i}.png"
+                # [FIX] Unique name and proper cleanup
+                temp_img = Path(doc_path).parent / f"temp_math_{session_id}_{i}.png"
                 with open(temp_img, 'wb') as f:
                     f.write(image_blob)
                 
-                # Convert with Gemini
-                img = Image.open(temp_img)
-                response = generate_content_with_retry(
-                    client=client,
-                    model='gemini-2.0-flash',
-                    contents=[MATH_PROMPT, img],
-                    log_func=log_func
-                )
+                # [FIX] Use context manager to release file handle immediately
+                with Image.open(temp_img) as img:
+                    response = generate_content_with_retry(
+                        client=client,
+                        model='gemini-2.0-flash',
+                        contents=[MATH_PROMPT, img],
+                        log_func=log_func
+                    )
                 
                 if response.text:
                     cleaned_text = clean_gemini_response(response.text)
                     all_content.append(f"\n<!-- Image {i} -->\n{cleaned_text}\n")
                 
-                temp_img.unlink()  # Clean up
+                try:
+                    temp_img.unlink()  # Clean up
+                except: pass
         
         if all_content:
             title = Path(doc_path).stem.replace('_', ' ').title()
