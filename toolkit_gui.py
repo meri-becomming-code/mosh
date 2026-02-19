@@ -77,6 +77,12 @@ class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
     def prompt_image(self, message, image_path, context=None, suggestion=None):
         """Ask user for input while showing an image and context."""
         if self.is_stopped(): return ""
+        
+        # [NEW] Power User Bypass
+        if getattr(self, "trust_ai_alt", False) and suggestion:
+            self.log(f"   [Auto-Alt] Using AI suggestion for {os.path.basename(image_path)}")
+            return suggestion
+
         self.input_request_queue.put(('prompt_image', message, (image_path, context, suggestion)))
         return self.input_response_queue.get()
 
@@ -1336,11 +1342,23 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         
         # Row 2
         btn_frame_2 = tk.Frame(dialog, bg="#F5F3ED")
-        btn_frame_2.pack(pady=(10, 15))
+        btn_frame_2.pack(pady=(10, 5))
 
         tk.Button(btn_frame_2, text="📝 OCR Text (AI)", command=on_ocr, bg="#FFF9C4", width=18, cursor="hand2").pack(side="left", padx=5)
         tk.Button(btn_frame_2, text="Mark Decorative", command=on_decorate, bg="#F5F5F5", width=20, cursor="hand2").pack(side="left", padx=5)
         tk.Button(btn_frame_2, text="Skip / Ignore", command=on_skip, width=20, cursor="hand2").pack(side="left", padx=5)
+
+        # [NEW] Trust AI Checkbox
+        trust_var = tk.BooleanVar(value=getattr(self.gui_handler, "trust_ai_alt", False))
+        def toggle_trust():
+            self.gui_handler.trust_ai_alt = trust_var.get()
+            if trust_var.get():
+                self.gui_handler.log("🚀 Trust AI enabled: Mosh will automatically accept high-confidence alt tags.")
+
+        cb_trust = tk.Checkbutton(dialog, text="Always trust AI alt tags for this session", 
+                                  variable=trust_var, command=toggle_trust,
+                                  bg="#F5F3ED", font=("Segoe UI", 9, "bold"), fg="#4B3190")
+        cb_trust.pack(pady=5)
         
         dialog.bind('<Return>', on_ok)
         self.root.wait_window(dialog)

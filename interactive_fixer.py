@@ -41,6 +41,7 @@ class FixerIO:
         self.global_decorative_keys = set() # Keys to automatically mark as decorative session-wide
         self.mem_path = os.path.join(os.path.expanduser("~"), ".mosh_alt_memory.json")
         self.memory = self._load_memory()
+        self.trust_ai_alt = False # [NEW] Power User: Auto-accept AI suggestions
         
         # [NEW] Mitigation for Duplicate Fatigue
         # If an image filename matches these, we auto-mark as decorative without asking.
