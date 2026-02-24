@@ -2,11 +2,12 @@
 # Released freely under the GNU General Public License v3.0. USE AT YOUR OWN RISK.
 
 import tkinter as tk
-VERSION = "1.0.0-RC16"
+VERSION = "1.0.0-RC17"
 from tkinter import filedialog, messagebox, simpledialog, scrolledtext, Toplevel, Menu, ttk
 from PIL import Image, ImageTk
 import sys
 import os
+import time
 
 # Ensure the script's directory is in the Python path for local imports
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1055,6 +1056,14 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         
         self.btn_math_img = ttk.Button(frame_math_singles, text="🖼️ Select Image", command=lambda: self._convert_math_files("images"))
         self.btn_math_img.pack(side="left", fill="x", expand=True, padx=2)
+        
+        ttk.Separator(frame_math, orient='horizontal').pack(fill='x', pady=20)
+
+        ttk.Label(frame_math, text="Option C: Visual Element Manifest", font=("bold")).pack(anchor="w", pady=(0, 5))
+        tk.Label(frame_math, text="Review all detected graphs, icons, and diagrams in a single grid.", font=("Segoe UI", 9), bg="white", fg="gray").pack(anchor="w")
+        self.btn_manifest = ttk.Button(frame_math, text="✨ Open Visual Element Manifest (Confirmation Grid)", 
+                                        command=self._show_visual_manifest, style="Action.TButton")
+        self.btn_manifest.pack(fill="x", pady=10)
 
 
 
@@ -1347,12 +1356,16 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             result["text"] = "__MATH_OCR__"
             dialog.destroy()
             
+        def on_math_board():
+            """Opens the Interactive LaTeX Editor."""
+            self._show_math_board(entry_var, image_path)
+
         # Row 1
         btn_frame_1 = tk.Frame(dialog, bg="#F5F3ED")
         btn_frame_1.pack(pady=(10, 0))
         
         tk.Button(btn_frame_1, text="✅ Save / Next (Enter)", command=on_ok, bg="#dcedc8", font=("bold"), width=18, cursor="hand2").pack(side="left", padx=5)
-        tk.Button(btn_frame_1, text="📐 Convert to Math (AI)", command=on_math_ocr, bg="#FFECB3", width=20, cursor="hand2").pack(side="left", padx=5)
+        tk.Button(btn_frame_1, text="📐 MATH BOARD (Review)", command=on_math_board, bg="#E9D5FF", font=("bold"), width=20, cursor="hand2").pack(side="left", padx=5)
         tk.Button(btn_frame_1, text="📊 Convert to Table (AI)", command=on_table_ocr, bg="#E1F5FE", width=20, cursor="hand2").pack(side="left", padx=5)
         
         # Row 2
@@ -1366,6 +1379,208 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         dialog.bind('<Return>', on_ok)
         self.root.wait_window(dialog)
         return result["text"]
+
+    def _show_math_board(self, parent_var, image_path):
+        """Standard 'Math Whiteboard' for LaTeX editing."""
+        math_win = Toplevel(self.root)
+        math_win.title("📐 MOSH Math Whiteboard")
+        math_win.geometry("900x650")
+        math_win.transient(self.root)
+        math_win.grab_set()
+        
+        colors = THEMES[self.config.get("theme", "light")]
+        math_win.configure(bg=colors["bg"])
+        
+        # Split Layout: Left (Symbols), Right (Editor)
+        main_frame = tk.Frame(math_win, bg=colors["bg"])
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # 1. Left Sidebar: Symbols
+        sidebar = tk.LabelFrame(main_frame, text="Math Shortcuts", bg=colors["bg"], fg=colors["header"], font=("bold"))
+        sidebar.pack(side="left", fill="y", padx=(0, 10))
+        
+        shortcuts = [
+            ("Fraction", "\\frac{num}{den}"),
+            ("Exponent", "^{exp}"),
+            ("Subscript", "_{sub}"),
+            ("Square Root", "\\sqrt{rad}"),
+            ("Integral", "\\int_{a}^{b}"),
+            ("Summation", "\\sum_{i=1}^{n}"),
+            ("Greek (pi)", "\\pi"),
+            ("Infinity", "\\infty"),
+            ("Limit", "\\lim_{n \\to \\infty}"),
+            ("Matrix (2x2)", "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}"),
+            ("Vector", "\\vec{v}"),
+            ("Greek (theta)", "\\theta")
+        ]
+        
+        def insert_sym(sym):
+            txt_math.insert(tk.INSERT, sym)
+            txt_math.focus_set()
+
+        for label, sym in shortcuts:
+            tk.Button(sidebar, text=label, command=lambda s=sym: insert_sym(s), 
+                      width=15, bg="#f9fafb", cursor="hand2").pack(pady=2, padx=5)
+
+        # 2. Right Side: Editor
+        editor_frame = tk.Frame(main_frame, bg=colors["bg"])
+        editor_frame.pack(side="right", fill="both", expand=True)
+        
+        tk.Label(editor_frame, text="LaTeX Code Workspace:", bg=colors["bg"], fg=colors["header"], font=("bold")).pack(anchor="w")
+        
+        txt_math = scrolledtext.ScrolledText(editor_frame, font=("Consolas", 14), bg="white", height=15)
+        txt_math.pack(fill="both", expand=True, pady=(5, 10))
+        
+        # Load current text
+        txt_math.insert(1.0, parent_var.get())
+        
+        # Image Preview (Small)
+        try:
+            p_img = Image.open(image_path)
+            p_img.thumbnail((300, 150))
+            tk_p = ImageTk.PhotoImage(p_img)
+            lbl_p = tk.Label(editor_frame, image=tk_p, bg="white", borderwidth=1, relief="solid")
+            lbl_p.image = tk_p
+            lbl_p.pack(pady=10)
+        except:
+             pass
+
+        def on_apply():
+            parent_var.set(txt_math.get(1.0, tk.END).strip())
+            math_win.destroy()
+            
+        def on_ocr_retry():
+             # Logic for re-running math OCR if they want a second look
+             math_win.destroy()
+             # This triggers the existing on_math_ocr logic back in the parent
+             # But here we just close it and let the user decide.
+        
+        btn_action = tk.Frame(editor_frame, bg=colors["bg"])
+        btn_action.pack(fill="x")
+        
+        tk.Button(btn_action, text="✨ APPLY TO PAGE", command=on_apply, bg="#dcedc8", font=("bold"), cursor="hand2", width=25).pack(side="right")
+        tk.Button(btn_action, text="❌ Cancel", command=math_win.destroy, bg="#ffcdd2", cursor="hand2").pack(side="left")
+
+        tk.Button(btn_action, text="✨ APPLY TO PAGE", command=on_apply, bg="#dcedc8", font=("bold"), cursor="hand2", width=25).pack(side="right")
+        tk.Button(btn_action, text="❌ Cancel", command=math_win.destroy, bg="#ffcdd2", cursor="hand2").pack(side="left")
+
+    def _show_visual_manifest(self):
+        """Displays a GRID of all detected graphs/images in the project."""
+        if not self.target_dir or not os.path.exists(self.target_dir):
+            messagebox.showwarning("Load Project", "Please load a project first.")
+            return
+
+        manifest_win = Toplevel(self.root)
+        manifest_win.title("🖼️ Visual Element Manifest")
+        manifest_win.geometry("1000x750")
+        manifest_win.transient(self.root)
+        manifest_win.grab_set()
+        
+        mode = self.config.get("theme", "light")
+        colors = THEMES[mode]
+        manifest_win.configure(bg=colors["bg"])
+
+        # Header
+        header = tk.Frame(manifest_win, bg=colors["bg"])
+        header.pack(fill="x", padx=20, pady=20)
+        tk.Label(header, text="🖼️ Visual Element Manifest", font=("Segoe UI", 18, "bold"), fg=colors["header"], bg=colors["bg"]).pack(anchor="w")
+        tk.Label(header, text="Mosh: 'Review all your cropped graphs and diagrams here. One click to edit, one click to confirm!'", 
+                 font=("Segoe UI", 10, "italic"), fg=colors["fg"], bg=colors["bg"]).pack(anchor="w")
+
+        # Scrollable Area
+        container = ttk.Frame(manifest_win)
+        container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        canvas = tk.Canvas(container, bg="white", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        grid_frame = tk.Frame(canvas, bg="white")
+        
+        def on_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
+        def on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+            
+        canvas_window = canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+        grid_frame.bind("<Configure>", on_configure)
+        canvas.bind("<Configure>", on_canvas_configure)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def refresh_grid():
+            for widget in grid_frame.winfo_children():
+                widget.destroy()
+
+            # Find all images in web_resources/remediated_graphs
+            graph_dir = os.path.join(self.target_dir, "web_resources", "remediated_graphs")
+            if not os.path.exists(graph_dir):
+                tk.Label(grid_frame, text="No remediated graphs found yet. Run a conversion first!", 
+                         font=("Segoe UI", 12), bg="white").pack(pady=50)
+                return
+
+            images = [f for f in os.listdir(graph_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            if not images:
+                tk.Label(grid_frame, text="Manifest is empty. Start converting files to see images here!", 
+                         font=("Segoe UI", 12), bg="white").pack(pady=50)
+                return
+
+            cols = 4 if manifest_win.winfo_width() > 800 else 3
+            for i, img_name in enumerate(images):
+                img_path = os.path.join(graph_dir, img_name)
+                
+                card = tk.Frame(grid_frame, bg="white", borderwidth=1, relief="solid", padx=5, pady=5)
+                card.grid(row=i//cols, column=i%cols, padx=10, pady=10, sticky="nsew")
+                
+                try:
+                    pil_img = Image.open(img_path)
+                    pil_img.thumbnail((200, 150))
+                    tk_img = ImageTk.PhotoImage(pil_img)
+                    
+                    lbl_img = tk.Label(card, image=tk_img, bg="white", cursor="hand2")
+                    lbl_img.image = tk_img
+                    lbl_img.pack()
+                    
+                    # Bind click to edit
+                    lbl_img.bind("<Button-1>", lambda e, p=img_path: self._edit_manifest_item(p, manifest_win))
+                    
+                    tk.Label(card, text=img_name, font=("Segoe UI", 8), bg="white", wraplength=180).pack()
+                    
+                    btn_strip = tk.Frame(card, bg="white")
+                    btn_strip.pack(fill="x", pady=5)
+                    
+                    tk.Button(btn_strip, text="✏️ Edit", command=lambda p=img_path: self._edit_manifest_item(p, manifest_win), 
+                              font=("Segoe UI", 8), bg="#F3F4F6").pack(side="left", expand=True)
+                    tk.Button(btn_strip, text="🗑️ Del", command=lambda p=img_path: self._delete_manifest_item(p, refresh_grid), 
+                              font=("Segoe UI", 8), bg="#FEE2E2").pack(side="right", expand=True)
+                    
+                except Exception as e:
+                     tk.Label(card, text=f"Error Loading\n{img_name}", bg="white", fg="red").pack()
+
+        manifest_win.after(100, refresh_grid)
+
+    def _edit_manifest_item(self, img_path, win):
+        """Allows editing an image's alt text from the manifest."""
+        # Find the HTML file that references this image to update it
+        # This is the tricky part - we need to scan the project
+        # For now, let's just open the dialog and see if we can update the image file itself 
+        # (Though alt text lives in HTML)
+        
+        # [NEW] Enhanced Manifest: Find HTML source
+        self.gui_handler.log(f"   [Manifest] Opening review for: {os.path.basename(img_path)}")
+        self._show_image_dialog("Reviewing from Manifest", img_path, context="Manifest View")
+        # Note: In a full implementation, we'd need to map image -> HTML to update alt text.
+        # For this version, it's a visual auditor.
+
+    def _delete_manifest_item(self, img_path, callback):
+        """Deletes a visual element from the project."""
+        if messagebox.askyesno("Delete Image?", f"Are you sure you want to delete this visual element?\n\n{os.path.basename(img_path)}"):
+            try:
+                os.remove(img_path)
+                callback()
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not delete image: {e}")
 
     def _show_link_dialog(self, message, href, context=None):
         """Custom dialog to show link details and prompt for text."""
@@ -3330,6 +3545,87 @@ YOUR WORKFLOW:
 
         # Start the worker
         threading.Thread(target=worker, daemon=True).start()
+
+    # --- CANVAS MIRROR (LIVE SYNC) LOGIC ---
+    def _toggle_mirror(self):
+        """Starts or stops the live directory watcher for Canvas sync."""
+        if not self.mirror_active:
+            # START
+            api = self._get_canvas_api()
+            if not api:
+                messagebox.showwarning("Setup Required", "Please fill in your Canvas details (Section 1) before enabling Mirror Mode.")
+                self._switch_view("setup")
+                return
+
+            if not self.target_dir or not os.path.exists(self.target_dir):
+                messagebox.showwarning("Target Required", "Please load a course project (Section 4) first.")
+                return
+
+            self.mirror_active = True
+            self.btn_mirror_toggle.config(text="🟢 MIRROR MODE: ON", bg="#D1FAE5")
+            self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
+            self.gui_handler.log("🚀 [Mirror] ACTIVE. Watching project for saves...")
+            
+            # Reset hashes so we don't trigger on everything immediately
+            self.file_hashes = {}
+            for f in Path(self.target_dir).rglob("*.html"):
+                self.file_hashes[str(f)] = os.path.getmtime(f)
+
+            self.mirror_thread = threading.Thread(target=self._mirror_watcher, daemon=True)
+            self.mirror_thread.start()
+        else:
+            # STOP
+            self.mirror_active = False
+            self.btn_mirror_toggle.config(text="🔴 MIRROR MODE: OFF", bg="#f3f4f6")
+            self.lbl_mirror_status.config(text="Idle", fg="gray")
+            self.gui_handler.log("🛑 [Mirror] Deactivated.")
+
+    def _mirror_watcher(self):
+        """Background thread that polls for file changes."""
+        api = self._get_canvas_api()
+        if not api: return
+
+        while self.mirror_active:
+            try:
+                # Check for changes in target_dir
+                for fpath in Path(self.target_dir).rglob("*.html"):
+                    if not self.mirror_active: break
+                    
+                    # Ignore temporary or system files
+                    if "web_resources" in str(fpath) or "_archive" in str(fpath):
+                        continue
+                        
+                    fstr = str(fpath)
+                    try:
+                        mtime = os.path.getmtime(fpath)
+                        if fstr not in self.file_hashes:
+                            # New file found - we don't auto-upload new files (too risky)
+                            # Just track it
+                            self.file_hashes[fstr] = mtime
+                        elif mtime > self.file_hashes[fstr]:
+                            # CHANGE DETECTED!
+                            self.file_hashes[fstr] = mtime
+                            # [FIX] Immediate status update on main thread
+                            self.root.after(0, lambda p=fstr: self._mirror_trigger_upload(p, api))
+                    except:
+                        pass
+                
+                # Poll every 2 seconds
+                time.sleep(2)
+            except Exception as e:
+                print(f"Watcher error: {e}")
+                time.sleep(5)
+
+    def _mirror_trigger_upload(self, html_path, api):
+        """Helper to run the upload in a separate worker thread so GUI doesn't freeze."""
+        def task():
+            self.lbl_mirror_status.config(text=f"Syncing {os.path.basename(html_path)}...", fg="blue")
+            # We use a dummy 'original_source' since we are mirroring
+            self._upload_page_to_canvas(html_path, html_path, api, auto_confirm_links=True)
+            self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
+
+        # Run as a separate short-lived thread
+        threading.Thread(target=task, daemon=True).start()
 
 if __name__ == "__main__":
     root = tk.Tk()
