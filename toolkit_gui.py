@@ -162,6 +162,12 @@ class ToolkitGUI:
         self.deferred_review = False
         self.current_dialog = None
         
+        # Mirror Mode State
+        self.mirror_active = False
+        self.mirror_thread = None
+        self.mirror_target_file = None # If we want to watch a SPECIFIC file
+        self.file_hashes = {} # path: mtime
+        
         # UI State
         self.current_view = "dashboard"
         self.main_content_frame = None
@@ -806,6 +812,21 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.lbl_setup_dir = tk.Label(frame_project, text=self.target_dir if self.target_dir else "No folder selected", 
                                    bg="#F3F4F6", fg="#374151", padx=10, pady=5, anchor="w", wraplength=500)
         self.lbl_setup_dir.pack(fill="x", pady=5)
+
+        # --- SECTION 5: CANVAS MIRROR (LIVE SYNC) ---
+        tk.Label(content, text="5. Canvas Mirror (Live Sync)", font=("Segoe UI", 14, "bold"), bg="white", fg="#4B3190").pack(anchor="w", pady=(10, 5))
+        frame_mirror = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_mirror.pack(fill="x", pady=(0, 20))
+        
+        tk.Label(frame_mirror, text="When 'Mirror Mode' is active, MOSH watches your project folder.\nEvery time you save an HTML file, it instantly uploads it to Canvas.", 
+                 bg="white", fg="gray", font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 10))
+
+        self.btn_mirror_toggle = tk.Button(frame_mirror, text="🔴 MIRROR MODE: OFF", command=self._toggle_mirror, 
+                                          bg="#f3f4f6", font=("Segoe UI", 10, "bold"), width=25, cursor="hand2")
+        self.btn_mirror_toggle.pack(side="left")
+        
+        self.lbl_mirror_status = tk.Label(frame_mirror, text="Idle", bg="white", fg="gray", font=("italic"))
+        self.lbl_mirror_status.pack(side="left", padx=15)
 
         # Pack global status after sections
         lbl_global_status.pack(pady=10)
