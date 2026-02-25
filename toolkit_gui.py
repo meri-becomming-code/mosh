@@ -3231,9 +3231,11 @@ YOUR WORKFLOW:
 
         self.gui_handler.log("DEBUG: Project OK. Checking Poppler...")
 
-        # Poppler check
-        if os.name == "nt" and not self.config.get("poppler_path"):
-            self.gui_handler.log("DEBUG: Poppler path not set. Prompting user.")
+        # Poppler check: Don't restrict to just Windows (nt) anymore
+        import shutil
+        has_poppler = self.config.get("poppler_path") or shutil.which("pdftoppm")
+        if not has_poppler:
+            self.gui_handler.log("DEBUG: Poppler not found. Prompting user.")
             if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nRun 'Auto-Setup' in the 'CONNECT & SETUP' view?"):
                 self._switch_view("setup")
             else:
@@ -3358,11 +3360,14 @@ YOUR WORKFLOW:
                                       "Click '🔗 Connect to My Canvas Playground' and add your key in Step 4.")
                 return
 
-            # [NEW] Proactive Poppler Check (Only for PDFs)
-            if file_type == "pdf" and os.name == "nt" and not self.config.get("poppler_path"):
-                if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nWould you like to run the 'Guided Auto-Setup' now? It doesn't require administrator password."):
+            # [NEW] Proactive Poppler Check (Only for PDFs) - Cross-platform
+            import shutil
+            has_poppler = self.config.get("poppler_path") or shutil.which("pdftoppm")
+            if file_type == "pdf" and not has_poppler:
+                if messagebox.askyesno("Setup Helper Needed", "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nWould you like to run the 'Guided Auto-Setup' now?"):
                     self._auto_setup_poppler()
-                    if not self.config.get("poppler_path"):
+                    has_poppler_now = self.config.get("poppler_path") or shutil.which("pdftoppm")
+                    if not has_poppler_now:
                         return
             
             # File picker based on type
@@ -3443,12 +3448,17 @@ YOUR WORKFLOW:
 
 
     def _auto_setup_poppler(self):
-        """Robust, standalone Poppler downloader with explicit error handling."""
+        """Robust, standalone Poppler downloader with explicit error handling (Windows & Mac)."""
         # [FIX] Save inputs before starting, so we don't lose them on refresh
         self._quick_save_inputs()
 
-        if os.name != "nt":
-            messagebox.showinfo("Not for Mac", "Uh oh! This button is for Windows computers only.\n\nOn a Mac? Ask your IT person to install 'Poppler'.")
+        import sys
+        if sys.platform not in ("win32", "darwin"):
+            messagebox.showinfo("Not Supported", "Auto-setup is currently only supported on Windows and macOS. For Linux, please use your package manager (e.g., sudo apt install poppler-utils).")
+            return
+
+        if sys.platform == "darwin":
+            self._auto_setup_poppler_mac()
             return
 
         link = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
@@ -3541,6 +3551,138 @@ YOUR WORKFLOW:
                 def on_error():
                     progress_win.destroy()
                     messagebox.showerror("Setup Failed", f"An error occurred:\n{str(e)}\n\nPlease try downloading manually.")
+                self.root.after(0, on_error)
+
+        # Start the worker
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _auto_setup_poppler_mac(self):
+        """macOS specific Poppler installation via Homebrew."""
+        import shutil
+        import subprocess
+        import threading
+        import webbrowser
+
+        # Check for Homebrew
+        brew_path = shutil.which("brew")
+        
+        # If Homebrew is missing, fallback to specific common locations
+        if not brew_path:
+            # Fallback path typical for Apple Silicon
+            if os.path.exists("/opt/homebrew/bin/brew"):
+                brew_path = "/opt/homebrew/bin/brew"
+            # Fallback path typical for Intel
+            elif os.path.exists("/usr/local/bin/brew"):
+                brew_path = "/usr/local/bin/brew"
+        
+        if not brew_path:
+            msg = (
+                "To automatically install Poppler on a Mac, you need a tool called 'Homebrew'.\n\n"
+                "Once you install Homebrew, you can click this Auto-Setup button again.\n\n"
+                "Would you like to open the Homebrew website (brew.sh) to see how to install it?"
+            )
+            if messagebox.askyesno("Homebrew Required", msg):
+                webbrowser.open("https://brew.sh")
+            return
+
+        explanation = (
+            "I will use Homebrew to download and install Poppler.\n\n"
+            "This will open a terminal background process and may take a minute or two depending on your connection.\n\n"
+            "Ready to install?"
+        )
+        if not messagebox.askyesno("Poppler Setup", explanation):
+            return
+
+        # 1. Create Progress Window
+        progress_win = Toplevel(self.root)
+        progress_win.title("Installing through Homebrew...")
+        progress_win.geometry("400x150")
+        progress_win.resizable(False, False)
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+
+        lbl_status = tk.Label(progress_win, text="Running 'brew install poppler'...", font=("Segoe UI", 10))
+        lbl_status.pack(pady=(20, 10))
+
+        pbar = ttk.Progressbar(progress_win, mode="indeterminate")
+        pbar.pack(fill="x", padx=30, pady=10)
+        pbar.start(10)
+
+        def worker():
+            try:
+                def update_status(msg):
+                    self.root.after(0, lambda: lbl_status.config(text=msg))
+                
+                # Verify Poppler might not already be installed
+                if shutil.which("pdftoppm"):
+                    poppler_bin = os.path.dirname(shutil.which("pdftoppm"))
+                    
+                    update_status("Found existing installation!")
+                    
+                    def on_success_exist():
+                        progress_win.destroy()
+                        self._update_config(poppler_path=poppler_bin)
+                        if hasattr(self, "ent_poppler_setup") and self.ent_poppler_setup.winfo_exists():
+                            self.ent_poppler_setup.delete(0, tk.END)
+                            self.ent_poppler_setup.insert(0, poppler_bin)
+                        if self.current_view == "setup":
+                            self._switch_view("setup")
+                        messagebox.showinfo("Success", f"Poppler was already installed!\n\nLocation: {poppler_bin}")
+                        
+                    self.root.after(0, on_success_exist)
+                    return
+
+                # Ensure env vars include brew paths for subprocess execution
+                env = os.environ.copy()
+                if "/opt/homebrew/bin" not in env.get("PATH", ""):
+                    env["PATH"] = f"/opt/homebrew/bin:/usr/local/bin:{env.get('PATH', '')}"
+
+                update_status("Brewing... (This can take a few minutes)")
+                # 2. Run background process to install brew
+                process = subprocess.run(
+                    [brew_path, "install", "poppler"],
+                    env=env,
+                    capture_output=True,
+                    text=True
+                )
+
+                if process.returncode != 0:
+                    raise Exception(f"Homebrew Error:\n{process.stderr}\n{process.stdout}")
+
+                update_status("Verifying installation...")
+                
+                # Check for pdftoppm again
+                poppler_exe = shutil.which("pdftoppm", path=env["PATH"])
+                if not poppler_exe:
+                    raise Exception("Homebrew completed, but poppler binaries (pdftoppm) could not be found.")
+
+                poppler_bin = os.path.dirname(poppler_exe)
+
+                # 3. Success Callback
+                def on_success():
+                    progress_win.destroy()
+                    self._update_config(poppler_path=poppler_bin)
+                    
+                    if hasattr(self, "ent_poppler_setup") and self.ent_poppler_setup.winfo_exists():
+                        self.ent_poppler_setup.delete(0, tk.END)
+                        self.ent_poppler_setup.insert(0, poppler_bin)
+                    
+                    # Refresh Setup View if needed
+                    if self.current_view == "setup":
+                        self._switch_view("setup")
+
+                    messagebox.showinfo("Success", f"Poppler installed successfully via Homebrew!\n\nLocation: {poppler_bin}")
+
+                self.root.after(0, on_success)
+
+            except Exception as e:
+                # 4. Error Callback
+                def on_error():
+                    progress_win.destroy()
+                    msg = str(e)
+                    if len(msg) > 500:
+                        msg = msg[:500] + "... (truncated)"
+                    messagebox.showerror("Setup Failed", f"An error occurred with Homebrew:\n{msg}\n\nPlease try manually running 'brew install poppler' in your Terminal.")
                 self.root.after(0, on_error)
 
         # Start the worker
