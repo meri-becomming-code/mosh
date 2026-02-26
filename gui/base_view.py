@@ -42,7 +42,7 @@ THEMES = {
 
 class BaseView(ABC):
     """Abstract base class for all MOSH GUI views."""
-    
+
     def __init__(
         self,
         parent_frame: tk.Frame,
@@ -52,7 +52,7 @@ class BaseView(ABC):
     ):
         """
         Initialize the view.
-        
+
         Args:
             parent_frame: The parent Tkinter frame to build in
             config: Application configuration dictionary
@@ -66,39 +66,39 @@ class BaseView(ABC):
         self.theme_mode = config.get("theme", "light")
         self.colors = THEMES[self.theme_mode]
         self.main_frame = None
-    
+
     @abstractmethod
     def build(self) -> None:
         """Build the view UI. Must be implemented by subclasses."""
         pass
-    
+
     @abstractmethod
     def refresh(self) -> None:
         """Refresh the view when returning to it. Optional implementation."""
         pass
-    
+
     def _switch_view(self, view_name: str) -> None:
         """Switch to another view."""
         self.on_view_change(view_name)
-    
+
     def _log(self, message: str) -> None:
         """Log a message."""
         self.on_log(message)
-    
+
     def _create_header(self, title: str, emoji: str = "") -> tk.Frame:
         """
         Create a standard header for this view.
-        
+
         Args:
             title: The header title text
             emoji: Optional emoji/icon for the header
-        
+
         Returns:
             The header frame
         """
         header = tk.Frame(self.main_frame, bg=self.colors["bg"])
         header.pack(fill="x", padx=20, pady=(20, 10))
-        
+
         title_text = f"{emoji} {title}" if emoji else title
         tk.Label(
             header,
@@ -107,23 +107,23 @@ class BaseView(ABC):
             fg=self.colors["header"],
             bg=self.colors["bg"],
         ).pack(anchor="w")
-        
+
         return header
-    
+
     def _create_section(self, parent: tk.Widget, title: str = "") -> tk.Frame:
         """
         Create a standard section/card.
-        
+
         Args:
             parent: Parent widget
             title: Optional section title
-        
+
         Returns:
             The section frame
         """
         section = tk.Frame(parent, bg=self.colors["bg"])
         section.pack(fill="x", padx=20, pady=(10, 0))
-        
+
         if title:
             tk.Label(
                 section,
@@ -132,9 +132,9 @@ class BaseView(ABC):
                 fg=self.colors["subheader"],
                 bg=self.colors["bg"],
             ).pack(anchor="w", pady=(10, 5))
-        
+
         return section
-    
+
     def destroy(self) -> None:
         """Clean up the view."""
         if self.main_frame and self.main_frame.winfo_exists():
