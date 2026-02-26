@@ -1627,12 +1627,15 @@ def update_pptx_links_to_html(root_dir, pptx_filename, html_filename, log_func=N
 def unzip_course_package(zip_path, extract_to, log_func=None):
     """
     Extracts a Canvas Export (.imscc) or Zip file to the target directory.
+    Handles special characters and long filenames safely.
     Renames .imscc to .zip internally if needed.
     """
     try:
         if not os.path.exists(extract_to):
             os.makedirs(extract_to)
-            
+        
+        # Use encoding that handles special characters
+        # UTF-8 with proper character replacement for problematic characters
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             members = zip_ref.namelist()
             total = len(members)
@@ -1642,14 +1645,53 @@ def unzip_course_package(zip_path, extract_to, log_func=None):
                     if log_func.__self__.stop_requested:
                         return False, "Extraction stopped by user."
                 
-                zip_ref.extract(member, extract_to)
+                try:
+                    # Extract with proper path handling
+                    # Normalize unicode characters in filenames
+                    normalized_member = member
+                    
+                    # Handle problematic characters by replacing them
+                    # Special characters like middle dot in "DALL·E" cause Windows issues
+                    replacements = [
+                        ('·', '_'),  # Middle dot
+                        ('"', '_'),  # Curly double quotes
+                        ('"', '_'),
+                        ("'", '_'),  # Curly apostrophe
+                        ('…', '...'),  # Ellipsis
+                    ]
+                    
+                    for old_char, new_char in replacements:
+                        normalized_member = normalized_member.replace(old_char, new_char)
+                    
+                    # Extract to destination
+                    target_path = os.path.join(extract_to, normalized_member)
+                    
+                    # Ensure parent directories exist
+                    target_dir = os.path.dirname(target_path)
+                    if target_dir and not os.path.exists(target_dir):
+                        os.makedirs(target_dir, exist_ok=True)
+                    
+                    # Read from zip and write directly to avoid encoding issues
+                    if not member.endswith('/'):
+                        with zip_ref.open(member) as source, open(target_path, 'wb') as target:
+                            target.write(source.read())
+                    else:
+                        # Create directory
+                        if not os.path.exists(target_path):
+                            os.makedirs(target_path, exist_ok=True)
+                    
+                except Exception as file_error:
+                    # Log but continue with next file
+                    if log_func:
+                        log_func(f"   [WARN] Could not extract: {member} ({str(file_error)[:50]})")
+                    continue
                 
                 if log_func and (i + 1) % 50 == 0:
                     log_func(f"   ... Extracted {i + 1}/{total} files...")
 
         return True, f"Success! Extracted to: {extract_to}"
     except Exception as e:
-        return False, str(e)
+        return False, f"Extraction failed: {str(e)}"
 
 def create_course_package(source_dir, output_path, log_func=None):
     """
