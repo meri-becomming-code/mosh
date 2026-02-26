@@ -312,7 +312,21 @@ def generate_text_from_scanned_image(image_path, api_key):
         with open(image_path, "rb") as image_file:
             encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
 
-        # 2. Prepare API Call
+        # 2. Determine MIME type based on file extension
+        _, ext = os.path.splitext(image_path.lower())
+        mime_type_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".tiff": "image/tiff",
+            ".tif": "image/tiff",
+        }
+        mime_type = mime_type_map.get(ext, "image/png")  # Default to PNG if unknown
+
+        # 3. Prepare API Call
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
         headers = {"Content-Type": "application/json"}
@@ -330,7 +344,7 @@ def generate_text_from_scanned_image(image_path, api_key):
                         {"text": prompt},
                         {
                             "inline_data": {
-                                "mime_type": "image/png",
+                                "mime_type": mime_type,
                                 "data": encoded_image,
                             }
                         },
