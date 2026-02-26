@@ -1742,12 +1742,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         if not path:
             return
 
-        # Determine extraction folder
-        # If a valid Project Folder is set, extract there. Otherwise use source folder.
-        if self.target_dir and os.path.isdir(self.target_dir):
-            base_dir = self.target_dir
-        else:
-            base_dir = os.path.dirname(path)
+        # [FIX] Determine extraction folder
+        # ALWAYS extract to the same folder as the .imscc file
+        # This prevents infinite nesting when importing multiple files
+        base_dir = os.path.dirname(path)
 
         filename = os.path.basename(path)
         folder_name = os.path.splitext(filename)[0] + "_extracted"
