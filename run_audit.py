@@ -108,9 +108,13 @@ def check_reflow_styles(tag):
     """Checks for fixed widths or other styles that break mobile reflow."""
     style = tag.get('style', '').lower()
     
-    # Check for large fixed pixel widths
-    width_match = re.search(r'width:\s*([0-9.]+)\s*px', style)
-    if width_match:
+    # Check for large fixed pixel widths.
+    # Skip if width:100% is also present — that means the fixer already made
+    # it responsive (pattern: width: 100%; max-width: Xpx). Only flag truly
+    # hard-coded widths with no responsive fallback.
+    already_responsive = 'width: 100%' in style or 'width:100%' in style
+    width_match = re.search(r'(?<!max-)width:\s*([0-9.]+)\s*px', style)
+    if width_match and not already_responsive:
         try:
             w = float(width_match.group(1))
             if w > 400:
@@ -168,8 +172,6 @@ def check_viewport(soup):
         return "Viewport meta tag missing 'width=device-width'"
     return None
 
-    return None
-
 def check_tables_mobile(table):
     """Reflow Check: Monitors wide tables that break mobile."""
     # Heuristic: more than 4 columns or fixed width style
@@ -223,9 +225,10 @@ def audit_file(filepath):
         if re.search(r'\\\(|\\\[', alt):
             pass # This is likely a Canvas Math equation, which is safe.
             
-        # [NEW] Math verification check
+        # [INFORMATIONAL] Math verification hint — downgraded to subjective
+        # (data-math-check is a review flag set by the fixer, not a WCAG violation)
         if img.has_attr('data-math-check'):
-             results["technical"].append(f"Potential Math Equation needs LaTeX verification: {img.get('src')}")
+             results["subjective"].append(f"Potential Math Equation for review: {img.get('src')}")
 
     # 4. Headings
     h_issues = check_headings(soup)
