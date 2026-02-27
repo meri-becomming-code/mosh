@@ -44,6 +44,22 @@ def clean_gemini_response(text):
         
     return text.strip()
 
+    return text.strip()
+
+# --- NEW: PROBING PROMPT ---
+PROBING_PROMPT = """Analyze this image and list EVERY visual element that is NOT standard text.
+For each element, provide:
+1. Type: (Graph, Diagram, Illustration, Icon, or Table)
+2. Bounding Box: [ymin, xmin, ymax, xmax] (0-1000 scale)
+3. Brief Description: 1 sentence.
+
+FORMAT:
+Element: Type | Box: [box] | Desc: description
+...
+
+If there are no visual elements, reply: "NO_VISUALS"
+"""
+
 MATH_PROMPT = """Convert the content of this image to Canvas-compatible HTML/LaTeX.
 
 RULES:
@@ -51,28 +67,31 @@ RULES:
    - Use \\(...\\) for inline equations
    - Use $$...$$ for display equations
 2. TRANSCRIBE any standard text exactly as it appears.
-3. If the image contains NO MATH, just transcribe the text or describe the image. DO NOT REFUSE.
-4. GRAPHS & DIAGRAMS:
-   - Provide a DETAILED text description of the graph/diagram.
-   - CRITICAL: Calculate the bounding box of the graph (0-1000 scale).
-   - Output the code: [GRAPH_BBOX: ymin, xmin, ymax, xmax]
-   - Example: [GRAPH_BBOX: 150, 100, 450, 900]
-   - I will use this to auto-crop the image.
-   - Example: <p><em>[Graph Description: A parabola...]</em></p> [GRAPH_BBOX: 200, 200, 500, 500]
-   - Do NOT ignore visual elements.
+3. VISUAL ELEMENTS (GRAPHS, DIAGRAMS, ICONS):
+   - You MUST output a token for every visual element detected.
+   - Format: [GRAPH_BBOX: ymin, xmin, ymax, xmax, TYPE, STORY]
+   - TYPE: Set to 'icon' (< 100px), 'graph' (math-heavy), or 'diagram' (complex illustration).
+   - STORY: If the element is complex, provide a 'Long Description' for accessibility (Feature 5). 
+     If it's simple, leave STORY='none'.
+   - Use the 0-1000 coordinate scale.
+   - Example: [GRAPH_BBOX: 100, 100, 400, 400, graph, none]
+   - Example: [GRAPH_BBOX: 500, 500, 800, 800, diagram, This is a complex flow chart showing the water cycle where...]
+4. TABLES (AI Reconstruction):
+   - If you see a table, RECONSTRUCT it perfectly using HTML <table>.
+   - Include <thead> and <tbody>.
+   - Use <th> for headers and ensure they are under 120 characters.
+   - Do NOT just list table content as text.
 5. HANDWRITING / TEACHER NOTES:
    - If you detect handwritten notes or solutions, style them in BLUE.
    - Use: <br><span style="color: #0066cc; font-family: 'Comic Sans MS', cursive, sans-serif;">[Note: ...]</span><br>
-6. Preserve problem numbers (e.g., "1.", "a)") and layout structure.
+6. Preservation: Keep problem numbers (e.g., "1.", "a)") and layout structure.
 7. Formatting:
    - Use <h3> for section headers
    - Use <b> for bold text
    - Use <i> for italics
-   - Use <table> for tabular data
-7. Solutions/Answers:
+8. Solutions/Answers:
    - Wrap solutions in <details><summary>View Solution</summary>...</details>
-8. Output MUST be valid HTML snippet (no <html> cards). 
-9. DO NOT include markdown code blocks (```html).
+9. Output MUST be valid HTML snippet (no <html> cards, no markdown code blocks).
 
 Goal: A perfect accessible digital version of this document."""
 
@@ -120,6 +139,25 @@ def generate_content_with_retry(client, model, contents, log_func=None):
     
     raise Exception("MOSH Magic failed after multiple retries. The AI server might be too busy or your connection is unstable. Please try again in a few minutes.")
 
+def detect_visual_elements(client, model, img, log_func=None):
+    """
+    Probes the image for visual elements to ensure none are missed in the second pass.
+    """
+    if log_func:
+        log_func("   🔍 Probing image for visual elements (Pass 1)...")
+    
+    response = generate_content_with_retry(
+        client=client,
+        model=model,
+        contents=[PROBING_PROMPT, img],
+        log_func=log_func
+    )
+    
+    if not response.text or "NO_VISUALS" in response.text:
+        return []
+        
+    return response.text.strip()
+
 def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, page_num):
     """
     Parses [GRAPH_BBOX] tokens, crops images from the source page, 
@@ -138,13 +176,15 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
             width, height = img.size
             
             # 3. Find all BBOX tokens
-            # Format: [GRAPH_BBOX: ymin, xmin, ymax, xmax] (0-1000 scale)
-            matches = re.finditer(r'\[GRAPH_BBOX:\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]', html_content)
+            # Format: [GRAPH_BBOX: ymin, xmin, ymax, xmax, TYPE, STORY]
+            matches = re.finditer(r'\[GRAPH_BBOX:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\w+)\s*,\s*([^\]]+)\]', html_content)
             
             for i, match in enumerate(matches):
                 try:
                     full_token = match.group(0)
-                    ymin_rel, xmin_rel, ymax_rel, xmax_rel = map(int, match.groups())
+                    ymin_rel, xmin_rel, ymax_rel, xmax_rel = map(int, [match.group(j) for j in range(1, 5)])
+                    img_type = match.group(5).lower()
+                    story = match.group(6).strip()
                     
                     # 4. Convert to Pixels with Padding
                     ymin = int((ymin_rel / 1000) * height)
@@ -152,11 +192,11 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     ymax = int((ymax_rel / 1000) * height)
                     xmax = int((xmax_rel / 1000) * width)
                     
-                    # Add 80px padding (user requested extra 50-100px)
-                    ymin = max(0, ymin - 80)
-                    xmin = max(0, xmin - 80)
-                    ymax = min(height, ymax + 80)
-                    xmax = min(width, xmax + 80)
+                    # Add 100px padding (user requested an "extra 50px")
+                    ymin = max(0, ymin - 100)
+                    xmin = max(0, xmin - 100)
+                    ymax = min(height, ymax + 100)
+                    xmax = min(width, xmax + 100)
                     
                     if (xmax - xmin) < 50 or (ymax - ymin) < 50:
                         continue # Skip tiny crops
@@ -169,17 +209,29 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     save_path = res_dir / graph_filename
                     crop.save(save_path)
                     
-                    # 6. Replace Token with Image Tag
-                    img_tag = f'<br><img src="web_resources/{graph_filename}" alt="Graph from Page {page_num + 1}" style="max-width: 600px; border: 1px solid #ccc;"><br>'
+                    # 6. Replace Token with Adaptive Image Tag
+                    style = "max-width: 100%; border: 1px solid #ccc; display: block; margin: 10px auto;"
+                    if img_type == 'icon':
+                        style = "max-width: 120px; vertical-align: middle; margin: 0 5px;"
+                    elif img_type == 'graph':
+                        style = "max-width: 60%; min-width: 300px; border: 1px solid #ccc; margin: 20px auto;"
+                    
+                    img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="web_resources/{graph_filename}" alt="Visual Element" style="{style}">'
+                    
+                    # Feature 5: Storytelling (Long Description)
+                    if story.lower() != 'none':
+                        img_tag += f'<details style="margin-top: 5px;"><summary style="color: #4b3190; cursor: pointer; font-style: italic; font-size: 0.9em;">View Description</summary><div style="padding: 10px; background: #f9f9f9; border-left: 3px solid #4b3190; text-align: left; font-size: 0.95em;">{story}</div></details>'
+                    
+                    img_tag += '</div>'
+                    
                     html_content = html_content.replace(full_token, img_tag)
                     
                 except Exception as e:
-                    print(f"Crop Error: {e}")
                     # Remove token on error to clean up
                     html_content = html_content.replace(full_token, "")
                     
     except Exception as e:
-        print(f"Graph extraction failed: {e}")
+        pass
         
     return html_content
 
@@ -236,10 +288,20 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
             try:
                 # [FIX] Use context manager to ensure file handle is closed
                 with Image.open(img_path) as img:
+                    model = 'gemini-2.0-flash'
+                    
+                    # Pass 1: Probing
+                    visual_context = detect_visual_elements(client, model, img, log_func)
+                    
+                    # Pass 2: Final Conversion with Context
+                    conversion_prompt = MATH_PROMPT
+                    if visual_context:
+                        conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
+
                     response = generate_content_with_retry(
                         client=client,
-                        model='gemini-2.0-flash',
-                        contents=[MATH_PROMPT, img],
+                        model=model,
+                        contents=[conversion_prompt, img],
                         log_func=log_func
                     )
                     return index, clean_gemini_response(response.text)
@@ -310,26 +372,48 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         return False, str(e)
 
 def convert_image_to_latex(api_key, image_path, log_func=None):
-    """Convert a single image to LaTeX."""
+    """Convert a single image to LaTeX using Multi-Pass Probing."""
     if not genai:
         return False, "Gemini library not installed"
     
     try:
         client = genai.Client(api_key=api_key)
+        model = 'gemini-2.0-flash'
         
         if log_func:
             log_func(f"📸 Converting image: {Path(image_path).name}")
         
         img = Image.open(image_path)
+        
+        # Pass 1: Probing
+        visual_context = detect_visual_elements(client, model, img, log_func)
+        
+        # Pass 2: Final Conversion with Context
+        if log_func:
+            log_func("   ✨  Converting content (Pass 2)...")
+            
+        conversion_prompt = MATH_PROMPT
+        if visual_context:
+            conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
+
         response = generate_content_with_retry(
             client=client,
-            model='gemini-2.0-flash',
-            contents=[MATH_PROMPT, img],
+            model=model,
+            contents=[conversion_prompt, img],
             log_func=log_func
         )
         
         if response.text:
             cleaned_text = clean_gemini_response(response.text)
+            
+            # Use extract_and_crop_graphs to handle all detected elements
+            output_dir = Path(image_path).parent
+            image_stem = Path(image_path).stem
+            try:
+                cleaned_text = extract_and_crop_graphs(cleaned_text, image_path, output_dir, image_stem, 0)
+            except Exception as e:
+                if log_func: log_func(f"   ⚠️ Graph crop warning: {e}")
+                
             title = Path(image_path).stem.replace('_', ' ').title()
             html = create_canvas_html(cleaned_text, title=title)
             
@@ -389,10 +473,20 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                 
                 # [FIX] Use context manager + immediate processing
                 with Image.open(temp_img_path) as img:
+                    model = 'gemini-2.0-flash'
+                    
+                    # Pass 1: Probing
+                    visual_context = detect_visual_elements(client, model, img, log_func)
+                    
+                    # Pass 2: Final Conversion with Context
+                    conversion_prompt = MATH_PROMPT
+                    if visual_context:
+                        conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
+
                     response = generate_content_with_retry(
                         client=client,
-                        model='gemini-2.0-flash',
-                        contents=[MATH_PROMPT, img],
+                        model=model,
+                        contents=[conversion_prompt, img],
                         log_func=log_func
                     )
                 

@@ -361,6 +361,38 @@ def remediate_html_file(filepath):
                     th['scope'] = "row"
                 fixes.append("Assigned WCAG scope to table header")
         
+        # 4.5 [NEW] Enforce Header Length (< 120 chars)
+        for th in table.find_all('th'):
+            th_text = th.get_text(strip=True)
+            if len(th_text) > 120:
+                short_text = th_text[:117] + "..."
+                th.string = short_text
+                fixes.append(f"Truncated long table header ({len(th_text)} chars) to 120 max")
+
+        # 4.6 [NEW] Ensure TBODY exists and contains all non-thead rows
+        rows = table.find_all('tr', recursive=False)
+        # Also check rows inside mis-nested tbodies or directly in table
+        all_tr = table.find_all('tr')
+        body_rows = [tr for tr in all_tr if not tr.find_parent('thead')]
+        
+        if body_rows:
+            tbody = table.find('tbody')
+            if not tbody:
+                tbody = soup.new_tag('tbody')
+                # Insert tbody after thead if thead exists, else at start
+                thead = table.find('thead')
+                if thead:
+                    thead.insert_after(tbody)
+                else:
+                    table.append(tbody)
+                fixes.append("Created missing <tbody> tag")
+            
+            # Move all body rows into the tbody if they aren't already
+            for tr in body_rows:
+                if tr.parent != tbody:
+                    tbody.append(tr.extract())
+                    fixes.append("Moved stray row into <tbody>")
+
         if not table.has_attr('border'):
             table['border'] = "1"
         if 'border-collapse' not in table.get('style', ''):
