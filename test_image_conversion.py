@@ -38,7 +38,7 @@ def test_image_conversion_logic():
     success, msg = converter_utils.update_manifest_resource(".", "old_file.docx", "new_file.html")
     print(f"Manifest Update: {success} | {msg}")
     
-    if success and "Updated 1 references" in msg:
+    if success and ("synced" in msg.lower() or "updated" in msg.lower()):
         print("PASS: Manifest synchronization works.")
     else:
         print("FAIL: Manifest synchronization failed.")

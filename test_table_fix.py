@@ -53,12 +53,15 @@ def test_table_structure_fix():
     else:
         print("FAIL: <thead> ordering incorrect.")
         
-    # 3. Check for scope standardization
+    # Headers in <thead> must have scope='col' per WCAG.
+    # The original test HTML had scope='row' on thead headers — the fixer
+    # correctly upgrades them to scope='col'. Verify this is happening.
     ths = thead.find_all('th')
     if all(th.get('scope') == 'col' for th in ths):
-        print("PASS: <thead> headers have scope='col'.")
+        print("PASS: <thead> headers correctly have scope='col' (WCAG compliant).")
     else:
-        print("FAIL: <thead> headers have incorrect scope.")
+        actual = [th.get('scope') for th in ths]
+        print(f"FAIL: <thead> headers have incorrect scope: {actual}")
 
     # Cleanup
     if os.path.exists(test_file):

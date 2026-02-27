@@ -353,12 +353,15 @@ def remediate_html_file(filepath):
 
         # 4. Standardize Scopes (Canvas requirement)
         for th in table.find_all('th'):
-            if not th.has_attr('scope'):
-                # Heuristic: if it's in a thead, it's a col. If it's the first cell of a tr, it's a row.
-                if th.find_parent('thead'):
-                    th['scope'] = "col"
-                else:
-                    th['scope'] = "row"
+            parent_section = th.find_parent(['thead', 'tbody', 'tfoot'])
+            if parent_section and parent_section.name == 'thead':
+                # Headers in thead must be scope='col'
+                if th.get('scope') != 'col':
+                    th['scope'] = 'col'
+                    fixes.append("Assigned WCAG scope='col' to thead header")
+            elif not th.has_attr('scope'):
+                # First cell of a body row = row header
+                th['scope'] = 'row'
                 fixes.append("Assigned WCAG scope to table header")
         
         # 4.5 [NEW] Enforce Header Length (< 120 chars)
