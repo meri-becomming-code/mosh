@@ -97,7 +97,8 @@ class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
 
         # [NEW] Power User Bypass - Trust AI auto-accept
         if getattr(self, "trust_ai_alt", False) and suggestion:
-            self.log(f"   [Auto-Alt] Using AI suggestion for {os.path.basename(image_path)}")
+            preview = suggestion if len(suggestion) <= 80 else suggestion[:77] + "..."
+            self.log(f"   ✅ [Auto-Alt] {os.path.basename(image_path)}: \"{preview}\"")
             return suggestion
 
         self.input_request_queue.put(
