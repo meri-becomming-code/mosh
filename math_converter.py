@@ -161,15 +161,18 @@ def detect_visual_elements(client, model, img, log_func=None):
 def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, page_num):
     """
     Parses [GRAPH_BBOX] tokens, crops images from the source page, 
-    saves them to web_resources, and replaces tokens with <img> tags.
+    saves them alongside the HTML output, and replaces tokens with <img> tags.
     """
     if '[GRAPH_BBOX:' not in html_content:
         return html_content
         
     try:
-        # 1. Ensure web_resources exists
-        res_dir = Path(output_dir) / 'web_resources'
-        res_dir.mkdir(exist_ok=True)
+        # Save cropped images into a subfolder next to the HTML file.
+        # e.g. output_dir/MyPDF_graphs/MyPDF_p1_graph1.png
+        # The HTML <img src> uses a relative path: MyPDF_graphs/filename.png
+        # This keeps paths correct whether the HTML is in web_resources or anywhere else.
+        graphs_dir = Path(output_dir) / f"{base_name}_graphs"
+        graphs_dir.mkdir(exist_ok=True)
         
         # 2. Open Source Image
         with Image.open(image_path) as img:
@@ -177,7 +180,7 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
             
             # 3. Find all BBOX tokens
             # Format: [GRAPH_BBOX: ymin, xmin, ymax, xmax, TYPE, STORY]
-            matches = re.finditer(r'\[GRAPH_BBOX:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\w+)\s*,\s*([^\]]+)\]', html_content)
+            matches = list(re.finditer(r'\[GRAPH_BBOX:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\w+)\s*,\s*([^\]]+)\]', html_content))
             
             for i, match in enumerate(matches):
                 try:
@@ -206,17 +209,21 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     
                     # Unique filename
                     graph_filename = f"{base_name}_p{page_num + 1}_graph{i + 1}.png"
-                    save_path = res_dir / graph_filename
+                    save_path = graphs_dir / graph_filename
                     crop.save(save_path)
                     
-                    # 6. Replace Token with Adaptive Image Tag
+                    # 6. Build relative src path (relative to the HTML file's location)
+                    # graphs_dir is a sibling of the HTML, so just use folder/filename
+                    rel_src = f"{base_name}_graphs/{graph_filename}"
+                    
+                    # 7. Replace Token with Adaptive Image Tag
                     style = "max-width: 100%; border: 1px solid #ccc; display: block; margin: 10px auto;"
                     if img_type == 'icon':
                         style = "max-width: 120px; vertical-align: middle; margin: 0 5px;"
                     elif img_type == 'graph':
                         style = "max-width: 60%; min-width: 300px; border: 1px solid #ccc; margin: 20px auto;"
                     
-                    img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="web_resources/{graph_filename}" alt="Visual Element" style="{style}">'
+                    img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="{rel_src}" alt="Visual Element" style="{style}">'
                     
                     # Feature 5: Storytelling (Long Description)
                     if story.lower() != 'none':
@@ -228,7 +235,7 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     
                 except Exception as e:
                     # Remove token on error to clean up
-                    html_content = html_content.replace(full_token, "")
+                    html_content = html_content.replace(match.group(0), "")
                     
     except Exception as e:
         pass
