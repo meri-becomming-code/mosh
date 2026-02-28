@@ -158,7 +158,7 @@ def detect_visual_elements(client, model, img, log_func=None):
         
     return response.text.strip()
 
-def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, page_num):
+def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, page_num, log_func=None):
     """
     Parses [GRAPH_BBOX] tokens, crops images from the source page, 
     saves them alongside the HTML output, and replaces tokens with <img> tags.
@@ -227,6 +227,10 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     
                     # Feature 5: Storytelling (Long Description)
                     if story.lower() != 'none':
+                        if log_func:
+                            preview = story if len(story) <= 80 else story[:77] + "..."
+                            log_func(f"   ✅ [Math-Alt] {graph_filename}: \"{preview}\"")
+                        
                         img_tag += f'<details style="margin-top: 5px;"><summary style="color: #4b3190; cursor: pointer; font-style: italic; font-size: 0.9em;">View Description</summary><div style="padding: 10px; background: #f9f9f9; border-left: 3px solid #4b3190; text-align: left; font-size: 0.95em;">{story}</div></details>'
                     
                     img_tag += '</div>'
@@ -345,7 +349,7 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
             if content:
                 # Use the original temp image for cropping
                 try:
-                    content = extract_and_crop_graphs(content, sorted_image_paths[i], output_dir, pdf_stem, i)
+                    content = extract_and_crop_graphs(content, sorted_image_paths[i], output_dir, pdf_stem, i, log_func)
                 except Exception as e:
                      if log_func: log_func(f"   ⚠️ Graph crop warning p{i+1}: {e}")
                 final_pages.append(content)
@@ -417,7 +421,7 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
             output_dir = Path(image_path).parent
             image_stem = Path(image_path).stem
             try:
-                cleaned_text = extract_and_crop_graphs(cleaned_text, image_path, output_dir, image_stem, 0)
+                cleaned_text = extract_and_crop_graphs(cleaned_text, image_path, output_dir, image_stem, 0, log_func)
             except Exception as e:
                 if log_func: log_func(f"   ⚠️ Graph crop warning: {e}")
                 
@@ -508,7 +512,8 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                             temp_img_path, 
                             output_dir, 
                             doc_stem, 
-                            999 + i # Unique ID offset for Word images
+                            999 + i, # Unique ID offset for Word images
+                            log_func
                         )
                         all_content.append(f"\n<!-- Image {i} -->\n{processed_content}\n")
                     except Exception as e:
