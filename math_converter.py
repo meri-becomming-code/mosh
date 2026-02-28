@@ -756,7 +756,7 @@ def create_canvas_html(content, title="Canvas Math Content"):
         
         /* Table Handling - Prevent Cutoff */
         table {{
-            display: block;
+            display: table;
             width: 100%;
             overflow-x: auto;
             border-collapse: collapse;

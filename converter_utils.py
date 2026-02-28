@@ -1661,11 +1661,15 @@ def update_links_in_directory(directory, old_filename, new_filename):
                         clean_href_no_qs = clean_href.split("?")[0]
 
                         # Preserve prefixes like $IMS-CC-FILEBASE$/ by only replacing the filename part
-                        # Case-insensitive comparison
+                        # Case-insensitive comparison, handles missing extensions
+                        old_stem = os.path.splitext(old_base)[0].lower()
+                        href_stem = clean_href_no_qs.split("/")[-1].lower()
+                        
                         if (
                             clean_href_no_qs.lower().endswith(
                                 old_base.lower().replace("\\", "/")
                             )
+                            or href_stem == old_stem
                             or href.lower() == old_base_enc.lower()
                         ):
                             # Use regex or simple replace that targets the specific filename
@@ -1682,6 +1686,9 @@ def update_links_in_directory(directory, old_filename, new_filename):
 
                             # Update link text to be human-readable
                             a.string = new_link_text
+                            
+                            # Add descriptive title
+                            a['title'] = new_link_text
                             modified = True
 
                     # 2. Update Images (<img> tags)
@@ -1728,11 +1735,17 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
     lookup = {}
     for old, new in filename_map.items():
         old_clean = old.strip().lower()
+        old_basename = os.path.basename(old_clean)
+        old_stem = os.path.splitext(old_basename)[0]
         new_base = os.path.basename(new)
-        lookup[old_clean] = {
+        
+        d = {
             "new_href": new_base.replace(" ", "%20"),
             "new_text": os.path.splitext(new_base)[0].replace("_", " ").strip(),
         }
+        lookup[old_basename] = d
+        lookup[old_clean] = d
+        lookup[old_stem] = d
 
     total_files_updated = 0
     total_links_changed = 0
@@ -1756,6 +1769,9 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
                             # Preserving prefix logic
                             prefix = href.rsplit("/", 1)[0] + "/" if "/" in href else ""
                             a["href"] = prefix + info["new_href"]
+                            
+                            # Add descriptive title
+                            a['title'] = info["new_text"]
 
                             # Update text if it's generic
                             t = a.get_text(strip=True)
