@@ -2156,7 +2156,7 @@ def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
     try:
         # Standardize paths to forward slashes for XML
         old_p = old_rel_path.replace("\\", "/").lower()
-        new_p = new_rel_path.replace("\\", "/")
+        new_p_encoded = urllib.parse.quote(new_rel_path.replace("\\", "/"))
 
         with open(manifest_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -2167,9 +2167,10 @@ def update_manifest_resource(root_dir, old_rel_path, new_rel_path):
         def repl_func(match):
             nonlocal replacements
             href_val = match.group(1)
-            if href_val.replace("\\", "/").lower() == old_p:
+            clean_href = urllib.parse.unquote(href_val).replace("\\", "/").lower()
+            if clean_href == old_p:
                 replacements += 1
-                return f'href="{new_p}"'
+                return f'href="{new_p_encoded}"'
             return match.group(0)
 
         new_content = re.sub(r'href="([^"]+)"', repl_func, content)
@@ -2208,10 +2209,11 @@ def batch_update_manifest_resources(root_dir, path_map):
         def repl_func(match):
             nonlocal replacements
             href_val = match.group(1)
-            clean_href = href_val.replace("\\", "/").lower()
+            clean_href = urllib.parse.unquote(href_val).replace("\\", "/").lower()
             if clean_href in lookup:
                 replacements += 1
-                return f'href="{lookup[clean_href]}"'
+                new_encoded = urllib.parse.quote(lookup[clean_href])
+                return f'href="{new_encoded}"'
             return match.group(0)
 
         new_content = re.sub(r'href="([^"]+)"', repl_func, content)
@@ -2225,10 +2227,12 @@ def batch_update_manifest_resources(root_dir, path_map):
                 for wr_file in wr_files:
                     wr_fpath = os.path.join(wr_root, wr_file)
                     wr_rel = os.path.relpath(wr_fpath, root_dir).replace("\\", "/")
+                    wr_encoded = urllib.parse.quote(wr_rel)
+                    
                     # If this file isn't already in the manifest, we should add a snippet
-                    if f'href="{wr_rel}"' not in new_content:
+                    if f'href="{wr_encoded}"' not in new_content and f'href="{wr_rel}"' not in new_content:
                         # Simple registration: add it near the end of the resources block
-                        entry = f'    <file href="{wr_rel}"/>'
+                        entry = f'    <file href="{wr_encoded}"/>'
                         extra_resources.append(entry)
 
             if extra_resources:

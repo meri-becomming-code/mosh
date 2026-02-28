@@ -4717,8 +4717,14 @@ YOUR WORKFLOW:
                     log_func=log,
                 )
 
-                # 3. Archive Original
+                # 3. Update Manifest so Canvas Modules don't drop the file
+                source_rel = os.path.relpath(source, self.target_dir)
+                dest_rel = os.path.relpath(dest, self.target_dir)
+                converter_utils.update_manifest_resource(self.target_dir, source_rel, dest_rel)
+
+                # 4. Archive Original
                 converter_utils.archive_source_file(source, log_func=log)
+
 
                 # 4. Auto-Upload to Canvas (if API connected)
                 api = self._get_canvas_api()
