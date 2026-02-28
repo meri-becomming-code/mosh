@@ -316,11 +316,11 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                     log_func(f"   [Error] Page {index+1} failed: {e}")
                 return index, f"<p>[Error converting page {index+1}: {e}]</p>"
 
-        # Use 1 worker for stability (prevents Poppler/Tkinter crashes)
+        # Process up to 4 pages concurrently to leverage fast internet
         # Sort images to ensure index matches sorted(glob)
         sorted_image_paths = sorted(temp_dir.glob('*.png'))
         
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             futures = []
             for i, img_path in enumerate(sorted_image_paths):
                 futures.append(executor.submit(process_page, i, img_path))
