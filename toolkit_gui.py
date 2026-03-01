@@ -3648,6 +3648,20 @@ YOUR WORKFLOW:
                     self.gui_handler.log(
                         f"   [Sync] Updated links in {count} files to point to Canvas."
                     )
+                
+                # 5. [NEW] Update Live Canvas Modules if applicable
+                if True:
+                    self.gui_handler.log(f"   [Sync] Checking Canvas Modules for {fname}...")
+                    # We pass the slug which is usually derived from the HTML URL
+                    # HTML URL: "https://.../pages/slug" -> we need "slug"
+                    import urllib.parse
+                    slug = canvas_page_url.split('/')[-1]
+                    mod_success, mods_replaced = api.replace_module_file_with_page(
+                        fname, slug, page_title
+                    )
+                    if mod_success and mods_replaced > 0:
+                        self.gui_handler.log(f"   [Sync] Updated {mods_replaced} Canvas Module items to point directly to the new Page!")
+
                 return True
             else:
                 # Handle Token Expiry

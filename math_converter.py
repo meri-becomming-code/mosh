@@ -29,8 +29,9 @@ def clean_gemini_response(text):
     Returns only the body content.
     """
     # 1. Strip markdown code blocks (e.g. ```html ... ```)
-    text = re.sub(r'^```\w*\s*', '', text.strip(), flags=re.MULTILINE)
-    text = re.sub(r'\s*```$', '', text.strip(), flags=re.MULTILINE)
+    # Target ``` optionally followed by alphanumeric characters, and leading/trailing whitespace
+    text = re.sub(r'```\w*\s*', '', text)
+    text = text.replace('```', '')
     
     # 2. Extract body content if present
     if '<body' in text.lower():
@@ -103,12 +104,26 @@ def generate_content_with_retry(client, model, contents, log_func=None):
     base_delay = 5  # Start with 5 seconds
     
     for attempt in range(max_retries):
+        import concurrent.futures
+        
+        # We wrap the API call in a hard-timeout future 
+        # to guarantee the thread doesn't hang forever on the network
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(
+            client.models.generate_content,
+            model=model,
+            contents=contents
+        )
         try:
-            return client.models.generate_content(
-                model=model,
-                contents=contents
-            )
+            result = future.result(timeout=120)  # 2 minute absolute maximum
+            executor.shutdown(wait=False, cancel_futures=True)
+            return result
+        except concurrent.futures.TimeoutError as e:
+            executor.shutdown(wait=False, cancel_futures=True)
+            error_str = "timeout"
+            is_retryable = True
         except Exception as e:
+            executor.shutdown(wait=False, cancel_futures=True)
             error_str = str(e).lower()
             
             # Check for Rate Limits (429) OR Connection Resets (10054) OR Timeout
@@ -123,10 +138,12 @@ def generate_content_with_retry(client, model, contents, log_func=None):
             )
 
             if is_retryable:
-                wait_time = base_delay * (2 ** attempt) # 5, 10, 20, 40, 80...
+                import random
+                jitter = random.uniform(1.0, 3.0)
+                wait_time = base_delay * (2 ** attempt) + jitter # 5, 10, 20, 40, 80... + jitter
                 if log_func:
                     reason = "Quota" if ("429" in error_str or "exhausted" in error_str) else "Network"
-                    log_func(f"   ⏳ {reason} Hiccup. Pausing for {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                    log_func(f"   ⏳ {reason} Hiccup. Pausing for {wait_time:.1f}s... (Attempt {attempt+1}/{max_retries})")
                 time.sleep(wait_time)
             else:
                 # If it's a real Auth error or something else, don't wait 2 minutes
@@ -291,6 +308,10 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         progress_count = 0
         
         def process_page(index, img_path):
+            import time
+            import random
+            # Just a tiny jitter so threads don't hit the exact same millisecond
+            time.sleep(random.uniform(0.1, 0.5))
             try:
                 # [FIX] Use context manager to ensure file handle is closed
                 with Image.open(img_path) as img:
@@ -316,11 +337,11 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                     log_func(f"   [Error] Page {index+1} failed: {e}")
                 return index, f"<p>[Error converting page {index+1}: {e}]</p>"
 
-        # Process up to 4 pages concurrently to leverage fast internet
+        # Process up to 3 pages concurrently to leverage fast internet without blasting quota
         # Sort images to ensure index matches sorted(glob)
         sorted_image_paths = sorted(temp_dir.glob('*.png'))
         
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             futures = []
             for i, img_path in enumerate(sorted_image_paths):
                 futures.append(executor.submit(process_page, i, img_path))
@@ -437,99 +458,68 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
 
 def convert_word_to_latex(api_key, doc_path, log_func=None):
     """
-    Convert equations in Word doc to LaTeX.
-    Uses python-docx to extract images, then processes with Gemini.
+    Convert Word doc to LaTeX.
+    Uses Gemini File API to preserve BOTH text and math globally.
     """
     if not genai:
         return False, "Gemini library not installed"
     
     try:
-        from docx import Document
-    except ImportError:
-        return False, "python-docx not installed. Run: pip install python-docx"
-    
-    try:
         if log_func:
-            log_func(f"📝 Processing Word doc: {Path(doc_path).name}")
+            log_func(f"📝 Processing Word doc via AI File Reader: {Path(doc_path).name}")
         
-        doc = Document(doc_path)
         client = genai.Client(api_key=api_key)
+        import time
         
-        # [FIX] Use dedicated isolated temp dir for Word images (safety for WinError 32)
-        import uuid
-        import shutil
-        session_id = uuid.uuid4().hex[:8]
-        output_dir = Path(doc_path).parent
-        temp_dir = output_dir / f"temp_word_{session_id}"
-        temp_dir.mkdir(exist_ok=True)
-        
-        # Extract text and images
-        all_content = []
-        doc_stem = Path(doc_path).stem
-
-        for i, rel in enumerate(doc.part.rels.values(), 1):
-            if "image" in rel.target_ref:
-                # Extract image
-                image_blob = rel.target_part.blob
-                
-                # [FIX] Save to isolated temp folder
-                temp_img_path = temp_dir / f"img_{i}.png"
-                with open(temp_img_path, 'wb') as f:
-                    f.write(image_blob)
-                
-                # [FIX] Use context manager + immediate processing
-                with Image.open(temp_img_path) as img:
-                    model = 'gemini-2.0-flash'
-                    
-                    # Pass 1: Probing
-                    visual_context = detect_visual_elements(client, model, img, log_func)
-                    
-                    # Pass 2: Final Conversion with Context
-                    conversion_prompt = MATH_PROMPT
-                    if visual_context:
-                        conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
-
-                    response = generate_content_with_retry(
-                        client=client,
-                        model=model,
-                        contents=[conversion_prompt, img],
-                        log_func=log_func
-                    )
-                
-                if response.text:
-                    cleaned_text = clean_gemini_response(response.text)
-                    
-                    # [NEW] Check for graphs and crop them if found!
-                    # This was missing in Word conversion but existed in PDF
-                    try:
-                        processed_content = extract_and_crop_graphs(
-                            cleaned_text, 
-                            temp_img_path, 
-                            output_dir, 
-                            doc_stem, 
-                            999 + i, # Unique ID offset for Word images
-                            log_func
-                        )
-                        all_content.append(f"\n<!-- Image {i} -->\n{processed_content}\n")
-                    except Exception as e:
-                        if log_func: log_func(f"   ⚠️ Image processing warning: {e}")
-                        all_content.append(f"\n{cleaned_text}\n")
-        
-        # Cleanup isolated temp dir
         try:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        except: pass
-
-        if all_content:
-            title = Path(doc_path).stem.replace('_', ' ').title()
-            html = create_canvas_html("\n".join(all_content), title=title)
+            # 1. Upload the file directly to Gemini
+            doc_file = client.files.upload(file=str(doc_path))
+            if log_func: log_func(f"   ⬆️ Uploaded to Gemini: {doc_file.name} (Waiting for processing...)")
             
-            if log_func:
-                log_func(f"✅ Converted {len(all_content)} images/equations from Word doc")
+            # 2. Wait for ACTIVE state
+            max_wait = 60
+            start_time = time.time()
+            while True:
+                doc_file = client.files.get(name=doc_file.name)
+                if doc_file.state.name == 'ACTIVE':
+                    break
+                if doc_file.state.name == 'FAILED':
+                    return False, "Gemini failed to process the DOCX file natively."
+                if time.time() - start_time > max_wait:
+                    return False, "Timeout waiting for DOCX file processing."
+                time.sleep(2)
             
-            return True, html
-        else:
-            return False, "No math images found in Word document"
+            # 3. Process Full Document
+            model = 'gemini-2.0-flash'
+            conversion_prompt = MATH_PROMPT + "\n\nConvert this entire document precisely. Transcribe ALL body text word-for-word, format headers appropriately (<h2>, <h3>, etc), and convert all math equations (inline or display) to accessible LaTeX markup wrapped in standard MathJax syntax \\( .. \\) or \\[ .. \\]. Ensure any graphical charts/plots are transcribed as detailed text descriptions if possible."
+            
+            if log_func: log_func(f"   🧠 Asking Gemini to convert Full Document Text and Math...")
+            response = generate_content_with_retry(
+                client=client,
+                model=model,
+                contents=[conversion_prompt, doc_file],
+                log_func=log_func
+            )
+            
+            if response and response.text:
+                cleaned_text = clean_gemini_response(response.text)
+                title = Path(doc_path).stem.replace('_', ' ').title()
+                html = create_canvas_html(cleaned_text, title=title)
+                
+                if log_func:
+                    log_func(f"✅ Converted Word doc preserving full text and math")
+                
+                # Cleanup
+                try: client.files.delete(name=doc_file.name)
+                except: pass
+                
+                return True, html
+            else:
+                return False, "No response from Gemini API for Word Document."
+                
+        except Exception as e:
+            if log_func: log_func(f"   ⚠️ Gemini File API failed for {Path(doc_path).name}: {e}")
+            raise e
             
     except Exception as e:
         if log_func:

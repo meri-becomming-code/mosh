@@ -171,6 +171,64 @@ class CanvasAPI:
         except Exception as e:
             return False, f"Page creation failed: {e}"
 
+    def replace_module_file_with_page(self, filename, wiki_page_slug, wiki_page_title):
+        """Scans all modules for a file matching `filename` and replaces it with the new WikiPage."""
+        modules_url = f"{self.base_url}/api/v1/courses/{self.course_id}/modules"
+        replacements = 0
+        try:
+            # 1. Fetch modules (handle pagination quickly)
+            # Typically 100 modules is enough for most courses
+            res_mods = requests.get(f"{modules_url}?per_page=100", headers=self.headers, timeout=30)
+            if res_mods.status_code != 200:
+                return False, f"Could not load modules: {res_mods.text}"
+            
+            modules = res_mods.json()
+            for module in modules:
+                mod_id = module.get("id")
+                if not mod_id:
+                    continue
+                
+                # 2. Fetch items per module
+                items_url = f"{modules_url}/{mod_id}/items?per_page=100"
+                res_items = requests.get(items_url, headers=self.headers, timeout=30)
+                if res_items.status_code != 200:
+                    continue
+                
+                items = res_items.json()
+                for item in items:
+                    item_id = item.get("id")
+                    item_type = item.get("type", "")
+                    
+                    if item_type == "File":
+                        item_title = item.get("title", "")
+                        # Ignore extension in match to be safe
+                        import os
+                        name_no_ext = os.path.splitext(item_title)[0]
+                        file_no_ext = os.path.splitext(filename)[0]
+                        
+                        # Match precisely
+                        if item_title == filename or name_no_ext == file_no_ext:
+                            pos = item.get("position", 1)
+                            indent = item.get("indent", 0)
+                            
+                            # 3. Create the new Page item at the exact same spot
+                            payload = {
+                                "module_item[title]": wiki_page_title,
+                                "module_item[type]": "Page",
+                                "module_item[page_url]": wiki_page_slug,
+                                "module_item[position]": pos,
+                                "module_item[indent]": indent
+                            }
+                            post_res = requests.post(f"{modules_url}/{mod_id}/items", headers=self.headers, data=payload, timeout=30)
+                            if post_res.status_code in [200, 201]:
+                                # 4. Delete the old File item
+                                requests.delete(f"{modules_url}/{mod_id}/items/{item_id}", headers=self.headers, timeout=30)
+                                replacements += 1
+            
+            return True, replacements
+        except Exception as e:
+            return False, str(e)
+
     def upload_imscc(self, file_path):
         """
         Uploads and triggers a Content Migration for an .imscc file using 
