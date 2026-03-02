@@ -2670,7 +2670,7 @@ h1 {{ color: #4b3190; }}
 <p><em>For image: {gn}</em></p>
 <hr>
 {body}
-<div class="back-link"><a href="{html_stem}.html">Back to main page</a></div>
+<div class="back-link"><a href="../{html_stem}.html">Back to main page</a></div>
 </body>
 </html>"""
                     with open(desc_path, "w", encoding="utf-8") as f:
@@ -2909,9 +2909,9 @@ h1 {{ color: #4b3190; }}
                 act_row.pack(fill="x", pady=3)
                 tk.Button(act_row, text="Delete This Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2").pack(side="left", padx=(0, 5))
 
-                def mark_decorative(g=gn, w=ae):
+                def mark_decorative(g=gn, w=ae, i=info):
                     w.delete("1.0", "end")
-                    info["decorative"] = True
+                    i["decorative"] = True
                     self.gui_handler.log(f"   [DECORATIVE] {g} marked as decorative (alt=\"\")")
                 tk.Button(act_row, text="Mark as Decorative", command=mark_decorative, font=("Segoe UI", 9), bg="#f3e5f5", fg="#7b1fa2", cursor="hand2").pack(side="left")
 
@@ -2926,11 +2926,16 @@ h1 {{ color: #4b3190; }}
                     return
                 self.gui_handler.log(f"   [AI-ALT] Auto-generating descriptions for {len(alt_widgets_map)} images...")
                 for gn, widget in alt_widgets_map.items():
-                    # Skip if user already typed something meaningful
-                    current = ""
-                    try:
-                        current = widget.get("1.0", "end").strip()
-                    except: pass
+                    # Thread-safe read of current text via main thread
+                    current_holder = [""]
+                    read_event = threading.Event()
+                    def read_widget(w=widget, h=current_holder, ev=read_event):
+                        try: h[0] = w.get("1.0", "end").strip()
+                        except: pass
+                        ev.set()
+                    self.root.after(0, read_widget)
+                    read_event.wait(timeout=2)
+                    current = current_holder[0]
                     if current and current.lower() != "none" and len(current) > 10:
                         continue  # User or AI already provided a good description
                     ai_describe(gn, widget)

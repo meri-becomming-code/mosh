@@ -183,7 +183,6 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
         # e.g. output_dir/MyPDF_graphs/MyPDF_p1_graph1.png
         # The HTML <img src> uses a relative path: MyPDF_graphs/filename.png
         # This keeps paths correct whether the HTML is in web_resources or anywhere else.
-        # This keeps paths correct whether the HTML is in web_resources or anywhere else.
         graphs_dir = Path(output_dir) / f"{base_name}_graphs"
         graphs_dir.mkdir(exist_ok=True)
         
