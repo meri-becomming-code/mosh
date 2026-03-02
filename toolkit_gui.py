@@ -1557,6 +1557,19 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ToolTip(
             self.btn_auto, "Automatically fix accessibility issues across all pages"
         )
+        
+        # [NEW] AI Responsive Design 
+        if self.config.get("api_key"):
+            self.btn_ai_design = ttk.Button(
+                self.frame_actions,
+                text="📱 AI Mobile Design\n(Responsive Canvas HTML)",
+                command=self._run_ai_design_fixer,
+                style="Action.TButton",
+            )
+            self.btn_ai_design.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+            ToolTip(
+                self.btn_ai_design, "Use AI to restructure the HTML page layout for mobile apps"
+            )
 
         # Row 2 (Audit)
         self.btn_audit = ttk.Button(
@@ -2311,36 +2324,27 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             for widget in grid_frame.winfo_children():
                 widget.destroy()
 
-            # Find all images in web_resources/remediated_graphs
-            graph_dir = os.path.join(
-                self.target_dir, "web_resources", "remediated_graphs"
-            )
-            if not os.path.exists(graph_dir):
-                tk.Label(
-                    grid_frame,
-                    text="No remediated graphs found yet. Run a conversion first!",
-                    font=("Segoe UI", 12),
-                    bg="white",
-                ).pack(pady=50)
-                return
+            # Find all images in any _graphs or remediated_images directories
+            images = []
+            if getattr(self, "target_dir", None) and os.path.exists(self.target_dir):
+                for root_dir, dirs, files in os.walk(self.target_dir):
+                    if root_dir.endswith("_graphs") or "remediated_graphs" in root_dir or "remediated_images" in root_dir:
+                        for f in files:
+                            if f.lower().endswith((".png", ".jpg", ".jpeg")):
+                                images.append(os.path.join(root_dir, f))
 
-            images = [
-                f
-                for f in os.listdir(graph_dir)
-                if f.lower().endswith((".png", ".jpg", ".jpeg"))
-            ]
             if not images:
                 tk.Label(
                     grid_frame,
-                    text="Manifest is empty. Start converting files to see images here!",
+                    text="No remediated visual elements found yet. Run a conversion first!",
                     font=("Segoe UI", 12),
                     bg="white",
                 ).pack(pady=50)
                 return
 
             cols = 4 if manifest_win.winfo_width() > 800 else 3
-            for i, img_name in enumerate(images):
-                img_path = os.path.join(graph_dir, img_name)
+            for i, img_path in enumerate(images):
+                img_name = os.path.basename(img_path)
 
                 card = tk.Frame(
                     grid_frame,
@@ -3804,6 +3808,21 @@ YOUR WORKFLOW:
                     if success_fix and fixes:
                         total_auto_fixes += len(fixes)
 
+                    # [DESIGN] AI Responsive Design pass
+                    api_key = self.config.get("api_key", "").strip()
+                    if api_key:
+                        try:
+                             import jeanie_ai
+                             with open(output_path, "r", encoding="utf-8") as f:
+                                 content = f.read()
+                             new_html, msg = jeanie_ai.improve_html_design(content, api_key)
+                             if new_html and "Error" not in msg:
+                                 with open(output_path, "w", encoding="utf-8") as f:
+                                     f.write(new_html)
+                                 self.gui_handler.log("   [DESIGN] AI improved layout for mobile!")
+                        except Exception as e:
+                             self.gui_handler.log(f"   [DESIGN] Skipping Design improvements: {e}")
+
                     # Store mappings for [TURBO] pass
                     rel_old = os.path.relpath(fpath, self.target_dir)
                     rel_new = os.path.relpath(output_path, self.target_dir)
@@ -4557,6 +4576,49 @@ YOUR WORKFLOW:
         )
         self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
 
+    def _run_auto_fixer(self):
+        if not self._check_target_dir():
+            return
+        
+        self.gui_handler.log("==========================================")
+        self.gui_handler.log("✨ Starting Auto-Fixer for Headings/Contrast...")
+        self.gui_handler.log("==========================================")
+
+        def task():
+            interactive_fixer.run_auto_fixer(self.target_dir, self.gui_handler)
+            self.gui_handler.log("==========================================")
+            self.gui_handler.log("✨ Auto Fix Pass Complete! ")
+            self.gui_handler.log("==========================================")
+            self.root.after(0, lambda: messagebox.showinfo("Auto Fixer", "All files have been automatically remediated for accessibility!"))
+
+        self._run_task_in_thread(task, "Auto-Fixer")
+
+    def _run_ai_design_fixer(self):
+        if not self._check_target_dir():
+            return
+            
+        if not messagebox.askyesno(
+            "Confirm AI Design",
+            "This will use Gemini AI to automatically rewrite the HTML code of all pages to match "
+            "responsive mobile best-practices for Canvas.\n\n"
+            "This uses API tokens and takes time. Do you want to proceed?"
+        ):
+            return
+
+        self.gui_handler.log("==========================================")
+        self.gui_handler.log("✨ Starting AI Canvas Design Optimizer...")
+        self.gui_handler.log("==========================================")
+
+        def task():
+            import interactive_fixer
+            interactive_fixer.run_ai_design_fixer(self.target_dir, self.gui_handler)
+            self.gui_handler.log("==========================================")
+            self.gui_handler.log("✨ Responsive Design Pass Complete! ")
+            self.gui_handler.log("==========================================")
+            self.root.after(0, lambda: messagebox.showinfo("AI Design Pass", "All Canvas Pages have been wrapped with beautiful responsive design!"))
+
+        self._run_task_in_thread(task, "AI Design Fixer")
+
     def _process_generated_pages(self, file_pairs):
         """
         Unified workflow for processing newly generated properties/HTML files.
@@ -4572,6 +4634,21 @@ YOUR WORKFLOW:
             success, fixes = interactive_fixer.run_auto_fixer(output, self.gui_handler)
             if success and fixes:
                 total_fixes += len(fixes)
+
+            # [DESIGN] AI Responsive Design Pass
+            api_key = self.config.get("api_key", "").strip()
+            if api_key:
+                try:
+                     import jeanie_ai
+                     with open(output, "r", encoding="utf-8") as f:
+                         content = f.read()
+                     new_html, msg = jeanie_ai.improve_html_design(content, api_key)
+                     if new_html and "Error" not in msg:
+                         with open(output, "w", encoding="utf-8") as f:
+                             f.write(new_html)
+                         self.gui_handler.log("   [DESIGN] AI improved layout for mobile!")
+                except Exception as e:
+                     self.gui_handler.log(f"   [DESIGN] Skipping Design improvements: {e}")
 
         # 2. Guided Interactive Review
         if messagebox.askyesno(
@@ -4723,7 +4800,20 @@ YOUR WORKFLOW:
                     dest, self.gui_handler
                 )
 
-                # 2. Update Links
+                # 2. AI Responsive Design pass
+                try:
+                     import jeanie_ai
+                     with open(dest, "r", encoding="utf-8") as f:
+                         content = f.read()
+                     new_html, msg = jeanie_ai.improve_html_design(content, api_key)
+                     if new_html and "Error" not in msg:
+                         with open(dest, "w", encoding="utf-8") as f:
+                             f.write(new_html)
+                         log("   [DESIGN] AI improved layout for mobile!")
+                except Exception as e:
+                     log(f"   [DESIGN] Skipping Design improvements: {e}")
+
+                # 3. Update Links
                 converter_utils.update_doc_links_to_html(
                     self.target_dir,
                     os.path.basename(source),

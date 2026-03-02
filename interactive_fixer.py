@@ -998,5 +998,62 @@ def main_interactive_mode(io_handler=None):
     io_handler.log("==========================================")
     io_handler.prompt("Press Enter to exit...")
 
+
+def run_ai_design_fixer(target_dir, io_handler=None, specific_file=None):
+    """
+    Experimental Module to use Gemini 2.0 to dynamically improve the responsive Canvas design
+    of all converted HTML files. (e.g. mobile responsiveness, spacing).
+    """
+    if io_handler is None:
+        io_handler = FixerIO()
+
+    if not io_handler.api_key:
+        io_handler.log("    [ERROR] No Gemini Key config found. Setup AI first!")
+        return False, []
+
+    io_handler.log("\n--- Started: Responsive HTML AI Designer ---")
+    
+    html_files = []
+    if specific_file:
+        html_files = [specific_file]
+    else:
+        for root, dirs, files in os.walk(target_dir):
+            if "course_image" in root or "_ORIGINALS" in root: continue
+            for file in files:
+                if file.endswith('.html'):
+                    html_files.append(os.path.join(root, file))
+
+    if not html_files:
+        io_handler.log("No HTML files found to design.")
+        return False, []
+        
+    improved_count = 0
+    
+    for html_path in html_files:
+        fname = os.path.basename(html_path)
+        if io_handler.is_stopped(): break
+
+        io_handler.log(f"    🎨 Redesigning {fname} for Canvas Mobile...")
+        try:
+            with open(html_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            new_html, msg = jeanie_ai.improve_html_design(content, io_handler.api_key)
+            
+            if new_html and "Error" not in msg:
+                ensure_short_path(html_path)
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(new_html)
+                improved_count += 1
+                io_handler.log(f"      -> Enhanced layout successfully!")
+            else:
+                 io_handler.log(f"      -> Skipped ({msg})")
+        except Exception as e:
+            io_handler.log(f"      -> Failed: {e}")
+
+    io_handler.log(f"\n--- Finished: AI Designed {improved_count} files ---")
+    return True, improved_count
+
+
 if __name__ == "__main__":
     main_interactive_mode()

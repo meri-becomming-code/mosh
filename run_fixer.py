@@ -84,8 +84,9 @@ def fix_emoji_accessibility(soup):
     fixes = []
     # Find text nodes containing emojis
     for text_node in soup.find_all(string=True):
-        # [FIX] Idempotency: skip if parent is already an emoji span
-        if text_node.parent.name in ['script', 'style']: continue
+        # [FIX] Idempotency: skip if parent is already an emoji span or a <title> tag
+        # (Canvas uses <title> strings verbatim for Module lists; HTML spans will break the UI).
+        if text_node.parent.name in ['script', 'style', 'title']: continue
         if text_node.parent.name == 'span' and text_node.parent.get('role') == 'img': continue
         
         matches = list(emoji_pattern.finditer(text_node))
@@ -191,6 +192,13 @@ def remediate_html_file(filepath):
     html_content = re.sub(r'font-size:\s*([0-9.]+)(px|pt)', font_size_bump, html_content, flags=re.IGNORECASE)
 
     soup = BeautifulSoup(html_content, 'html.parser')
+
+    # [FIX] Revert any emoji span wrappers inside <title> tags from previous passes
+    # to prevent Canvas UI corruption when imported.
+    for title_tag in soup.find_all('title'):
+        for span in title_tag.find_all('span', attrs={"role": "img"}):
+            span.unwrap()
+            fixes.append("Reverted broken HTML from <title> tag")
 
     # --- Part 2: Document Structure ---
     # Ensure Mobile Viewport (Reflow Fix)

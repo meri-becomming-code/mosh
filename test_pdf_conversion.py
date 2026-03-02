@@ -62,7 +62,7 @@ def test_pdf_conversion():
     print("=" * 60)
     
     # Test file path - use the one directly in Downloads
-    test_pdf = r"C:\Users\mkasprak\Downloads\Python Escape.pdf"
+    test_pdf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Chapter 7 Note Packet (Key) (3)_ MATH ADA Test.pdf")
     
     if not os.path.exists(test_pdf):
         print(f"ERROR: Test PDF not found: {test_pdf}")

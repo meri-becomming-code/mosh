@@ -229,11 +229,11 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     rel_src = f"{base_name}_graphs/{graph_filename}"
                     
                     # 7. Replace Token with Adaptive Image Tag
-                    style = "max-width: 100%; border: 1px solid #ccc; display: block; margin: 10px auto;"
+                    style = "max-width: 100%; height: auto; border: 1px solid #ccc; display: block; margin: 10px auto;"
                     if img_type == 'icon':
-                        style = "max-width: 120px; vertical-align: middle; margin: 0 5px;"
+                        style = "max-width: 120px; height: auto; vertical-align: middle; margin: 0 5px;"
                     elif img_type == 'graph':
-                        style = "max-width: 60%; min-width: 300px; border: 1px solid #ccc; margin: 20px auto;"
+                        style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; margin: 20px auto;"
                     
                     img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="{rel_src}" alt="Visual Element" style="{style}">'
                     
@@ -469,56 +469,119 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"📝 Processing Word doc via AI File Reader: {Path(doc_path).name}")
         
         client = genai.Client(api_key=api_key)
-        import time
+        import time, zipfile, io, tempfile, os
+        from PIL import Image
         
         try:
-            # 1. Upload the file directly to Gemini
-            doc_file = client.files.upload(file=str(doc_path))
-            if log_func: log_func(f"   ⬆️ Uploaded to Gemini: {doc_file.name} (Waiting for processing...)")
-            
-            # 2. Wait for ACTIVE state
-            max_wait = 60
-            start_time = time.time()
-            while True:
-                doc_file = client.files.get(name=doc_file.name)
-                if doc_file.state.name == 'ACTIVE':
-                    break
-                if doc_file.state.name == 'FAILED':
-                    return False, "Gemini failed to process the DOCX file natively."
-                if time.time() - start_time > max_wait:
-                    return False, "Timeout waiting for DOCX file processing."
-                time.sleep(2)
-            
-            # 3. Process Full Document
-            model = 'gemini-2.0-flash'
-            conversion_prompt = MATH_PROMPT + "\n\nConvert this entire document precisely. Transcribe ALL body text word-for-word, format headers appropriately (<h2>, <h3>, etc), and convert all math equations (inline or display) to accessible LaTeX markup wrapped in standard MathJax syntax \\( .. \\) or \\[ .. \\]. Ensure any graphical charts/plots are transcribed as detailed text descriptions if possible."
-            
-            if log_func: log_func(f"   🧠 Asking Gemini to convert Full Document Text and Math...")
-            response = generate_content_with_retry(
-                client=client,
-                model=model,
-                contents=[conversion_prompt, doc_file],
-                log_func=log_func
-            )
-            
-            if response and response.text:
-                cleaned_text = clean_gemini_response(response.text)
-                title = Path(doc_path).stem.replace('_', ' ').title()
-                html = create_canvas_html(cleaned_text, title=title)
+            # 1. Open DOCX and Extract document.xml + images
+            with zipfile.ZipFile(doc_path, 'r') as z:
+                xml_content = z.read('word/document.xml').decode('utf-8')
                 
-                if log_func:
-                    log_func(f"✅ Converted Word doc preserving full text and math")
+                # Gather Images
+                pil_images = []
+                image_filenames = []
                 
-                # Cleanup
-                try: client.files.delete(name=doc_file.name)
+                output_dir = Path(doc_path).parent
+                doc_stem = Path(doc_path).stem
+                graphs_dir = output_dir / f"{doc_stem}_graphs"
+                graphs_dir.mkdir(exist_ok=True)
+                
+                try:
+                    import xml.etree.ElementTree as ET
+                    rels_content = z.read('word/_rels/document.xml.rels')
+                    rels_root = ET.fromstring(rels_content)
+                    namespaces = {'rel': 'http://schemas.openxmlformats.org/package/2006/relationships'}
+                    
+                    # Store mapping so we can extract in relatively chronological order
+                    img_idx = 1
+                    for rel in rels_root.findall('.//rel:Relationship', namespaces):
+                        target = rel.get('Target')
+                        if target and target.startswith('media/'):
+                            try:
+                                img_data = z.read('word/' + target)
+                                img = Image.open(io.BytesIO(img_data))
+                                img.load() # Ensure memory is mapped
+                                
+                                # Convert EMF/WMF to PNG if needed, or save natively
+                                # Use standard RGBA to PNG saving
+                                if img.mode in ("RGBA", "P"):
+                                    img = img.convert("RGB")
+                                    
+                                img_filename = f"graph_{doc_stem}_{img_idx}.png"
+                                img_path = graphs_dir / img_filename
+                                img.save(img_path, format="PNG")
+                                
+                                pil_images.append(img)
+                                image_filenames.append(f"{graphs_dir.name}/{img_filename}")
+                                img_idx += 1
+                            except Exception as e:
+                                pass
+                except Exception as e:
+                    pass
+
+            if log_func: log_func(f"   ⬆️ Found {len(pil_images)} images/graphs and XML text layout...")
+            
+            # 2. Save XML locally to a safe temporary file
+            fd, temp_xml_path = tempfile.mkstemp(suffix=".xml")
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(xml_content)
+                
+            try:
+                # 3. Upload exactly as XML to bypass Microsoft specific strict mime_type limits
+                doc_file = client.files.upload(file=temp_xml_path, config={'mime_type': 'text/xml'})
+                if log_func: log_func(f"   ⬆️ Uploaded layout structure: {doc_file.name} (Waiting for processing...)")
+                
+                # Wait for ACTIVE state
+                max_wait = 60
+                start_time = time.time()
+                while True:
+                    doc_file = client.files.get(name=doc_file.name)
+                    if doc_file.state.name == 'ACTIVE':
+                        break
+                    if doc_file.state.name == 'FAILED':
+                        return False, "Gemini failed to process the DOCX XML layout."
+                    if time.time() - start_time > max_wait:
+                        return False, "Timeout waiting for DOCX XML processing."
+                    time.sleep(2)
+                
+                # 4. Process Full Document
+                model = 'gemini-2.0-flash'
+                conversion_prompt = MATH_PROMPT + f"\n\nConvert this underlying Word document XML into clean, accessible Canvas HTML. \nTranscribe ALL text, maintain headers (h1, h2, h3), lists, and styling. \nTranslate all OMML math equations (`<m:oMath>`) to LaTeX wrapped in standard MathJax syntax \\( \\) or \\[ \\] or $$. Return pure HTML. \nNote: We have attached {len(pil_images)} images inline extracted from the DOCX in chronological order. Their physical filenames are: {', '.join(image_filenames)}. Whenever you see a physical image referenced in the narrative or text, you MUST place an `<img>` tag into the HTML using the corresponding exact filename as the `src` attribute (e.g. `<img src=\"{doc_stem}_graphs/graph_{doc_stem}_1.png\" alt=\"...\">`), and provide an extensive, highly detailed descriptive `alt` attribute for accessibility."
+                
+                if log_func: log_func(f"   🧠 Asking Gemini to reconstruct Full Document Text, Layout, and Math...")
+                
+                contents_payload = [conversion_prompt, doc_file] + pil_images
+                
+                response = generate_content_with_retry(
+                    client=client,
+                    model=model,
+                    contents=contents_payload,
+                    log_func=log_func
+                )
+                
+                if response and response.text:
+                    cleaned_text = clean_gemini_response(response.text)
+                    title = Path(doc_path).stem.replace('_', ' ').title()
+                    html = create_canvas_html(cleaned_text, title=title)
+                    
+                    if log_func:
+                        log_func(f"✅ Converted Word doc preserving full text, layout, and math")
+                    
+                    # Cleanup Gemini servers
+                    try: client.files.delete(name=doc_file.name)
+                    except: pass
+                    
+                    return True, html
+                else:
+                    return False, "No response from Gemini API for Word Document."
+            
+            finally:
+                # Cleanup local temp file
+                try: os.remove(temp_xml_path)
                 except: pass
                 
-                return True, html
-            else:
-                return False, "No response from Gemini API for Word Document."
-                
         except Exception as e:
-            if log_func: log_func(f"   ⚠️ Gemini File API failed for {Path(doc_path).name}: {e}")
+            if log_func: log_func(f"   ⚠️ Gemini DOCX extraction failed for {Path(doc_path).name}: {e}")
             raise e
             
     except Exception as e:

@@ -508,3 +508,62 @@ def batch_generate_alt_text(image_paths, api_key, progress_callback=None):
         # Implementation would go here
         pass
     return results
+
+def improve_html_design(html_content, api_key):
+    """
+    Uses Gemini 2.0 Flash to improve HTML responsive design for Canvas LMS.
+    """
+    if not api_key:
+        return None, "Error: No API Key provided."
+
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        prompt = (
+            "You are an expert web accessibility and UI designer for Canvas LMS. "
+            "Take the following HTML content and improve its design to make it highly responsive "
+            "and look great in the Canvas Mobile App (which strips out external CSS/JS). "
+            "Use inline CSS, flexbox, or Canvas-supported classes like 'd-flex' if necessary. "
+            "Use responsive padding/margins (e.g. percentages). "
+            "CRITICAL: Do NOT remove or alter any actual text content, links, images, or mathematical equations. "
+            "Just improve the structural wrappers/styling. Return ONLY the fully updated raw HTML string without markdown ticks, <html> or <body> tags."
+        )
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt + "\n\n" + html_content}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.95,
+                "topK": 40,
+                "maxOutputTokens": 8192,
+            },
+        }
+
+        import time
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            response = requests.post(url, headers=headers, json=payload, timeout=90)
+            if response.status_code == 200:
+                break
+            elif response.status_code == 429:
+                time.sleep(5)
+                continue
+            else:
+                return None, f"API Error ({response.status_code}): {response.text}"
+
+        res_json = response.json()
+        improved_html = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+        
+        if improved_html.startswith("```"):
+            improved_html = improved_html.replace("```html", "").replace("```", "").strip()
+
+        return improved_html, "Success"
+    except Exception as e:
+        return None, f"MOSH AI Design Error: {str(e)}"

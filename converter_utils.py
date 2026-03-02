@@ -1834,7 +1834,7 @@ def update_doc_links_to_html(root_dir, old_filename, new_filename, log_func=None
     count = 0
     for root, dirs, files in os.walk(root_dir):
         for file in files:
-            if not file.endswith(".html"):
+            if not (file.endswith(".html") or file.endswith(".xml")):
                 continue
 
             filepath = os.path.join(root, file)
