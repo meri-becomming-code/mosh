@@ -2710,12 +2710,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 dim_lbl = tk.Label(cf2, text=f"Size: {crop_w} x {crop_h} px{warn_str}", font=("Segoe UI", 8), bg="white", fg=dim_color)
                 dim_lbl.pack(anchor="w")
 
-                # Alt text row with AI button
+                # Description row with AI button
                 af = tk.Frame(right, bg="white")
                 af.pack(fill="x", pady=3)
                 alt_hdr = tk.Frame(af, bg="white")
                 alt_hdr.pack(fill="x")
-                tk.Label(alt_hdr, text="Alt Text:", font=("Segoe UI", 9, "bold"), bg="white").pack(side="left")
+                tk.Label(alt_hdr, text="Description for Blind Students:", font=("Segoe UI", 9, "bold"), bg="white").pack(side="left")
+                tk.Label(af, text="(This will be read aloud by screen readers)", font=("Segoe UI", 8, "italic"), bg="white", fg="#888").pack(anchor="w")
                 ae = tk.Text(af, height=2, width=45, font=("Segoe UI", 9), wrap="word")
                 sv = info.get("story", "")
                 ae.insert("1.0", sv if sv.lower() != "none" else "")
@@ -2741,10 +2742,16 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 r3.pack()
                 tk.Button(r3, text="Reset to Original", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: reset_crop(g, i, p, l, d), font=("Segoe UI", 9), bg="#fff3e0", fg="#e65100", cursor="hand2", width=22).pack(padx=2, pady=1)
 
-                # Delete + action row
+                # Delete + Decorative + action row
                 act_row = tk.Frame(right, bg="white")
                 act_row.pack(fill="x", pady=3)
-                tk.Button(act_row, text="Delete This Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2").pack(side="left")
+                tk.Button(act_row, text="Delete This Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2").pack(side="left", padx=(0, 5))
+
+                def mark_decorative(g=gn, w=ae):
+                    w.delete("1.0", "end")
+                    info["decorative"] = True
+                    self.gui_handler.log(f"   [DECORATIVE] {g} marked as decorative (alt=\"\")")
+                tk.Button(act_row, text="Mark as Decorative", command=mark_decorative, font=("Segoe UI", 9), bg="#f3e5f5", fg="#7b1fa2", cursor="hand2").pack(side="left")
 
             for gn, info in list(meta.items()):
                 build_card(gn, info, inner)
@@ -2829,11 +2836,17 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         soup = BeautifulSoup(f.read(), "html.parser")
 
                     for gn, info in meta.items():
-                        at = info.get("story", "Visual Element")
-                        if not at or at.lower() == "none": at = "Visual Element"
-                        for it in soup.find_all("img"):
-                            if gn in it.get("src", ""):
-                                it["alt"] = at
+                        if info.get("decorative"):
+                            for it in soup.find_all("img"):
+                                if gn in it.get("src", ""):
+                                    it["alt"] = ""
+                                    it["role"] = "presentation"
+                        else:
+                            at = info.get("story", "Visual Element")
+                            if not at or at.lower() == "none": at = "Visual Element"
+                            for it in soup.find_all("img"):
+                                if gn in it.get("src", ""):
+                                    it["alt"] = at
 
                     cdiv = soup.find("div", class_="content-wrapper") or soup.find("body") or soup
                     for gn, info in meta.items():
@@ -2872,8 +2885,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
-            tk.Button(btn_bar, text="Approve and Continue", command=on_approve, font=("Segoe UI", 13, "bold"), bg="#4CAF50", fg="white", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
-            tk.Button(btn_bar, text="Cancel Upload", command=on_cancel, font=("Segoe UI", 13), bg="#ffcdd2", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
+            tk.Button(btn_bar, text="Looks Good \u2014 Save & Upload", command=on_approve, font=("Segoe UI", 13, "bold"), bg="#4CAF50", fg="white", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
+            tk.Button(btn_bar, text="Skip This Page", command=on_cancel, font=("Segoe UI", 13), bg="#ffcdd2", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
 
         self.root.after(0, build_dialog)
         event.wait()
