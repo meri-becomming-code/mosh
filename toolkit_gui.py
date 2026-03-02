@@ -2611,6 +2611,144 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             # Track alt widgets for auto-describe
             alt_widgets_map = {}
+            long_desc_pages = {}  # gn -> path to long description HTML
+
+            def generate_long_description(gn, ae_widget):
+                """Generate a separate linked HTML page with detailed description."""
+                api_key = self.config.get("api_key", "").strip()
+                if not api_key:
+                    self.gui_handler.log("   [LONG-DESC] No API key")
+                    return
+                cp = os.path.join(graphs_dir, gn)
+                if not os.path.exists(cp): return
+                try:
+                    import google.genai as genai_ld
+                    client = genai_ld.Client(api_key=api_key)
+                    img = Image.open(cp)
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=[
+                            img,
+                            "You are creating a detailed long description page for a visually impaired student. "
+                            "Analyze this image and produce a complete HTML document containing:\n"
+                            "1. A brief summary paragraph\n"
+                            "2. If it contains a graph: a table with columns for x-values, y-values, and key points (intercepts, vertices, asymptotes)\n"
+                            "3. If it contains a diagram: a structured list of all labeled elements, their relationships, and spatial arrangement\n"
+                            "4. If it contains data: a full HTML table with all visible values\n"
+                            "5. Any equations visible, written in LaTeX delimited by \\( \\)\n\n"
+                            "Output ONLY the HTML body content (no <html> or <head> tags). "
+                            "Use clean semantic HTML with proper headings and table structure."
+                        ]
+                    )
+                    body = response.text.strip() if response.text else "<p>No description could be generated.</p>"
+                    # Clean markdown code fence if present
+                    if body.startswith("```"): body = body.split("\n", 1)[-1]
+                    if body.endswith("```"): body = body.rsplit("```", 1)[0]
+
+                    desc_filename = gn.replace(".png", "_longdesc.html")
+                    desc_path = os.path.join(graphs_dir, desc_filename)
+                    html_stem = Path(html_path).stem
+
+                    full_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Detailed Description: {gn}</title>
+<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+body {{ font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }}
+table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+th, td {{ border: 1px solid #ccc; padding: 8px 12px; text-align: left; }}
+th {{ background: #4b3190; color: white; }}
+tr:nth-child(even) {{ background: #f9f9f9; }}
+h1 {{ color: #4b3190; }}
+.back-link {{ margin-top: 30px; padding: 10px; background: #e8f0fe; border-radius: 5px; }}
+</style>
+</head>
+<body>
+<h1>Detailed Description</h1>
+<p><em>For image: {gn}</em></p>
+<hr>
+{body}
+<div class="back-link"><a href="{html_stem}.html">Back to main page</a></div>
+</body>
+</html>"""
+                    with open(desc_path, "w", encoding="utf-8") as f:
+                        f.write(full_html)
+
+                    long_desc_pages[gn] = desc_filename
+                    info_for_gn = meta.get(gn, {})
+                    info_for_gn["long_desc"] = desc_filename
+                    meta[gn] = info_for_gn
+
+                    # Update the short alt text to reference the long description
+                    current_alt = ae_widget.get("1.0", "end").strip()
+                    if current_alt:
+                        summary = current_alt
+                    else:
+                        summary = "Complex visual element"
+                    def update_w():
+                        ae_widget.delete("1.0", "end")
+                        ae_widget.insert("1.0", f"{summary} (See detailed description page)")
+                    self.root.after(0, update_w)
+                    self.gui_handler.log(f"   [LONG-DESC] Created {desc_filename}")
+                    self.root.after(0, lambda: messagebox.showinfo("Long Description Created", f"Detailed description page saved:\n{desc_filename}"))
+                except Exception as err:
+                    self.gui_handler.log(f"   [LONG-DESC] Error: {err}")
+
+            def ocr_to_table(gn, ae_widget):
+                """Convert a table image to HTML table using Gemini OCR."""
+                api_key = self.config.get("api_key", "").strip()
+                if not api_key: return
+                cp = os.path.join(graphs_dir, gn)
+                if not os.path.exists(cp): return
+                try:
+                    import google.genai as genai_ocr
+                    client = genai_ocr.Client(api_key=api_key)
+                    img = Image.open(cp)
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=[
+                            img,
+                            "This image contains a data table. Convert it to a clean HTML <table> "
+                            "with proper <thead> and <tbody>. Preserve all values exactly. "
+                            "Output ONLY the HTML table tag, nothing else."
+                        ]
+                    )
+                    table_html = response.text.strip() if response.text else ""
+                    if table_html.startswith("```"): table_html = table_html.split("\n", 1)[-1]
+                    if table_html.endswith("```"): table_html = table_html.rsplit("```", 1)[0]
+
+                    if "<table" in table_html.lower():
+                        info_for_gn = meta.get(gn, {})
+                        info_for_gn["table_html"] = table_html
+                        meta[gn] = info_for_gn
+                        def update_w():
+                            ae_widget.delete("1.0", "end")
+                            ae_widget.insert("1.0", "Data table (converted to accessible HTML table)")
+                        self.root.after(0, update_w)
+                        self.gui_handler.log(f"   [OCR-TABLE] Converted {gn} to HTML table")
+                        self.root.after(0, lambda: messagebox.showinfo("Table Converted", "Image has been converted to an accessible HTML table!\nIt will replace the image in the final page."))
+                    else:
+                        self.gui_handler.log(f"   [OCR-TABLE] Could not extract table from {gn}")
+                except Exception as err:
+                    self.gui_handler.log(f"   [OCR-TABLE] Error: {err}")
+
+            def on_type_change(gn, info, combo, ae_widget):
+                """Handle type dropdown change."""
+                new_type = combo.get()
+                info["type"] = new_type.lower()
+                meta[gn] = info
+                if new_type == "Decorative":
+                    ae_widget.delete("1.0", "end")
+                    info["decorative"] = True
+                    self.gui_handler.log(f"   [TYPE] {gn} -> Decorative")
+                elif new_type == "Table":
+                    info["decorative"] = False
+                    if messagebox.askyesno("Convert Table", "Would you like AI to convert this table image to an accessible HTML table?"):
+                        threading.Thread(target=lambda: ocr_to_table(gn, ae_widget), daemon=True).start()
+                else:
+                    info["decorative"] = False
 
             def del_item(gn, cf):
                 try:
@@ -2691,7 +2829,22 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 right.pack(side="left", fill="both", expand=True)
 
                 tk.Label(right, text=gn, font=("Segoe UI", 10, "bold"), bg="white", anchor="w").pack(fill="x")
-                tk.Label(right, text=f"Type: {info.get('type', 'unknown')}", font=("Segoe UI", 9), bg="white", fg="#666", anchor="w").pack(fill="x")
+
+                # Type classification dropdown
+                type_row = tk.Frame(right, bg="white")
+                type_row.pack(fill="x", pady=2)
+                tk.Label(type_row, text="Type:", font=("Segoe UI", 9, "bold"), bg="white").pack(side="left")
+                type_options = ["Graph", "Diagram", "Table", "Icon", "Decorative"]
+                current_type = info.get("type", "graph").capitalize()
+                if current_type not in type_options:
+                    current_type = "Graph"
+                type_combo = ttk.Combobox(type_row, values=type_options, width=12, state="readonly", font=("Segoe UI", 9))
+                type_combo.set(current_type)
+                type_combo.pack(side="left", padx=5)
+                type_combo.bind("<<ComboboxSelected>>", lambda e, g=gn, i=info, c=type_combo: on_type_change(g, i, c, ae_placeholder[0]))
+
+                # Placeholder for ae reference (set below after ae is created)
+                ae_placeholder = [None]
 
                 cf2 = tk.Frame(right, bg="white")
                 cf2.pack(fill="x", pady=5)
@@ -2729,9 +2882,11 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 ae.pack(fill="x")
                 info["_alt_widget"] = ae
                 alt_widgets_map[gn] = ae
+                ae_placeholder[0] = ae  # Link back for type dropdown
 
-                # AI Describe button
+                # AI Describe + Long Description buttons
                 tk.Button(alt_hdr, text="AI Describe This", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", cursor="hand2").pack(side="right", padx=3)
+                tk.Button(alt_hdr, text="Long Description Page", command=lambda g=gn, w=ae: threading.Thread(target=lambda: generate_long_description(g, w), daemon=True).start(), font=("Segoe UI", 8), bg="#e8f5e9", fg="#2e7d32", cursor="hand2").pack(side="right", padx=3)
 
                 # Nudge + Reset row
                 nf = tk.LabelFrame(right, text="Fine-Tune Crop (+/- 50px)", bg="white", font=("Segoe UI", 8))
@@ -2893,6 +3048,40 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                             im = dv.find("img")
                             if im and dn in im.get("src", ""):
                                 dv.decompose()
+
+                    # Inject long description links
+                    bstem = Path(html_path).stem
+                    for gn, info in meta.items():
+                        ld = info.get("long_desc")
+                        if ld:
+                            for dv in soup.find_all("div", class_="mosh-visual"):
+                                im = dv.find("img")
+                                if im and gn in im.get("src", ""):
+                                    # Add longdesc attribute
+                                    im["longdesc"] = f"{bstem}_graphs/{ld}"
+                                    # Add visible link for sighted users
+                                    link_tag = soup.new_tag("a", href=f"{bstem}_graphs/{ld}",
+                                        style="display:block; color:#4b3190; font-size:0.85em; font-style:italic; margin-top:5px;")
+                                    link_tag.string = "View detailed description"
+                                    dv.append(link_tag)
+
+                    # Replace table images with actual HTML tables
+                    for gn, info in meta.items():
+                        th = info.get("table_html")
+                        if th:
+                            for dv in soup.find_all("div", class_="mosh-visual"):
+                                im = dv.find("img")
+                                if im and gn in im.get("src", ""):
+                                    # Replace the image div with the HTML table
+                                    from bs4 import BeautifulSoup as BS2
+                                    table_soup = BS2(th, "html.parser")
+                                    # Style the table for responsiveness
+                                    tbl = table_soup.find("table")
+                                    if tbl:
+                                        tbl["style"] = "width:100%; border-collapse:collapse; margin:20px 0;"
+                                        wrapper = soup.new_tag("div", style="overflow-x:auto; max-width:100%;")
+                                        wrapper.append(table_soup)
+                                        dv.replace_with(wrapper)
 
                     with open(html_path, "w", encoding="utf-8") as f:
                         f.write(str(soup))
