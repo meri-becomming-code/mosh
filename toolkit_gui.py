@@ -5299,22 +5299,6 @@ YOUR WORKFLOW:
         )
         self.btn_pdf.pack(side="left", fill="x", expand=True, padx=2)
 
-    def _run_auto_fixer(self):
-        if not self._check_target_dir():
-            return
-        
-        self.gui_handler.log("==========================================")
-        self.gui_handler.log("✨ Starting Auto-Fixer for Headings/Contrast...")
-        self.gui_handler.log("==========================================")
-
-        def task():
-            interactive_fixer.run_auto_fixer(self.target_dir, self.gui_handler)
-            self.gui_handler.log("==========================================")
-            self.gui_handler.log("✨ Auto Fix Pass Complete! ")
-            self.gui_handler.log("==========================================")
-            self.root.after(0, lambda: messagebox.showinfo("Auto Fixer", "All files have been automatically remediated for accessibility!"))
-
-        self._run_task_in_thread(task, "Auto-Fixer")
 
     def _run_ai_design_fixer(self):
         if not self._check_target_dir():
