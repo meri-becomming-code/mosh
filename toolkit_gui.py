@@ -2475,10 +2475,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             PAGE_W = 350
             PAGE_H = 480
 
+            total_items = len(meta)
+
             hdr = tk.Frame(dialog, bg="#1a1a2e")
             hdr.pack(fill="x", padx=20, pady=(15, 0))
             tk.Label(hdr, text="Visual Element Review", font=("Segoe UI", 18, "bold"), bg="#1a1a2e", fg="white").pack(side="left")
-            tk.Label(hdr, text="Click and drag on the page preview to redefine any crop. Use buttons to nudge 50px.", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(side="left", padx=20)
+            tk.Label(hdr, text=f"{total_items} images found", font=("Segoe UI", 11), bg="#1a1a2e", fg="#4fc3f7").pack(side="left", padx=15)
+            tk.Label(hdr, text="Click and drag on the page to redefine crops. Use buttons to nudge 50px.", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(side="left", padx=10)
 
             outer = ttk.Frame(dialog)
             outer.pack(fill="both", expand=True, padx=15, pady=10)
@@ -2533,7 +2536,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 lbl.config(image=ti)
                 lbl.image = ti
 
-            def do_recrop(gn, info, pcv, lbl):
+            def do_recrop(gn, info, pcv, lbl, dim_lbl=None):
                 fp = os.path.join(graphs_dir, info["full_image"])
                 box = info["box_abs"]
                 try:
@@ -2543,10 +2546,17 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     _, sc, _ = load_full_page(info["full_image"])
                     draw_rect(pcv, box, sc)
                     refresh_crop(gn, lbl)
+                    # Update dimension label
+                    cw = box[2] - box[0]
+                    ch = box[3] - box[1]
+                    if dim_lbl:
+                        warn = "  ** LOW QUALITY" if cw < 100 or ch < 100 else ""
+                        color = "#c0392b" if warn else "#555"
+                        dim_lbl.config(text=f"Size: {cw} x {ch} px{warn}", fg=color)
                 except Exception as err:
                     self.gui_handler.log(f"   [CROP] Error: {err}")
 
-            def nudge(gn, d, info, pcv, lbl):
+            def nudge(gn, d, info, pcv, lbl, dim_lbl=None):
                 box = info["box_abs"]
                 pw, ph = info["page_width"], info["page_height"]
                 if d == "up":    box[1] = max(0, box[1] - 50)
@@ -2555,7 +2565,46 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 elif d == "right": box[2] = min(pw, box[2] + 50)
                 info["box_abs"] = box
                 meta[gn] = info
-                do_recrop(gn, info, pcv, lbl)
+                do_recrop(gn, info, pcv, lbl, dim_lbl)
+
+            def reset_crop(gn, info, pcv, lbl, dim_lbl=None):
+                """Reset crop to original AI-generated bounding box."""
+                orig = info.get("original_box")
+                if orig:
+                    info["box_abs"] = list(orig)
+                    meta[gn] = info
+                    do_recrop(gn, info, pcv, lbl, dim_lbl)
+
+            def ai_describe(gn, ae_widget):
+                """Use Gemini to describe just this cropped image."""
+                api_key = self.config.get("api_key", "").strip()
+                if not api_key:
+                    ae_widget.delete("1.0", "end")
+                    ae_widget.insert("1.0", "[No API key configured]")
+                    return
+                cp = os.path.join(graphs_dir, gn)
+                if not os.path.exists(cp):
+                    return
+                try:
+                    import google.genai as genai_describe
+                    client = genai_describe.Client(api_key=api_key)
+                    img = Image.open(cp)
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=[
+                            img,
+                            "Describe this image for a blind student in 1-2 sentences. "
+                            "Be specific about any math, data, labels, axes, or shapes. "
+                            "Do NOT start with 'This image shows'. Just describe it directly."
+                        ]
+                    )
+                    desc = response.text.strip() if response.text else "[No description generated]"
+                    ae_widget.delete("1.0", "end")
+                    ae_widget.insert("1.0", desc)
+                    self.gui_handler.log(f"   [AI-ALT] Generated description for {gn}")
+                except Exception as err:
+                    ae_widget.delete("1.0", "end")
+                    ae_widget.insert("1.0", f"[Error: {err}]")
 
             def del_item(gn, cf):
                 try:
@@ -2567,15 +2616,30 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 except Exception as err:
                     self.gui_handler.log(f"   [DEL] Error: {err}")
 
+            card_counter = [0]
+
             def build_card(gn, info, parent):
                 cp = os.path.join(graphs_dir, gn)
                 if not os.path.exists(cp):
                     return
 
+                # Save original box for reset (only first time)
+                if "original_box" not in info:
+                    info["original_box"] = list(info["box_abs"])
+
+                card_counter[0] += 1
+                card_num = card_counter[0]
+
                 card = tk.Frame(parent, bg="white", borderwidth=1, relief="groove", padx=8, pady=8)
                 card.pack(fill="x", padx=10, pady=6)
 
-                left = tk.Frame(card, bg="white")
+                # Counter badge
+                tk.Label(card, text=f"Image {card_num} of {total_items}", font=("Segoe UI", 9, "bold"), bg="#e8f0fe", fg="#1565c0", padx=8, pady=2).pack(anchor="nw")
+
+                card_body = tk.Frame(card, bg="white")
+                card_body.pack(fill="x")
+
+                left = tk.Frame(card_body, bg="white")
                 left.pack(side="left", padx=(0, 10))
                 tk.Label(left, text="Full Page Context", font=("Segoe UI", 8, "bold"), bg="white", fg="#666").pack()
 
@@ -2608,7 +2672,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         if (x2 - x1) < 30 or (y2 - y1) < 30: return
                         i["box_abs"] = [x1, y1, x2, y2]
                         meta[g] = i
-                        do_recrop(g, i, pcv, lbl_c)
+                        do_recrop(g, i, pcv, lbl_c, dim_lbl)
 
                     pcv.bind("<ButtonPress-1>", press)
                     pcv.bind("<B1-Motion>", motion)
@@ -2617,7 +2681,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     pcv = None
                     tk.Label(left, text="[Page not available]", bg="white", fg="#999").pack()
 
-                right = tk.Frame(card, bg="white")
+                right = tk.Frame(card_body, bg="white")
                 right.pack(side="left", fill="both", expand=True)
 
                 tk.Label(right, text=gn, font=("Segoe UI", 10, "bold"), bg="white", anchor="w").pack(fill="x")
@@ -2628,6 +2692,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 tk.Label(cf2, text="Cropped Result:", font=("Segoe UI", 8, "bold"), bg="white", fg="#666").pack(anchor="w")
                 try:
                     pc = Image.open(cp)
+                    crop_w, crop_h = pc.size
                     pc.thumbnail((200, 150))
                     tc = ImageTk.PhotoImage(pc)
                     tk_images.append(tc)
@@ -2637,29 +2702,49 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 except:
                     lbl_c = tk.Label(cf2, text="[Error]", bg="white", fg="red")
                     lbl_c.pack()
+                    crop_w, crop_h = 0, 0
 
+                # Resolution display with warning
+                warn_str = "  ** LOW QUALITY" if crop_w < 100 or crop_h < 100 else ""
+                dim_color = "#c0392b" if warn_str else "#555"
+                dim_lbl = tk.Label(cf2, text=f"Size: {crop_w} x {crop_h} px{warn_str}", font=("Segoe UI", 8), bg="white", fg=dim_color)
+                dim_lbl.pack(anchor="w")
+
+                # Alt text row with AI button
                 af = tk.Frame(right, bg="white")
                 af.pack(fill="x", pady=3)
-                tk.Label(af, text="Alt Text:", font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w")
+                alt_hdr = tk.Frame(af, bg="white")
+                alt_hdr.pack(fill="x")
+                tk.Label(alt_hdr, text="Alt Text:", font=("Segoe UI", 9, "bold"), bg="white").pack(side="left")
                 ae = tk.Text(af, height=2, width=45, font=("Segoe UI", 9), wrap="word")
                 sv = info.get("story", "")
                 ae.insert("1.0", sv if sv.lower() != "none" else "")
                 ae.pack(fill="x")
                 info["_alt_widget"] = ae
 
+                # AI Describe button
+                tk.Button(alt_hdr, text="AI Describe This", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", cursor="hand2").pack(side="right", padx=3)
+
+                # Nudge + Reset row
                 nf = tk.LabelFrame(right, text="Fine-Tune Crop (+/- 50px)", bg="white", font=("Segoe UI", 8))
                 nf.pack(fill="x", pady=3)
                 bs = {"font": ("Segoe UI", 9), "bg": "#e8f0fe", "cursor": "hand2", "width": 10}
                 r1 = tk.Frame(nf, bg="white")
                 r1.pack()
-                tk.Button(r1, text="+ Top", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "up", i, p, l), **bs).pack(side="left", padx=2, pady=1)
-                tk.Button(r1, text="+ Bottom", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "down", i, p, l), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r1, text="+ Top", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "up", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r1, text="+ Bottom", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "down", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
                 r2 = tk.Frame(nf, bg="white")
                 r2.pack()
-                tk.Button(r2, text="+ Left", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "left", i, p, l), **bs).pack(side="left", padx=2, pady=1)
-                tk.Button(r2, text="+ Right", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "right", i, p, l), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r2, text="+ Left", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "left", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r2, text="+ Right", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "right", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                r3 = tk.Frame(nf, bg="white")
+                r3.pack()
+                tk.Button(r3, text="Reset to Original", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: reset_crop(g, i, p, l, d), font=("Segoe UI", 9), bg="#fff3e0", fg="#e65100", cursor="hand2", width=22).pack(padx=2, pady=1)
 
-                tk.Button(right, text="Delete This Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2").pack(anchor="w", pady=3)
+                # Delete + action row
+                act_row = tk.Frame(right, bg="white")
+                act_row.pack(fill="x", pady=3)
+                tk.Button(act_row, text="Delete This Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2").pack(side="left")
 
             for gn, info in list(meta.items()):
                 build_card(gn, info, inner)
