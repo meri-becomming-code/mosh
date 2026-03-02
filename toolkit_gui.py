@@ -192,10 +192,7 @@ class ToolkitGUI:
 
         # --- State ---
         self.config = self._load_config()
-        self.target_dir = self.config.get(
-            "target_dir", os.path.join(os.path.expanduser("~"), "Desktop")
-        )
-        self.api_key = ""
+        self.target_dir = self.config.get("target_dir", "")
         self.is_running = False
         self.deferred_review = False
         self.current_dialog = None
@@ -214,6 +211,7 @@ class ToolkitGUI:
         # --- Threading Queues (Initialize BEFORE UI build) ---
         self.log_queue = queue.Queue()
         self.gui_handler = ThreadSafeGuiHandler(root, self.log_queue)
+        self.gui_handler.api_key = self.config.get("api_key", "")
 
         # Check instructions
         if self.config.get("show_instructions", True):
@@ -808,12 +806,24 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 else:
                     self.lbl_network.config(text="🔴 Offline", fg="red")
                     ToolTip(
-                        self.lbl_network, "No Internet Access. AI features will fail."
+                        self.lbl_network,
+                        "Warning: No Internet. AI features may not work!",
                     )
 
             self.root.after(0, update_ui)
         except Exception as e:
-            print(f"Net check error: {e}")
+            print(f"Network check error: {e}")
+
+    def _check_target_dir(self):
+        """Helper to verify a target directory is loaded before running tasks."""
+        if not self.target_dir or not os.path.exists(self.target_dir):
+            messagebox.showwarning(
+                "No Course Loaded",
+                "Please load a course project (Section 4) first before using this tool."
+            )
+            self._switch_view("setup") # Take them to where they can load it
+            return False
+        return True
 
     def _switch_view(self, view_name):
         """Standard method to swap the main content area."""
@@ -3615,6 +3625,8 @@ Website: meri-becomming-code.github.io/mosh
         return html_files
 
     def _run_auto_fixer(self):
+        if not self._check_target_dir():
+            return
         def task():
             html_files = self._get_all_html_files()
             if not html_files:
