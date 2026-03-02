@@ -55,6 +55,8 @@ def build():
     args.append("--hidden-import=gui.views.dashboard_view")
     args.append("--hidden-import=gui.dialogs")
     args.append("--hidden-import=gui.components")
+    args.append("--hidden-import=gui.handler")  # [NEW]
+    args.append("--hidden-import=gui.components.tooltips")  # [NEW]
 
     # PDF Processing Libraries
     args.append("--hidden-import=fitz")  # PyMuPDF

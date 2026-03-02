@@ -590,10 +590,17 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                 else:
                     io_handler.log(f"    [JEANIE] Error: {msg}")
 
-            # Define prompt_suffix to avoid UnboundLocalError
+            # [NEW] Power User: Auto-accept AI suggestions
             prompt_suffix = ""
             if ai_suggestion:
                 prompt_suffix = f" (Default: {ai_suggestion[:20]}...)"
+                
+                # [NEW] Power User: Auto-accept AI suggestions
+                if io_handler.trust_ai_alt:
+                    img['alt'] = ai_suggestion
+                    io_handler.log(f"    [AUTO-ACCEPT] Trusted AI suggestion applied: \"{ai_suggestion}\"")
+                    modified = True
+                    continue
 
             if img.has_attr('data-math-check'):
                  prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX. If no, enter Alt Text: "

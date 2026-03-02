@@ -58,96 +58,8 @@ os.makedirs(CONFIG_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIR, "toolkit_config.json")
 
 
-class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
-    """
-    Bridge between the worker thread running the scripts and the Main GUI thread.
-    Handles logging and user input via thread-safe events.
-    """
-
-    def __init__(self, root, log_queue):
-        super().__init__()
-        self.root = root
-        self.log_queue = log_queue
-        # Queues for input requests/responses
-        self.input_request_queue = queue.Queue()
-        self.input_response_queue = queue.Queue()
-
-    def log(self, message):
-        """Send log message to the queue."""
-        self.log_queue.put(message)
-
-    def prompt(self, message):
-        """Ask user for input (Blocking from worker thread perspective)."""
-        if self.is_stopped():
-            return ""
-        self.input_request_queue.put(("prompt", message, None))
-        return self.input_response_queue.get()
-
-    def confirm(self, message):
-        """Ask user for Yes/No (Blocking)."""
-        if self.is_stopped():
-            return False
-        self.input_request_queue.put(("confirm", message, None))
-        return self.input_response_queue.get()
-
-    def prompt_image(self, message, image_path, context=None, suggestion=None):
-        """Ask user for input while showing an image and context."""
-        if self.is_stopped():
-            return ""
-
-        # [NEW] Power User Bypass - Trust AI auto-accept
-        if getattr(self, "trust_ai_alt", False) and suggestion:
-            preview = suggestion if len(suggestion) <= 80 else suggestion[:77] + "..."
-            self.log(f"   ✅ [Auto-Alt] {os.path.basename(image_path)}: \"{preview}\"")
-            return suggestion
-
-        self.input_request_queue.put(
-            ("prompt_image", message, (image_path, context, suggestion))
-        )
-        return self.input_response_queue.get()
-
-    def prompt_link(self, message, help_url, context=None):
-        """Ask user for input while showing a link and context."""
-        if self.is_stopped():
-            return ""
-        self.input_request_queue.put(("prompt_link", message, (help_url, context)))
-        return self.input_response_queue.get()
-
-
-# Helper for Tooltips
-class ToolTip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tip_window = None
-        self.widget.bind("<Enter>", self.show_tip)
-        self.widget.bind("<Leave>", self.hide_tip)
-
-    def show_tip(self, event=None):
-        if self.tip_window or not self.text:
-            return
-        x, y, cx, cy = self.widget.bbox("insert")
-        x = x + self.widget.winfo_rootx() + 25
-        y = y + self.widget.winfo_rooty() + 20
-        self.tip_window = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(1)
-        tw.wm_geometry("+%d+%d" % (x, y))
-        label = tk.Label(
-            tw,
-            text=self.text,
-            justify="left",
-            background="#ffffe0",
-            relief="solid",
-            borderwidth=1,
-            font=("Segoe UI", "8", "normal"),
-        )
-        label.pack(ipadx=1)
-
-    def hide_tip(self, event=None):
-        tw = self.tip_window
-        self.tip_window = None
-        if tw:
-            tw.destroy()
+from gui.handler import ThreadSafeGuiHandler
+from gui.components.tooltips import ToolTip
 
 
 # Colors
@@ -155,6 +67,8 @@ class ToolTip:
 THEMES = {
     "light": {
         "bg": "#F5F3ED",  # Premium Warm Pebble (Off-Cream)
+        "card": "#FFFFFF", # Pure White Card
+        "log": "#F8F9FA",  # Light Grey Log
         "fg": "#2D2924",  # Deep Obsidian Text
         "sidebar": "#4B3190",  # Mosh Purple Brand
         "sidebar_fg": "#FFFFFF",
@@ -164,9 +78,12 @@ THEMES = {
         "subheader": "#2D2924",
         "button": "#E9E5DA",  # Stone Grey Button
         "button_fg": "#2D2924",
+        "border": "#E5E7EB",
     },
     "dark": {
         "bg": "#1A1B1E",  # Deep Charcoal / Obsidian
+        "card": "#242529", # Slightly Lighter Charcoal
+        "log": "#111113",  # Deep Black Log
         "fg": "#ECECEC",  # Soft Silver Text
         "sidebar": "#111113",  # High-Contrast Black Sidebar
         "sidebar_fg": "#FFFFFF",
@@ -176,6 +93,7 @@ THEMES = {
         "subheader": "#A1A1AA",  # Zinc / Slate Grey
         "button": "#2D2E32",  # Deep Grey Button
         "button_fg": "#ECECEC",
+        "border": "#3F3F46",
     },
 }
 
@@ -212,6 +130,7 @@ class ToolkitGUI:
         self.log_queue = queue.Queue()
         self.gui_handler = ThreadSafeGuiHandler(root, self.log_queue)
         self.gui_handler.api_key = self.config.get("api_key", "")
+        self.gui_handler.trust_ai_alt = self.config.get("trust_ai_alt", False)
 
         # Check instructions
         if self.config.get("show_instructions", True):
@@ -497,6 +416,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
     def _build_styles(self):
         style = ttk.Style()
+        # On Mac, 'clam' is often problematic with dark mode; 'aqua' is better for native feel,
+        # but 'clam' allows custom background colors.
         style.theme_use("clam")
 
         # Determine Theme
@@ -590,32 +511,32 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         sidebar.pack(side="left", fill="y")
 
         # 2. Main Container (Right)
-        self.right_panel = tk.Frame(self.root, bg="white")
+        self.right_panel = tk.Frame(self.root, bg=colors["card"])
         self.right_panel.pack(side="right", fill="both", expand=True)
 
         # We need to expose this for older methods that might reference it (Safety)
         self.view_container = self.right_panel
 
         # Content Pane (Middle, Expands)
-        self.pane_content = tk.Frame(self.right_panel, bg="white")
+        self.pane_content = tk.Frame(self.right_panel, bg=colors["card"])
         self.pane_content.pack(side="top", fill="both", expand=True)
 
         # Log Pane (Bottom, Fixed Height)
         self.pane_log = tk.Frame(
-            self.right_panel, height=140, bg="#f8f9fa", borderwidth=1, relief="sunken"
+            self.right_panel, height=140, bg=colors["log"], borderwidth=1, relief="sunken"
         )
         self.pane_log.pack(side="bottom", fill="x")
         self.pane_log.pack_propagate(False)  # Fixed height
 
-        # Log Label and Clear Button
-        log_header = tk.Frame(self.pane_log, bg="#f8f9fa", height=20)
+        # Log Header
+        log_header = tk.Frame(self.pane_log, bg=colors["log"], height=20)
         log_header.pack(fill="x", padx=5, pady=2)
         tk.Label(
             log_header,
             text="📋 Activity Log",
             font=("Segoe UI", 9, "bold"),
-            bg="#f8f9fa",
-            fg="#555",
+            bg=colors["log"],
+            fg=colors["fg"] if mode == "dark" else "#555",
         ).pack(side="left")
 
         def clear_log():
@@ -628,14 +549,16 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             text="Clear",
             command=clear_log,
             font=("Segoe UI", 8),
-            bg="#eee",
+            bg=colors["button"],
+            fg=colors["button_fg"],
+            activebackground=colors["accent"],
             borderwidth=0,
             cursor="hand2",
         ).pack(side="right")
 
         # Persistent Log Widget
         self.txt_log = scrolledtext.ScrolledText(
-            self.pane_log, state="disabled", font=("Consolas", 9), bg="white"
+            self.pane_log, state="disabled", font=("Consolas", 9), bg=colors["card"], fg=colors["fg"]
         )
         self.txt_log.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -1263,6 +1186,42 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         )
         self.lbl_mirror_status.pack(side="left", padx=15)
 
+        # --- SECTION 4: POWER USER SETTINGS ---
+        tk.Label(
+            content,
+            text="4. Advanced / Power User Settings",
+            font=("Segoe UI", 14, "bold"),
+            bg="white",
+            fg="#4B3190",
+        ).pack(anchor="w", pady=(20, 5))
+        frame_advanced = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_advanced.pack(fill="x", pady=(0, 20))
+
+        self.trust_ai_var = tk.BooleanVar(
+            value=self.config.get("trust_ai_alt", False)
+        )
+
+        def toggle_trust_ai():
+            self._update_config(trust_ai_alt=self.trust_ai_var.get())
+            if hasattr(self, "gui_handler"):
+                self.gui_handler.trust_ai_alt = self.trust_ai_var.get()
+
+        chk_trust = tk.Checkbutton(
+            frame_advanced,
+            text="Trust AI Alt Text (Skip Review if AI Suggestion Exists)",
+            variable=self.trust_ai_var,
+            command=toggle_trust_ai,
+            bg="white",
+            font=("Segoe UI", 10),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_trust.pack(anchor="w")
+        ToolTip(
+            chk_trust,
+            "If enabled, the 'Guided Review' will skip any image where Gemini provides a confident description.",
+        )
+
         # Pack global status after sections
         lbl_global_status.pack(pady=10)
 
@@ -1273,6 +1232,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 canvas_token=self.ent_token.get().strip(),
                 canvas_course_id=self.ent_course.get().strip(),
                 poppler_path=self.ent_poppler_setup.get().strip(),
+                trust_ai_alt=self.trust_ai_var.get(),
                 target_dir=self.target_dir,
             )
             lbl_global_status.config(text="✅ All Settings Saved!", fg="green")
@@ -1629,6 +1589,18 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.btn_audit.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         ToolTip(
             self.btn_audit, "Generate a detailed accessibility report for the course"
+        )
+
+        # Row 3 (Global Fixes)
+        self.btn_link_fix = ttk.Button(
+            self.frame_actions,
+            text="🔗 Global Link Repair\n(Fixed broken Wiki links)",
+            command=self._run_all_links_fix,
+            style="Action.TButton",
+        )
+        self.btn_link_fix.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        ToolTip(
+            self.btn_link_fix, "Scans all wiki pages and updates links to documents that were converted to HTML"
         )
 
         self.frame_actions.columnconfigure(0, weight=1)
@@ -2035,9 +2007,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 pil_img.thumbnail((400, 300))
             tk_img = ImageTk.PhotoImage(pil_img)
 
-            lbl_img = tk.Label(dialog, image=tk_img)
+            lbl_img = tk.Label(dialog, image=tk_img, cursor="plus")
             lbl_img.image = tk_img
             lbl_img.pack(pady=10)
+            
+            # [NEW] Click-to-Zoom
+            lbl_img.bind("<Button-1>", lambda e: self._show_zoom(dialog, image_path))
+            ToolTip(lbl_img, "Click to view full size")
         except Exception as e:
             tk.Label(dialog, text=f"[Could not load image: {e}]", fg="red").pack(
                 pady=10
@@ -2312,6 +2288,34 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             cursor="hand2",
         ).pack(side="left")
 
+    def _show_zoom(self, parent, img_path):
+        """Open a separate zoom window for any image."""
+        zoom_win = Toplevel(parent)
+        zoom_win.title("Image Zoom")
+        zoom_win.transient(parent)
+        try:
+            full_p = Image.open(img_path)
+            zw, zh = full_p.size
+            # Limit initial size but allow scrolling if needed
+            sw, sh = min(zw, 1000), min(zh, 800)
+            zoom_win.geometry(f"{sw}x{sh}")
+            
+            z_canvas = tk.Canvas(zoom_win, bg="#333")
+            z_sb_v = ttk.Scrollbar(zoom_win, orient="vertical", command=z_canvas.yview)
+            z_sb_h = ttk.Scrollbar(zoom_win, orient="horizontal", command=z_canvas.xview)
+            z_canvas.configure(yscrollcommand=z_sb_v.set, xscrollcommand=z_sb_h.set)
+            
+            z_sb_v.pack(side="right", fill="y")
+            z_sb_h.pack(side="bottom", fill="x")
+            z_canvas.pack(side="left", fill="both", expand=True)
+
+            z_tk = ImageTk.PhotoImage(full_p)
+            z_canvas.image = z_tk # keep ref
+            z_canvas.create_image(0, 0, anchor="nw", image=z_tk)
+            z_canvas.configure(scrollregion=(0,0,zw,zh))
+        except Exception as e:
+            tk.Label(zoom_win, text=f"Zoom Error: {e}").pack()
+
     def _show_visual_manifest(self):
         """Displays a GRID of all detected graphs/images in the project."""
         if not self.target_dir or not os.path.exists(self.target_dir):
@@ -2531,7 +2535,17 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             hdr_top.pack(fill="x")
             tk.Label(hdr_top, text="Visual Element Review", font=("Segoe UI", 18, "bold"), bg="#1a1a2e", fg="white").pack(side="left")
             tk.Label(hdr_top, text=f"{total_items} image(s) found", font=("Segoe UI", 11), bg="#1a1a2e", fg="#4fc3f7").pack(side="left", padx=15)
-            tk.Label(hdr, text="Drag on the page preview to redefine crops  |  Use +/- buttons to nudge 50px  |  Type dropdown to reclassify", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(anchor="w", pady=(3, 0))
+            
+            # [NEW] Auto-Approve Toggle
+            auto_approve_var = tk.BooleanVar(value=self.config.get("auto_approve_visual", False))
+            def toggle_auto_approve():
+                self._update_config(auto_approve_visual=auto_approve_var.get())
+            
+            chk_auto = tk.Checkbutton(hdr_top, text="Auto-Approve Clear Pages", variable=auto_approve_var, command=toggle_auto_approve, bg="#1a1a2e", fg="#4fc3f7", selectcolor="#1a1a2e", font=("Segoe UI", 9, "bold"), activebackground="#1a1a2e", activeforeground="white")
+            chk_auto.pack(side="right")
+            ToolTip(chk_auto, "If all images have descriptions, skip this review next time.")
+
+            tk.Label(hdr, text="Drag on the page preview to redefine crops  |  Use +/- buttons to nudge 50px  |  Click cropped image to ZOOM", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(anchor="w", pady=(3, 0))
 
             outer = ttk.Frame(dialog)
             outer.pack(fill="both", expand=True, padx=15, pady=10)
@@ -2651,6 +2665,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     def update_widget(d=desc):
                         ae_widget.delete("1.0", "end")
                         ae_widget.insert("1.0", d)
+                        # Trigger status update after AI description
+                        if gn in meta and "_alt_widget" in meta[gn]:
+                            meta[gn]["_alt_widget"].event_generate("<KeyRelease>")
                     self.root.after(0, update_widget)
                     self.gui_handler.log(f"   [AI-ALT] Generated description for {gn}")
                 except Exception as err:
@@ -2740,6 +2757,9 @@ h1 {{ color: #4b3190; }}
                     def update_w():
                         ae_widget.delete("1.0", "end")
                         ae_widget.insert("1.0", f"{summary} (See detailed description page)")
+                        # Trigger status update after AI description
+                        if gn in meta and "_alt_widget" in meta[gn]:
+                            meta[gn]["_alt_widget"].event_generate("<KeyRelease>")
                     self.root.after(0, update_w)
                     self.gui_handler.log(f"   [LONG-DESC] Created {desc_filename}")
                     self.root.after(0, lambda: messagebox.showinfo("Long Description Created", f"Detailed description page saved:\n{desc_filename}"))
@@ -2776,6 +2796,9 @@ h1 {{ color: #4b3190; }}
                         def update_w():
                             ae_widget.delete("1.0", "end")
                             ae_widget.insert("1.0", "Data table (converted to accessible HTML table)")
+                            # Trigger status update after AI description
+                            if gn in meta and "_alt_widget" in meta[gn]:
+                                meta[gn]["_alt_widget"].event_generate("<KeyRelease>")
                         self.root.after(0, update_w)
                         self.gui_handler.log(f"   [OCR-TABLE] Converted {gn} to HTML table")
                         self.root.after(0, lambda: messagebox.showinfo("Table Converted", "Image has been converted to an accessible HTML table!\nIt will replace the image in the final page."))
@@ -2799,6 +2822,9 @@ h1 {{ color: #4b3190; }}
                         threading.Thread(target=lambda: ocr_to_table(gn, ae_widget), daemon=True).start()
                 else:
                     info["decorative"] = False
+                # Trigger status update
+                if gn in meta and "_alt_widget" in meta[gn]:
+                    meta[gn]["_alt_widget"].event_generate("<KeyRelease>")
 
             def del_item(gn, cf):
                 try:
@@ -2827,8 +2853,26 @@ h1 {{ color: #4b3190; }}
                 card = tk.Frame(parent, bg="white", borderwidth=1, relief="groove", padx=8, pady=8)
                 card.pack(fill="x", padx=10, pady=6)
 
-                # Counter badge
-                tk.Label(card, text=f"Image {card_num} of {total_items}", font=("Segoe UI", 9, "bold"), bg="#e8f0fe", fg="#1565c0", padx=8, pady=2).pack(anchor="nw")
+                # Counter badge + Status
+                badge_row = tk.Frame(card, bg="white")
+                badge_row.pack(fill="x", anchor="nw")
+                
+                lbl_badge = tk.Label(badge_row, text=f"Image {card_num} of {total_items}", font=("Segoe UI", 9, "bold"), bg="#e8f0fe", fg="#1565c0", padx=8, pady=2)
+                lbl_badge.pack(side="left")
+                
+                lbl_v_status = tk.Label(badge_row, text="", font=("Segoe UI", 8, "bold"), bg="white")
+                lbl_v_status.pack(side="left", padx=10)
+                
+                def update_card_status(*args):
+                    if info.get("decorative"):
+                        lbl_v_status.config(text="✨ DECORATIVE", fg="#7b1fa2")
+                    elif info.get("story") and len(info["story"]) > 5:
+                        lbl_v_status.config(text="✅ READY", fg="#2e7d32")
+                    else:
+                        lbl_v_status.config(text="⚠️ DESCRIPTION NEEDED", fg="#c0392b")
+                
+                # We need to trace the description change too
+                # Will do that after ae is created
 
                 card_body = tk.Frame(card, bg="white")
                 card_body.pack(fill="x")
@@ -2905,9 +2949,12 @@ h1 {{ color: #4b3190; }}
                     pc.thumbnail((200, 150))
                     tc = ImageTk.PhotoImage(pc)
                     tk_images.append(tc)
-                    lbl_c = tk.Label(cf2, image=tc, bg="#f9f9f9", borderwidth=1, relief="solid")
+                    lbl_c = tk.Label(cf2, image=tc, bg="#f9f9f9", borderwidth=1, relief="solid", cursor="plus")
                     lbl_c.image = tc
                     lbl_c.pack(anchor="w")
+                    # [NEW] Click-to-Zoom
+                    lbl_c.bind("<Button-1>", lambda e, p=cp: self._show_zoom(dialog, p))
+                    ToolTip(lbl_c, "Click to Zoom Full Size")
                 except:
                     lbl_c = tk.Label(cf2, text="[Error]", bg="white", fg="red")
                     lbl_c.pack()
@@ -2931,6 +2978,10 @@ h1 {{ color: #4b3190; }}
                 info["_alt_widget"] = ae
                 alt_widgets_map[gn] = ae
                 ae_placeholder[0] = ae  # Link back for type dropdown
+                
+                # Status listener
+                ae.bind("<KeyRelease>", lambda e: [setattr(info, "story", ae.get("1.0", "end").strip()), update_card_status()])
+                update_card_status()
 
                 # AI buttons row (separate from label to prevent cutoff)
                 ai_row = tk.Frame(af, bg="white")
@@ -2959,9 +3010,12 @@ h1 {{ color: #4b3190; }}
                 act_row.pack(fill="x", pady=3)
                 tk.Button(act_row, text="\U0001f5d1 Delete", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", activebackground="#fecaca", activeforeground="#991b1b", relief="flat", borderwidth=0, cursor="hand2", padx=10).pack(side="left", padx=(0, 5))
 
-                def mark_decorative(g=gn, w=ae, i=info):
+                def mark_decorative(g=gn, w=ae, i=info, c=type_combo):
                     w.delete("1.0", "end")
                     i["decorative"] = True
+                    i["type"] = "decorative"
+                    c.set("Decorative")
+                    update_card_status()
                     self.gui_handler.log(f"   [DECORATIVE] {g} marked as decorative (alt=\"\")")
                 tk.Button(act_row, text="\U0001f3a8 Decorative", command=mark_decorative, font=("Segoe UI", 9), bg="#f3e5f5", fg="#7b1fa2", activebackground="#e1bee7", activeforeground="#4a148c", relief="flat", borderwidth=0, cursor="hand2", padx=10).pack(side="left")
 
@@ -2990,6 +3044,21 @@ h1 {{ color: #4b3190; }}
                         continue  # User or AI already provided a good description
                     ai_describe(gn, widget)
                 self.gui_handler.log("   [AI-ALT] Auto-describe complete!")
+                # [NEW] Check for Auto-Approve if enabled
+                if auto_approve_var.get():
+                    all_ready = True
+                    for gn, w in alt_widgets_map.items():
+                        # Wait for main thread to update widget if needed
+                        txt = [""]
+                        ev = threading.Event()
+                        self.root.after(0, lambda: [txt.append(w.get("1.0", "end").strip()), ev.set()])
+                        ev.wait(timeout=1)
+                        if len(txt[-1]) < 5: 
+                            all_ready = False
+                            break
+                    if all_ready:
+                        self.gui_handler.log("   [AUTO-APPROVE] All images have descriptions. Finalizing...")
+                        self.root.after(500, on_approve)
 
             threading.Thread(target=auto_describe_all, daemon=True).start()
 
@@ -3156,7 +3225,7 @@ h1 {{ color: #4b3190; }}
 
             dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
-            tk.Button(btn_bar, text="Looks Good \u2014 Save & Upload", command=on_approve, font=("Segoe UI", 13, "bold"), bg="#4CAF50", fg="white", activebackground="#388E3C", activeforeground="white", relief="flat", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
+            tk.Button(btn_bar, text="✅ APPROVED BY TEACHER — Save & Upload", command=on_approve, font=("Segoe UI", 13, "bold"), bg="#4CAF50", fg="white", activebackground="#388E3C", activeforeground="white", relief="flat", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
             tk.Button(btn_bar, text="Skip This Page", command=on_cancel, font=("Segoe UI", 13), bg="#ffcdd2", fg="#333", activebackground="#ef9a9a", activeforeground="#333", relief="flat", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
 
         self.root.after(0, build_dialog)
@@ -3667,6 +3736,10 @@ Website: meri-becomming-code.github.io/mosh
                 f"Finished. Files with fixes: {files_with_fixes} of {len(html_files)} | Total fixes applied: {total_fixes}"
             )
             self.gui_handler.log(f"🏆 TOTAL PREDICTED LABOR SAVED: {time_str}")
+
+            self.gui_handler.log("\n--- Starting Global Document Link Repair ---")
+            link_doc_count, link_total_updated = self._perform_link_repair_logic()
+            self.gui_handler.log(f"   [LINKS] Repaired {link_total_updated} links for {link_doc_count} documents.")
 
             self.gui_handler.log("\n✨ ALL TASKS COMPLETE!")
             msg = (
@@ -4688,6 +4761,7 @@ YOUR WORKFLOW:
         checks = [
             ("Converted Files", self._check_source_files),
             ("Alt Text & Links", self._check_ada_issues),
+            ("Document Links", self._check_and_repair_links),
             ("Canvas Connection", self._check_canvas_ready),
             ("Project Cleanup", self._check_janitor_needed),
         ]
@@ -4818,6 +4892,14 @@ YOUR WORKFLOW:
             sample += f"... and {len(unconverted)-3} more"
 
         return False, f"Found {count} unconverted files: {sample}"
+
+    def _check_and_repair_links(self):
+        """Automatically repairs links during pre-flight."""
+        self.gui_handler.log("   [PRE-FLIGHT] Checking Document Links...")
+        doc_count, total_repaired = self._perform_link_repair_logic()
+        if doc_count > 0:
+            return True, f"Verified/Repaired {total_repaired} links for {doc_count} documents."
+        return True, "No document links needed repair."
 
     def _check_ada_issues(self):
         """Scans for remaining ADA markers like [FIX_ME] and runs Auto-Fixer one last time."""
@@ -5111,6 +5193,57 @@ YOUR WORKFLOW:
                 "Your course is in peak physical condition! No broken links or missing images found.",
             )
 
+    def _perform_link_repair_logic(self):
+        """Core logic for finding and repairing document links."""
+        skip_dirs = {
+            converter_utils.ARCHIVE_FOLDER_NAME,
+            ".git",
+            "venv",
+            "node_modules",
+        }
+
+        # Step 1: Map all Documents AND HTML files in one pass O(N)
+        doc_map = {}
+        html_map = {}  # basename -> filename
+        for root, dirs, files in os.walk(self.target_dir):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            for file in files:
+                ext = os.path.splitext(file)[1].lower()
+                if ext in (
+                    ".docx",
+                    ".pdf",
+                    ".pptx",
+                    ".xlsx",
+                    ".doc",
+                    ".ppt",
+                    ".xls",
+                ):
+                    # Use sanitized base as key for robust matching
+                    clean_base = converter_utils.sanitize_filename(os.path.splitext(file)[0]).lower()
+                    doc_map[clean_base] = file
+                elif ext == ".html":
+                    # Convert to sanitized base to match docs
+                    clean_base = converter_utils.sanitize_filename(os.path.splitext(file)[0]).lower()
+                    html_map[clean_base] = file
+
+        total_updated = 0
+        doc_count = 0
+
+        # Step 2: Compare and Update O(M) where M is document count
+        for base, original_file in doc_map.items():
+            if base in html_map:
+                found_html = html_map[base]
+                doc_count += 1
+                updated = converter_utils.update_doc_links_to_html(
+                    self.target_dir,
+                    original_file,
+                    found_html,
+                    log_func=self.gui_handler.log,
+                )
+                total_updated += updated
+        
+        return doc_count, total_updated
+
     def _run_all_links_fix(self):
         """Finds all document links and attempts to point them to matching HTML files (Optimized & Threaded)."""
         if not self.target_dir:
@@ -5122,51 +5255,8 @@ YOUR WORKFLOW:
         def task():
             self.gui_handler.log("\n--- Starting Global Document Link Repair ---")
             self.gui_handler.log(f"Scanning target: {self.target_dir}")
-
-            skip_dirs = {
-                converter_utils.ARCHIVE_FOLDER_NAME,
-                ".git",
-                "venv",
-                "node_modules",
-            }
-
-            # Step 1: Map all Documents AND HTML files in one pass O(N)
-            doc_map = {}
-            html_map = {}  # basename -> filename
-            for root, dirs, files in os.walk(self.target_dir):
-                dirs[:] = [d for d in dirs if d not in skip_dirs]
-                for file in files:
-                    ext = os.path.splitext(file)[1].lower()
-                    if ext in (
-                        ".docx",
-                        ".pdf",
-                        ".pptx",
-                        ".xlsx",
-                        ".doc",
-                        ".ppt",
-                        ".xls",
-                    ):
-                        base = os.path.splitext(file)[0].lower()
-                        doc_map[base] = file
-                    elif ext == ".html":
-                        base = os.path.splitext(file)[0].lower()
-                        html_map[base] = file
-
-            total_updated = 0
-            doc_count = 0
-
-            # Step 2: Compare and Update O(M) where M is document count
-            for base, original_file in doc_map.items():
-                if base in html_map:
-                    found_html = html_map[base]
-                    doc_count += 1
-                    updated = converter_utils.update_doc_links_to_html(
-                        self.target_dir,
-                        original_file,
-                        found_html,
-                        log_func=self.gui_handler.log,
-                    )
-                    total_updated += updated
+            
+            doc_count, total_updated = self._perform_link_repair_logic()
 
             msg = f"Global Link Fix Complete.\nRepaired links for {doc_count} different documents across {total_updated} instances."
             self.gui_handler.log(f"\n--- {msg} ---")
@@ -5194,7 +5284,8 @@ YOUR WORKFLOW:
         try:
             while True:
                 req = self.gui_handler.input_request_queue.get_nowait()
-                rtype, msg, args = req
+                # Unified unpacking: handler puts (rtype, msg, arg1, arg2, arg3)
+                rtype, msg, arg1, arg2, arg3 = req
 
                 result = None
                 if rtype == "prompt":
@@ -5204,12 +5295,12 @@ YOUR WORKFLOW:
                     )
                 elif rtype == "confirm":
                     result = messagebox.askyesno("Confirm", msg, parent=self.root)
-                elif rtype == "prompt_image":
-                    # args = (image_path, context, suggestion)
-                    result = self._show_image_dialog(msg, args[0], args[1], args[2])
-                elif rtype == "prompt_link":
-                    # args = (help_url, context)
-                    result = self._show_link_dialog(msg, args[0], args[1])
+                elif rtype == "image":
+                    # args were image_path, context, suggestion
+                    result = self._show_image_dialog(msg, arg1, arg2, arg3)
+                elif rtype == "link":
+                    # args were help_url, context
+                    result = self._show_link_dialog(msg, arg1, arg2)
 
                 self.gui_handler.input_response_queue.put(result)
         except queue.Empty:

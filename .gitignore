@@ -11,8 +11,13 @@ __pycache__/
 
 # Config & Secrets (Important!)
 toolkit_config.json
-*.key
+api_keys.py
+check_models.py
 .env
+.env.local
+*.key
+*.secret
+config.local.json
 debug_*.py
 debug_*.txt
 

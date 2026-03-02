@@ -257,11 +257,11 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     rel_src = f"{base_name}_graphs/{graph_filename}"
                     
                     # 7. Replace Token with Adaptive Image Tag
-                    style = "max-width: 100%; height: auto; border: 1px solid #ccc; display: block; margin: 10px auto;"
+                    style = "max-width: 50%; height: auto; border: 1px solid #ccc; display: block; margin: 10px auto;"
                     if img_type == 'icon':
                         style = "max-width: 120px; height: auto; vertical-align: middle; margin: 0 5px;"
                     elif img_type == 'graph':
-                        style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; margin: 20px auto;"
+                        style = "max-width: 50%; height: auto; border: 1px solid #ccc; margin: 20px auto;"
                     
                     img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="{rel_src}" alt="Visual Element" style="{style}">'
                     
@@ -874,7 +874,17 @@ def create_canvas_html(content, title="Canvas Math Content"):
         summary:hover {{ color: #2c3e50; }}
         
         /* Images */
-        img {{ max-width: 100%; height: auto; border-radius: 4px; }}
+        img {{ 
+            max-width: 50%; 
+            height: auto; 
+            border-radius: 4px; 
+            display: block;
+            margin: 10px 0;
+        }}
+        
+        @media (max-width: 768px) {{
+            img {{ max-width: 100% !important; }}
+        }}
         
         /* Print Friendly */
         @media print {{

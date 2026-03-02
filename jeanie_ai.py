@@ -525,6 +525,8 @@ def improve_html_design(html_content, api_key):
             "and look great in the Canvas Mobile App (which strips out external CSS/JS). "
             "Use inline CSS, flexbox, or Canvas-supported classes like 'd-flex' if necessary. "
             "Use responsive padding/margins (e.g. percentages). "
+            "Ensure PowerPoint slide containers (.slide-container) use 'overflow: auto;' to properly encase images. "
+            "Set a default max-width of 50% for images to prevent them from being oversized, but ensure they take 100% width on small screens/mobile. "
             "CRITICAL: Do NOT remove or alter any actual text content, links, images, or mathematical equations. "
             "Just improve the structural wrappers/styling. Return ONLY the fully updated raw HTML string without markdown ticks, <html> or <body> tags."
         )

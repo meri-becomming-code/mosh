@@ -506,8 +506,8 @@ def remediate_html_file(filepath):
         # Ensure image never exceeds container width, but do NOT force it to expand (width: 100%).
         style = img.get('style', '')
         if 'max-width' not in style.lower():
-            # Add safe responsiveness
-            new_style_part = "max-width: 100%; height: auto;"
+            # Add safe responsiveness (Enforcing 50% max-width per user request)
+            new_style_part = "max-width: 50%; height: auto;"
             if style:
                 img['style'] = style.rstrip(';') + "; " + new_style_part
             else:
@@ -518,7 +518,9 @@ def remediate_html_file(filepath):
             needs_fix = True
             reason = "Missing Alt Text"
         elif alt_val == "":
-            pass # Decorative
+            # Explicitly mark as decorative for screen readers (Panorama compliance)
+            img['role'] = "presentation"
+            img['alt'] = "" 
         elif alt_val.lower() in ['image', 'picture', 'photo']:
             needs_fix = True
             reason = f"Generic Alt Text '{alt_val}'"

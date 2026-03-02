@@ -110,7 +110,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         tr:nth-child(even) {{ background-color: #f9f9f9; }}
         .content-table {{ width: 100%; border-collapse: collapse; }}
         
-        img {{ max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #eee; }}
+        img {{ 
+            max-width: 50%; 
+            height: auto; 
+            border-radius: 4px; 
+            border: 1px solid #eee; 
+            display: block;
+            margin: 10px 0;
+        }}
+        
+        @media (max-width: 768px) {{
+            img {{ max-width: 100% !important; }}
+        }}
         .grading-note {{ background-color: #e8f5e9; padding: 15px; border-left: 5px solid #4caf50; font-style: italic; border-radius: 0 4px 4px 0; }}
         .note {{ font-size: 0.95em; color: #555; background: #fff3cd; padding: 20px; border-radius: 8px; border: 1px solid #ffeeba; margin-bottom: 25px; }}
         
@@ -140,6 +151,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             background-color: #fff;
             box-shadow: 0 8px 30px rgba(0,0,0,0.1);
             position: relative;
+            overflow: auto;
         }}
         .slide-container::after {{ content: ""; display: table; clear: both; }}
         .slide-title {{ margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #eee; margin-bottom: 25px; }}
@@ -379,8 +391,8 @@ def convert_docx_to_html(docx_path, io_handler=None, log_func=None):
             from PIL import Image as PILImage
             import io
 
-            width_attr = "100%"
-            style_attr = "max-width: 600px; height: auto;"  # Safe default
+            width_attr = "auto"
+            style_attr = "max-width: 50%; height: auto;"  # Safe fixed default
 
             try:
                 with PILImage.open(io.BytesIO(image_bytes)) as pil_img:
@@ -719,7 +731,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                 f"margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
                 f"border-top: 5px solid {accent1}; border-radius: 12px; "
                 f"background-color: {light1}; box-shadow: 0 8px 30px rgba(0,0,0,0.1); "
-                f"position: relative; display: flow-root; clear: both;"
+                f"position: relative; display: flow-root; clear: both; overflow: auto;"
             )
             html_parts.append(
                 f'<div class="slide-container" id="slide-{slide_num}" style="{slide_style}">'
@@ -999,7 +1011,8 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
                         # [NEW] Enhanced Image Styles (Borders/Rotation)
                         extra_img_style = get_image_styles(shape)
-                        final_img_style = f"{float_style} {extra_img_style}".strip()
+                        # [FIX] Enforce 50% max-width for PPT images
+                        final_img_style = f"{float_style} {extra_img_style} max-width: 50%;".strip()
 
                         # [SMART FIX] Silent Memory and prompt
                         alt_text = ""  # Default to decorative/empty if skipped
@@ -1826,9 +1839,19 @@ def update_doc_links_to_html(root_dir, old_filename, new_filename, log_func=None
     old_encoded = old_base.replace(" ", "%20")
     new_encoded = new_base.replace(" ", "%20")
 
-    # Escape for regex safely
+    # Robust escaping: spaces can be ' ' or '%20'
+    # Dots can be '.' or '%2E'
+    # Parentheses can be '(' or '%28'
     e_old_base = re.escape(old_base)
+    e_old_base = e_old_base.replace(r'\ ', r'(?:\ |%20)')
+    e_old_base = e_old_base.replace(r'\.', r'(?:\.|%2E)')
+    e_old_base = e_old_base.replace(r'\(', r'(?:\(|%28)')
+    e_old_base = e_old_base.replace(r'\)', r'(?:\)|%29)')
+    
     e_old_encoded = re.escape(old_encoded)
+    e_old_encoded = e_old_encoded.replace(r'\ ', r'(?:\ |%20)')
+    e_old_encoded = e_old_encoded.replace(r'\.', r'(?:\.|%2E)')
+    
     e_old_ext = re.escape(old_ext)
 
     count = 0
@@ -1846,50 +1869,50 @@ def update_doc_links_to_html(root_dir, old_filename, new_filename, log_func=None
 
                 # Pattern 1: href with $IMS-CC-FILEBASE$ token
                 # Handles $IMS-CC-FILEBASE$/.../filename.pptx or .pdf or .docx
-                # We use re.IGNORECASE for extensions and filenames
-                pattern1 = rf'href="(\$IMS-CC-FILEBASE\$/[^"]*){e_old_base}{e_old_ext}(\?[^"]*)?"'
+                # [FIX] Allow for Canvas-style suffixes like :123 or ?download after the extension
+                pattern1 = rf'href=\"(\$IMS-CC-FILEBASE\$/[^\"]*?){e_old_base}{e_old_ext}([^\"]*?)\"'
                 if re.search(pattern1, content, re.IGNORECASE):
                     content = re.sub(
                         pattern1,
-                        rf'href="\1{new_base}.html\2"',
+                        rf'href="\g<1>{new_base}.html\g<2>"',
                         content,
                         flags=re.IGNORECASE,
                     )
                     modified = True
 
                 # Pattern 1b: Regular relative links (without token)
-                pattern1b = rf'href="([^"]*/)?{e_old_base}{e_old_ext}(\?[^"]*)?"'
+                pattern1b = rf'href=\"([^\"]*?/)?{e_old_base}{e_old_ext}([^\"]*?)\"'
                 # We only match if it doesn't already have the token (to avoid double match/mess)
                 if not re.search(pattern1, content, re.IGNORECASE) and re.search(
                     pattern1b, content, re.IGNORECASE
                 ):
                     content = re.sub(
                         pattern1b,
-                        rf'href="\1{new_base}.html\2"',
+                        rf'href="\g<1>{new_base}.html\g<2>"',
                         content,
                         flags=re.IGNORECASE,
                     )
                     modified = True
 
-                # Pattern 2: URL-encoded version
-                pattern2 = rf'href="(\$IMS-CC-FILEBASE\$/[^"]*){e_old_encoded}{e_old_ext}(\?[^"]*)?"'
+                # Pattern 2: URL-encoded version (handles cases where spaces were already replaced by %20 in the search string)
+                pattern2 = rf'href=\"(\$IMS-CC-FILEBASE\$/[^\"]*?){e_old_encoded}{e_old_ext}([^\"]*?)\"'
                 if re.search(pattern2, content, re.IGNORECASE):
                     content = re.sub(
                         pattern2,
-                        rf'href="\1{new_encoded}.html\2"',
+                        rf'href="\g<1>{new_encoded}.html\g<2>"',
                         content,
                         flags=re.IGNORECASE,
                     )
                     modified = True
 
                 # Pattern 2b: URL-encoded relative
-                pattern2b = rf'href="([^"]*/)?{e_old_encoded}{e_old_ext}(\?[^"]*)?"'
+                pattern2b = rf'href=\"([^\"]*?/)?{e_old_encoded}{e_old_ext}([^\"]*?)\"'
                 if not re.search(pattern2, content, re.IGNORECASE) and re.search(
                     pattern2b, content, re.IGNORECASE
                 ):
                     content = re.sub(
                         pattern2b,
-                        rf'href="\1{new_encoded}.html\2"',
+                        rf'href="\g<1>{new_encoded}.html\g<2>"',
                         content,
                         flags=re.IGNORECASE,
                     )
