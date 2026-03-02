@@ -1,137 +1,69 @@
-# Math to Canvas - For Exhausted Teachers 😴☕
+# MOSH For Teachers 😴☕
+**"Making Online Spaces Helpful" — Because you have enough on your plate.**
 
-## The Problem
-You have handwritten solutions, worksheets, or equations. Students need them in Canvas. You're too tired to type LaTeX.
+## 🍎 The Problem
+You have handwritten keys, messy PowerPoints, and PDFs that need to be "Accessible" (ADA Compliant) for Canvas. You're exhausted, and the April 2026 deadline is looming. You don't have time to learn coding or type LaTeX math equations for 3 hours.
 
-## The Solution
-**Gemini does it for you.** One command. Done.
-
----
-
-## ⚡ Quick Start (5 Minutes Setup, Then Forever Easy)
-
-### Step 1: One-Time Setup (School IT can do this)
-```powershell
-# Install Python tools (copy/paste this, press Enter)
-pip install google-generativeai pillow pdf2image
-
-# Get Gemini API key from: https://aistudio.google.com/app/apikey
-# Set it once:
-set GEMINI_API_KEY=your_key_here
-```
-
-### Step 2: Every Time You Need to Convert
-```powershell
-# Put your PDF in a folder, then run:
-python gemini_math_converter.py --pdf "Chapter_3_Solutions.pdf"
-
-# Wait 2 minutes. Done. Gemini converted everything.
-```
-
-### Step 3: Paste into Canvas
-Open `canvas_math_output.html`, copy all, paste in Canvas HTML editor. Save. **Done.**
-
-**Time**: 2 minutes loading + 2 minutes to paste = **4 minutes total**  
-**Manual typing**: 3+ hours
+## 🚀 The Solution: MOSH Magic
+**MOSH does the work. You get the credit.** 
+No commands, no terminal, no code. Just a simple window with buttons.
 
 ---
 
-## What Gemini Does For You
+## ⚡ Quick Start (The "No-Stress" Way)
 
-✅ Reads your handwritten solutions  
-✅ Converts to Canvas LaTeX format  
-✅ Preserves problem numbers and steps  
-✅ Makes equations accessible (screen readers work)  
-✅ Makes equations searchable (students can copy/paste)  
+### 1. Get the App
+- Download the latest **MOSH Toolkit** for Windows.
+- No installation needed! Just double-click the program to start.
 
-**You do**: Drop file, run command, paste result  
-**Gemini does**: Everything else
+### 2. The "Eyes" (Poppler)
+- Go to **Connect & Setup**.
+- Click **"Auto-Setup Poppler"**.
+- *That's it.* The app now has "eyes" and can read your PDFs.
 
----
-
-## Three Simple Commands (That's It!)
-
-### Convert a PDF
-```powershell
-python gemini_math_converter.py --pdf "solutions.pdf"
-```
-
-### Convert photos from your phone
-```powershell
-# Put photos in a folder, then:
-python gemini_math_converter.py --folder "whiteboard_photos/"
-```
-
-### Convert one equation image
-```powershell
-python gemini_math_converter.py --image "equation.png"
-```
-
-**Output**: Always `canvas_math_output.html` (ready to paste in Canvas)
+### 3. The "Brain" (Gemini AI)
+- Get a free Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+- Paste it into the **AI Key** box in MOSH.
+- Now the app can "think" and describe images for you.
 
 ---
 
-## Real Example
+## 📋 Your 3-Step Success Workflow
 
-**Monday Morning**:
-1. You have a 10-page PDF of answer keys (handwritten)
-2. Open PowerShell in your folder
-3. Type: `python gemini_math_converter.py --pdf "Unit_4_Answers.pdf"`
-4. Wait 2-3 minutes while Gemini works
-5. Open `canvas_math_output.html`
-6. Copy everything
-7. Canvas → New Page → HTML view → Paste → Save
-8. **Done!** Go get coffee ☕
+### Step 1: Math & Science FIRST (The Shortcut)
+If your course has math equations, go to the **Math Converter** tab first.
+1.  Select your PDF or Image of a worksheet.
+2.  MOSH will "read" your handwriting or messy PDF and turn it into perfect Canvas code.
+3.  Preview the results and save.
 
-**Time**: 5 minutes of your time (computer does the rest)
+### Step 2: Auto-Fix (The Time-Saver)
+1.  Load your Canvas export file (.imscc).
+2.  Click **"Auto-Fix Issues"**.
+3.  **Wait 30 seconds.** MOSH will fix 80% of your course's structural issues (headers, tables, lists) automatically.
 
----
-
-## Cost
-
-**Option 1**: Gemini API Pay-as-you-go
-- ~$0.001 per image (basically free)
-- Semester cost: < $5
-
-**Option 2**: Gemini Subscription
-- $20/month per teacher
-- **OR** $20/month for department (one shared key)
-
-**Time saved**: 10+ hours per semester  
-**Worth it?** Absolutely.
+### Step 3: Guided Review (The Polish)
+1.  Click **"Guided Review"**.
+2.  MOSH will show you any missing image descriptions.
+3.  **Use the AI**: Click the **🤖 Auto-Describe** button, and the AI will write the description for you!
+4.  Click **"Looks Good — Save"**.
 
 ---
 
-## Troubleshooting (2 Common Issues)
+## 💡 Why Teachers Love MOSH
 
-### "No API key"
-```powershell
-# Get key from: https://aistudio.google.com/app/apikey
-set GEMINI_API_KEY=paste_your_key_here
-```
-
-### "pdf2image not installed"
-```powershell
-pip install pdf2image
-# Also download: https://github.com/oschwartz10612/poppler-windows/releases
-# Extract and add to PATH (or ask IT)
-```
+✅ **Handles Handwriting**: Reads your scribbled math keys and turns them into clean text.  
+✅ **Mobile Ready**: One click (AI Mobile Design) makes your pages look great on student phones.  
+✅ **Zero Tech Skills**: If you can click a button, you can use MOSH.  
+✅ **Free & Open**: Built by an educator, for educators. No subscriptions, no fees.  
+✅ **Saves Hours**: A 50-hour remediation job becomes a 30-minute automated run.
 
 ---
 
-## Getting School to Pay for It
-
-**Pitch to admin**:
-> "For $20/month, our entire math department saves 50+ hours per semester converting materials to accessible Canvas format. That's $20 for 50 hours of work. ROI is 250:1."
-
-**Result**: They'll say yes.
+## 🆘 Need Help?
+MOSH is here to help! If you get stuck:
+- Click the **Help** menu inside the app.
+- Check the **Activity Log** at the bottom of the screen.
+- Email: meredithkasprak@gmail.com
 
 ---
-
-## That's It!
-
-**Setup once** → **Run one command** → **Paste** → **Done**
-
-No typing. No LaTeX. No exhaustion.
-
-**Gemini does the work. You get the credit.** ⭐
+*MOSH is dedicated to inclusive education for all students. Go get some coffee—we'll handle the accessibility! ☕*

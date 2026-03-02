@@ -1,13 +1,27 @@
 # MOSH ADA Toolkit - Release Notes
 
-## Latest Updates (February 14, 2026)
+## Latest: Release Candidate 38 (March 1, 2026)
+### 🚀 The "Intelligence & Precision" Update
 
-### 🚀 Quality & Performance Optimization (Turbo Batch)
+**Visual Review 2.0:**
+- **AI-Nudge Technology**: Added a new interface for reviewing image crops. If the AI crops a graph poorly, you can "Nudge" it or "Reset to Original" with one click.
+- **✨ Table OCR**: One-click conversion of images of charts/tables into fully semantic HTML table code.
+- **📝 Long Description Pages**: For extremely complex scientific diagrams, MOSH now generates a dedicated "Long Description" HTML page linked from the image, following WCAG best practices.
+
+**System Improvements:**
+- **Zero-Config Portable Mode**: MOSH now auto-detects a `mosh_helpers` folder in the executable directory. This allows for truly "portable" use without needing to configure paths.
+- **One-Click Poppler Setup**: Completely automated the installation of math-conversion dependencies.
+- **Mirror Mode State**: Your "Mirror Mode" preference is now saved and persists between restarts.
+- **Math-First Safeguards**: Updated all instructions to prioritize the math conversion workflow (Step 0) to ensure high-accuracy equation rendering.
+- **Hover & Polish**: Fixed button flicker issues and improved layout to prevent text cutoff on different screen sizes.
+
+---
+
+## Release Candidate 33 (February 24, 2026)
+### 🚀 Performance & UI Refinement
 - **⚡ Turbo Batch Conversion**: Refactored the core conversion engine to use a single-pass update system. Processing large course packages is now up to **80% faster**.
-- **📈 Course Health Dashboard**: Audits now generate a professional **Accessibility Score (%)**. Teachers can see their progress and aim for a perfect "100% Course Health" rating!
-- **📝 Smart List Reflow**: The Auto-Fixer now automatically detects paragraphs that look like lists (e.g., those starting with `*` or `-`) and converts them into real, accessible HTML `<ul>` and `<li>` tags.
-- **🛡️ Repeat Fix Idempotency**: Fixed an issue where the auto-fixer would repeatedly "fix" the same math images and emojis.
-- **🎨 UI Polish**: Rearranged the image remediation tool into two clean rows and added a "Length Guardian" warning for alt-text over 100 characters.
+- **📈 Course Health Dashboard**: Audits now generate a professional **Accessibility Score (%)**.
+- **📝 Smart List Reflow**: Automatically detects paragraphs that look like lists and converts them into semantic HTML tags.
 
 ## Previous Updates (February 6, 2026)
 

@@ -1,36 +1,50 @@
-# MOSH ADA Toolkit
-**"Making Online Spaces Helpful"**
+# MOSH ADA Toolkit 🤖♿
+**"Making Online Spaces Helpful" — The Intelligent Accessibility Suite for Educators**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Website](https://img.shields.io/badge/Website-Live-green.svg)](https://meri-becomming-code.github.io/mosh/)
-[![Antigravity](https://img.shields.io/badge/Made%20with-Antigravity-orange.svg)](https://deepmind.google/technologies/gemini/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 
-MOSH is a powerful, educator-focused suite designed to automate the heavy lifting of accessibility remediation for Canvas and Web content.
+MOSH is a mission-driven, professional-grade accessibility suite designed to solve the massive "remediation gap" facing K-12 and Higher Education as the **April 2026 ADA compliance deadline** approaches. Unlike generic tools, MOSH is a specialized engine that understands the nuances of Canvas LMS exports, complex math notation, and semantic document structure.
 
-## 🎯 Project Mission
-MOSH wasn't born from a business plan or a commercial ambition. It began as a simple attempt to solve a personal struggle in my own classroom. I never intended to create this toolkit; I was simply looking for a way forward. 
+## 🚀 Key Innovations
 
-One step at a time, and one insight at a time, the path was revealed to me. I believe that my ability to build this was a gift from God, and I give Him all the glory for every insight granted during this journey. As a Christian, I believe that because I have been blessed with the ability to help, I have a sacred responsibility to share that help freely. I'm not here to hold a tool hostage for money; I'm here to serve.
+### 🧠 Intelligent Remediation
+- **AI-Powered Vision**: Leverage Gemini 2.0 Flash to automatically generate alt-text for complex diagrams, solve handwritten math, and even OCR images of tables into fully accessible HTML code.
+- **Visual Review Dashboard**: A high-speed interface that lets humans verify and "nudge" AI-generated crops, ensuring that complex scientific content stays accurate.
+- **Long Description Generator**: Automatically generates linked HTML pages for complex graphics (Calculus graphs, intricate schematics) to meet WCAG best practices without bloating alt-text fields.
 
-We believe that accessibility is a foundational human right, not a profit center. Accessibility remediation shouldn't be a source of resentment or unpaid labor—it should be a seamless part of the teaching craft. This toolkit is a gift, freely given, to help you reclaim your time, protect your course quality, and focus on what truly matters: your students.
+### 🎨 Design & Structure
+- **AI Mobile Design**: A one-click tool that uses Gemini to intelligently wrap legacy HTML content in modern, responsive, mobile-first design patterns for the Canvas App.
+- **Structural Auto-Fixer**: Batch-corrects hierarchical headings, color contrast ratios, duplicate links, and invalid table structures across thousands of files in minutes.
+- **Smart List Reflow**: Detects and converts "visual lists" (paragraphs starting with symbols) into semantic `<ul>`/`<li>` tags for screen reader compatibility.
 
-## ✨ Key Features
-- **🛠️ Connect & Setup**: A unified command center to manage your Canvas tokens, AI keys, and project files in one place.
-- **🎨 Canvas Remediation**: A complete suite for auditing and fixing accessibility issues in your course. Includes:
-    - **✨ Auto-Fix**: Instantly corrects structural issues like headers and tables.
-    - **📖 Guided Review**: A human-centric interface to write Alt Text and fix links page-by-page.
-- **📐 Math Converter**: Uses "MOSH Magic" (AI) to read handwritten math and PDF equations, converting them into accessible LaTeX.
-- **📄 File Conversion**: Instantly converts Word, PowerPoint, and Excel files into clean, accessible HTML.
+### 📐 Specialized Math Workflows
+- **PDF-to-Math**: Converts "locked" PDF equations into editable, accessible LaTeX.
+- **Handwriting OCR**: High-accuracy recognition of teacher handwritten notes and whiteboard captures.
 
-## 💛 Dedication
-This software is dedicated to my son, **Michael Joshua (MOSH) Albright**, who battles Diabetic Retinopathy. Having spent years in blindness and reclaiming his sight, his journey reminds us that accessibility isn't just a requirement; it's a lifeline.
+## 🛠️ Under the Hood (Technical Profile)
+*This project serves as a demonstration of robust software engineering and complex problem-solving:*
 
-*— Dr. Meri Kasprak*
+- **Asynchronous Architecture**: Implements Python `threading` and `queue` systems to perform heavy AI analysis and file processing without freezing the Tkinter GUI.
+- **DOM Orchestration**: Uses `BeautifulSoup4` for complex HTML parsing, sanitization, and restructuring of Canvas LMS export packages.
+- **Portable Dependencies**: Features a custom "One-Click Setup" and **Portable Mode** for Poppler binaries, managing binary dependencies across disparate user environments.
+- **Cross-Platform Compatibility**: Supports Windows and macOS (via Homebrew integration) with persistent configuration management via JSON.
+- **Idempotent Logic**: Smart-hashing ensures that files aren't repeatedly processed, saving AI tokens and computational time.
 
-## 🚀 Getting Started
-1. **Visit our [Download Page](https://meri-becomming-code.github.io/mosh/)**
-2. Download the `MOSH_ADA_Toolkit.exe` from the latest release.
-3. **Note for Windows Users**: As an educator-funded project, we are currently in the process of applying for an official code-signing certificate. If Windows warns you that the app is "Unknown," you may need to click "More Info" -> "Run Anyway" during this first phase.
+---
+
+## 🎯 Project Mission & Dedication
+MOSH was born from a personal journey. Dedicated to **Michael Joshua (MOSH) Albright**, who battles Diabetic Retinopathy, this project is a gift back to the education community. 
+
+I believe that accessibility is a foundational human right. This tool is released **freely and open-source** to ensure that no teacher is left behind by the digital transition.
+
+*— Developed by Dr. Meri Kasprak*
+
+## 🏁 Getting Started
+1. **Visit our [Live Site](https://meri-becomming-code.github.io/mosh/)** to see the vision.
+2. Download the latest `MOSH_ADA_Toolkit_RCxx.exe` from the [Releases](https://github.com/meri-becomming-code/mosh/releases) page.
+3. **No Setup required**: Use the *Auto-Setup* button in the app to grab everything you need in one click.
 
 ## ⚖️ License
-Released freely under the GNU General Public License v3.0. Share it. Improve it. Use it to help others.
+Released under the **GNU General Public License v3.0**. Built with love, AI, and a commitment to inclusive education.

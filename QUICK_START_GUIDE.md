@@ -5,104 +5,63 @@
 
 ## ✨ **What This Tool Does**
 Makes your Canvas course content accessible (ADA compliant) in minutes instead of hours!
-- Automatically fixes headings, tables, and color contrast
-- Helps you add descriptions to images
-- Converts Word, PowerPoint, and PDF files to accessible Canvas pages
+- **⚡ AI Vision**: Automatically describes complex graphs and diagrams.
+- **📐 Math Priority**: Converts PDFs and handwriting into accessible LaTeX equations.
+- **✨ One-Click Fix**: Corrects headings, table headers, and color contrast site-wide.
+- **📱 Mobile Design**: Optimizes your HTML for the Canvas mobile app automatically.
 
 ---
 
-## 📋 **Three Simple Steps**
+## 📋 **The MOSH Workflow (Important!)**
+
+### **STEP 0: The "Math First" Rule**
+If your course contains Math equations or heavy PDF science content, **always run the Math Converter first.** 
+- Go to the **Math Converter** tab.
+- Process your PDFs and images of equations.
+- *Why?* Normal bulk-conversion can sometimes "scramble" complex math formatting if it's not handled by the specialized Math AI first.
 
 ### **STEP 1: Get Your Course Files**
-1. In Canvas, go to **Settings** → **Export Course Content**
-2. Select "Export Course Content" and click **Create Export**
-3. Wait for Canvas to prepare your files (you'll get an email)
-4. Download the `.imscc` file to your computer
+1. In Canvas, go to **Settings** → **Export Course Content**.
+2. Select "Course" and click **Create Export**.
+3. Download the `.imscc` file once the export finishes.
+
+### **STEP 2: Automated Remediation**
+1. **Launch MOSH** and go to **Connect & Setup**.
+2. Click **"Select .imscc File"** and choose your exported package.
+3. Click **"Auto-Fix Issues"** — This handles 80% of the structural work (headings, lists, contrast) instantly!
+
+### **STEP 3: Visual Review & AI Assistance**
+1. Click **"Guided Review"**.
+2. MOSH will walk you through every image. 
+3. **Use the new AI buttons**:
+    - **🤖 Auto-Describe**: Let Gemini write the alt-text for you.
+    - **📊 Table OCR**: Turn a picture of a table into a real, editable HTML table.
+    - **📝 Long Description**: Create a separate detailed page for complex calculus graphs.
+4. Click **"Looks Good — Save & Upload"** when done.
 
 ---
 
-### **STEP 2: Fix Your Content**
-1. **Launch the toolkit** (double-click `MOSH_ADA_Toolkit.exe`)
-2. Click **"Select .imscc File"** and choose your downloaded file
-3. Click **"Auto-Fix Issues"** (fixes 80% of problems automatically!)
-4. Click **"Guided Review"** (walks you through the remaining items)
-
-**🆓 No API Key Needed!** You can skip all AI features and still use the core tools.
+## 🛠️ **First-Time Setup (Poppler)**
+MOSH needs a helper tool called **Poppler** to read PDFs.
+- **One-Click**: Just click **"Auto-Setup Poppler"** in the Setup tab.
+- **Portable**: If you are on a restricted work computer, simply place a folder named `mosh_helpers` in the same folder as the MOSH program, and it will work automatically!
 
 ---
 
-### **STEP 3: Test & Upload**
-1. Click **"Am I Ready to Upload?"** for a final check
-2. In Canvas, create a **NEW EMPTY test course** (important!)
-3. Import your fixed `.imscc` file into the test course
-4. Review everything looks good
-5. **Done!** 🎉
+## 💡 **Pro-Tips**
 
----
-
-## 💡 **First-Time Tips**
-
-### **For K-12 Teachers:**
-- ✅ Works with Canvas Free for Teachers accounts
-- ✅ No coding or technical skills required
-- ✅ All features work without an AI API key
-- ✅ Safe to use - always keeps a backup of your original files
-
-### **For College Instructors:**
-- ✅ Works with your institution's Canvas  
-- ✅ Handles large courses with 100+ pages
-- ✅ Preserves all your existing content structure
-- ✅ Creates detailed activity logs
-
-### **For Instructional Designers:**
-- ✅ Batch process multiple courses
-- ✅ Generate compliance audit reports
-- ✅ Advanced Canvas API integration
-- ✅ Optional AI features for efficiency
-
----
-
-## 📖 **Quick Definitions (Don't Worry, It's Easy!)**
-
-**What's an .imscc file?**  
-Think of it as a "backup copy" of your Canvas course. When you export from Canvas, it creates this file. You give this file to the toolkit to fix, then upload the fixed version back to Canvas.
-
-**What's alt text?**  
-A short description of an image that helps blind/visually impaired students understand what's in the picture. Example: Instead of just "graph.png", you write "Bar graph showing test scores improved from 70% to 95%".
-
-**What does "accessibility" mean?**  
-Making sure students with disabilities (blind, low vision, using screen readers, etc.) can fully access your course content.
-
-**What's ADA compliance?**  
-Federal law requiring public schools/colleges to make digital content accessible. The April 2026 deadline means all your Canvas content needs to work for students with disabilities.
-
----
-
-## ❓ **Common Questions**
-
-**Q: Do I need a Gemini API key?**  
-A: NO! The AI features are completely optional. You can use all the core tools without one.
-
-**Q: Will this change my original files?**  
-A: Your original files are automatically saved to a backup folder. We never delete anything.
-
-**Q: What if I mess up?**  
-A: Always test in a NEW EMPTY Canvas course first. If something goes wrong, just don't use that version.
-
-**Q: Does this work for K-12?**  
-A: YES! Elementary, middle school, high school - all supported.
-
-**Q: How long does it take?**  
-A: Most courses are fixed in 10-30 minutes. Large courses may take longer.
+- **Mirror Mode**: Turn on "Mirror Mode" to see your changes locally in real-time.
+- **Trust AI**: In Settings, you can enable "Auto-Accept AI" to let MOSH remediate 1,000+ images without asking you a single question.
+- **Responsive Design**: Use the "AI Mobile Design" button to make your course look beautiful on student iPhones and Androids.
 
 ---
 
 ## 🆘 **Need Help?**
 
-1. Click **"Help"** menu → **"Welcome / Dedication"** for detailed docs
-2. Check the **Activity Log** at the bottom of the screen for details
+1. Click **"Help"** menu → **"Welcome / Dedication"** for detailed docs.
+2. Check the **Activity Log** at the bottom of the screen.
 3. Email: meredithkasprak@gmail.com
-4. GitHub: https://github.com/meri-becomming-code/mosh
+4. GitHub: [MOSH Repository](https://github.com/meri-becomming-code/mosh)
 
 ---
 
@@ -110,5 +69,4 @@ A: Most courses are fixed in 10-30 minutes. Large courses may take longer.
 The U.S. Department of Justice requires all public institutions (K-12 and Higher Ed) to have accessible digital content by **April 2026**. This toolkit helps you meet that deadline stress-free!
 
 ---
-
-**Print this page and keep it handy! →**
+*MOSH (Making Online Spaces Helpful) is dedicated to inclusive education for all.*
