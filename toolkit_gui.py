@@ -2439,6 +2439,362 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             except Exception as e:
                 messagebox.showerror("Error", f"Could not delete image: {e}")
 
+    def _show_visual_review(self, html_path, graphs_dir):
+        """
+        Interactive visual review dialog. Shows full page context with crop overlay.
+        Supports: click-to-drag crop redefinition, nudge, alt text, delete, add missing.
+        BLOCKS until user approves.
+        """
+        import json
+        import threading
+
+        meta_path = os.path.join(graphs_dir, "crop_meta.json")
+        if not os.path.exists(meta_path):
+            return True
+
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+        if not meta:
+            return True
+
+        result = {"approved": False}
+        event = threading.Event()
+        full_pages_cache = {}
+
+        def build_dialog():
+            nonlocal full_pages_cache
+
+            dialog = Toplevel(self.root)
+            dialog.title(f"Visual Review: {os.path.basename(html_path)}")
+            dialog.geometry("1200x800")
+            dialog.transient(self.root)
+            dialog.grab_set()
+            dialog.configure(bg="#1a1a2e")
+
+            PAGE_W = 350
+            PAGE_H = 480
+
+            hdr = tk.Frame(dialog, bg="#1a1a2e")
+            hdr.pack(fill="x", padx=20, pady=(15, 0))
+            tk.Label(hdr, text="Visual Element Review", font=("Segoe UI", 18, "bold"), bg="#1a1a2e", fg="white").pack(side="left")
+            tk.Label(hdr, text="Click and drag on the page preview to redefine any crop. Use buttons to nudge 50px.", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(side="left", padx=20)
+
+            outer = ttk.Frame(dialog)
+            outer.pack(fill="both", expand=True, padx=15, pady=10)
+
+            canvas_scroll = tk.Canvas(outer, bg="#f0f0f0", highlightthickness=0)
+            sb = ttk.Scrollbar(outer, orient="vertical", command=canvas_scroll.yview)
+            inner = tk.Frame(canvas_scroll, bg="#f0f0f0")
+
+            cw = canvas_scroll.create_window((0, 0), window=inner, anchor="nw")
+            inner.bind("<Configure>", lambda e: canvas_scroll.configure(scrollregion=canvas_scroll.bbox("all")))
+            canvas_scroll.bind("<Configure>", lambda e: canvas_scroll.itemconfig(cw, width=e.width))
+            canvas_scroll.configure(yscrollcommand=sb.set)
+            canvas_scroll.pack(side="left", fill="both", expand=True)
+            sb.pack(side="right", fill="y")
+
+            def _on_mousewheel(evt):
+                canvas_scroll.yview_scroll(int(-1 * (evt.delta / 120)), "units")
+            canvas_scroll.bind_all("<MouseWheel>", _on_mousewheel)
+
+            tk_images = []
+            deleted_items = set()
+
+            def load_full_page(page_name):
+                if page_name in full_pages_cache:
+                    return full_pages_cache[page_name]
+                fp = os.path.join(graphs_dir, page_name)
+                if not os.path.exists(fp):
+                    return None, 1.0, None
+                pil = Image.open(fp)
+                ow, oh = pil.size
+                scale = min(PAGE_W / ow, PAGE_H / oh)
+                nw, nh = int(ow * scale), int(oh * scale)
+                pil_s = pil.resize((nw, nh), Image.LANCZOS)
+                tk_img = ImageTk.PhotoImage(pil_s)
+                tk_images.append(tk_img)
+                full_pages_cache[page_name] = (tk_img, scale, pil)
+                return tk_img, scale, pil
+
+            def draw_rect(cv, box, scale, tag="crop_rect"):
+                cv.delete(tag)
+                x1, y1, x2, y2 = [int(c * scale) for c in box]
+                cv.create_rectangle(x1, y1, x2, y2, outline="#ff3333", width=3, dash=(6, 4), tags=tag)
+
+            def refresh_crop(gn, lbl):
+                cp = os.path.join(graphs_dir, gn)
+                if not os.path.exists(cp):
+                    return
+                p = Image.open(cp)
+                p.thumbnail((200, 150))
+                ti = ImageTk.PhotoImage(p)
+                tk_images.append(ti)
+                lbl.config(image=ti)
+                lbl.image = ti
+
+            def do_recrop(gn, info, pcv, lbl):
+                fp = os.path.join(graphs_dir, info["full_image"])
+                box = info["box_abs"]
+                try:
+                    with Image.open(fp) as src:
+                        crop = src.crop((box[0], box[1], box[2], box[3]))
+                        crop.save(os.path.join(graphs_dir, gn))
+                    _, sc, _ = load_full_page(info["full_image"])
+                    draw_rect(pcv, box, sc)
+                    refresh_crop(gn, lbl)
+                except Exception as err:
+                    self.gui_handler.log(f"   [CROP] Error: {err}")
+
+            def nudge(gn, d, info, pcv, lbl):
+                box = info["box_abs"]
+                pw, ph = info["page_width"], info["page_height"]
+                if d == "up":    box[1] = max(0, box[1] - 50)
+                elif d == "down":  box[3] = min(ph, box[3] + 50)
+                elif d == "left":  box[0] = max(0, box[0] - 50)
+                elif d == "right": box[2] = min(pw, box[2] + 50)
+                info["box_abs"] = box
+                meta[gn] = info
+                do_recrop(gn, info, pcv, lbl)
+
+            def del_item(gn, cf):
+                try:
+                    cp = os.path.join(graphs_dir, gn)
+                    if os.path.exists(cp): os.remove(cp)
+                    deleted_items.add(gn)
+                    if gn in meta: del meta[gn]
+                    cf.destroy()
+                except Exception as err:
+                    self.gui_handler.log(f"   [DEL] Error: {err}")
+
+            def build_card(gn, info, parent):
+                cp = os.path.join(graphs_dir, gn)
+                if not os.path.exists(cp):
+                    return
+
+                card = tk.Frame(parent, bg="white", borderwidth=1, relief="groove", padx=8, pady=8)
+                card.pack(fill="x", padx=10, pady=6)
+
+                left = tk.Frame(card, bg="white")
+                left.pack(side="left", padx=(0, 10))
+                tk.Label(left, text="Full Page Context", font=("Segoe UI", 8, "bold"), bg="white", fg="#666").pack()
+
+                pg_img, sc, _ = load_full_page(info.get("full_image", ""))
+
+                if pg_img:
+                    pcv = tk.Canvas(left, width=pg_img.width(), height=pg_img.height(), bg="#eee", highlightthickness=1, highlightbackground="#ccc", cursor="crosshair")
+                    pcv.pack()
+                    pcv.create_image(0, 0, anchor="nw", image=pg_img)
+                    draw_rect(pcv, info["box_abs"], sc)
+
+                    ds = {"sx": 0, "sy": 0, "rid": None}
+
+                    def press(e, s=ds):
+                        s["sx"], s["sy"] = e.x, e.y
+                        if s["rid"]: e.widget.delete(s["rid"])
+                        s["rid"] = e.widget.create_rectangle(e.x, e.y, e.x, e.y, outline="#00aaff", width=2, dash=(4, 2))
+
+                    def motion(e, s=ds):
+                        if s["rid"]: e.widget.coords(s["rid"], s["sx"], s["sy"], e.x, e.y)
+
+                    def release(e, s=ds, g=gn, i=info):
+                        if s["rid"]:
+                            e.widget.delete(s["rid"])
+                            s["rid"] = None
+                        x1 = int(min(s["sx"], e.x) / sc)
+                        y1 = int(min(s["sy"], e.y) / sc)
+                        x2 = int(max(s["sx"], e.x) / sc)
+                        y2 = int(max(s["sy"], e.y) / sc)
+                        if (x2 - x1) < 30 or (y2 - y1) < 30: return
+                        i["box_abs"] = [x1, y1, x2, y2]
+                        meta[g] = i
+                        do_recrop(g, i, pcv, lbl_c)
+
+                    pcv.bind("<ButtonPress-1>", press)
+                    pcv.bind("<B1-Motion>", motion)
+                    pcv.bind("<ButtonRelease-1>", release)
+                else:
+                    pcv = None
+                    tk.Label(left, text="[Page not available]", bg="white", fg="#999").pack()
+
+                right = tk.Frame(card, bg="white")
+                right.pack(side="left", fill="both", expand=True)
+
+                tk.Label(right, text=gn, font=("Segoe UI", 10, "bold"), bg="white", anchor="w").pack(fill="x")
+                tk.Label(right, text=f"Type: {info.get('type', 'unknown')}", font=("Segoe UI", 9), bg="white", fg="#666", anchor="w").pack(fill="x")
+
+                cf2 = tk.Frame(right, bg="white")
+                cf2.pack(fill="x", pady=5)
+                tk.Label(cf2, text="Cropped Result:", font=("Segoe UI", 8, "bold"), bg="white", fg="#666").pack(anchor="w")
+                try:
+                    pc = Image.open(cp)
+                    pc.thumbnail((200, 150))
+                    tc = ImageTk.PhotoImage(pc)
+                    tk_images.append(tc)
+                    lbl_c = tk.Label(cf2, image=tc, bg="#f9f9f9", borderwidth=1, relief="solid")
+                    lbl_c.image = tc
+                    lbl_c.pack(anchor="w")
+                except:
+                    lbl_c = tk.Label(cf2, text="[Error]", bg="white", fg="red")
+                    lbl_c.pack()
+
+                af = tk.Frame(right, bg="white")
+                af.pack(fill="x", pady=3)
+                tk.Label(af, text="Alt Text:", font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w")
+                ae = tk.Text(af, height=2, width=45, font=("Segoe UI", 9), wrap="word")
+                sv = info.get("story", "")
+                ae.insert("1.0", sv if sv.lower() != "none" else "")
+                ae.pack(fill="x")
+                info["_alt_widget"] = ae
+
+                nf = tk.LabelFrame(right, text="Fine-Tune Crop (+/- 50px)", bg="white", font=("Segoe UI", 8))
+                nf.pack(fill="x", pady=3)
+                bs = {"font": ("Segoe UI", 9), "bg": "#e8f0fe", "cursor": "hand2", "width": 10}
+                r1 = tk.Frame(nf, bg="white")
+                r1.pack()
+                tk.Button(r1, text="+ Top", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "up", i, p, l), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r1, text="+ Bottom", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "down", i, p, l), **bs).pack(side="left", padx=2, pady=1)
+                r2 = tk.Frame(nf, bg="white")
+                r2.pack()
+                tk.Button(r2, text="+ Left", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "left", i, p, l), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r2, text="+ Right", command=lambda g=gn, i=info, p=pcv, l=lbl_c: nudge(g, "right", i, p, l), **bs).pack(side="left", padx=2, pady=1)
+
+                tk.Button(right, text="Delete This Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2").pack(anchor="w", pady=3)
+
+            for gn, info in list(meta.items()):
+                build_card(gn, info, inner)
+
+            add_frame = tk.LabelFrame(inner, text="Add Missing Element", bg="white", font=("Segoe UI", 10, "bold"), fg="#2c3e50")
+            add_frame.pack(fill="x", padx=10, pady=10)
+
+            fpages = sorted([f for f in os.listdir(graphs_dir) if f.startswith("full_p") and f.endswith(".png")])
+
+            if fpages:
+                tk.Label(add_frame, text="Draw a rectangle on any page below to add a new visual element.", font=("Segoe UI", 9, "italic"), bg="white", fg="#555").pack(anchor="w", padx=5, pady=3)
+
+                for pf in fpages:
+                    plbl = pf.replace("full_", "Page ").replace(".png", "")
+                    pff = tk.Frame(add_frame, bg="white")
+                    pff.pack(fill="x", padx=5, pady=5)
+                    tk.Label(pff, text=plbl, font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w")
+
+                    pi, ps, _ = load_full_page(pf)
+                    if pi:
+                        ac = tk.Canvas(pff, width=pi.width(), height=pi.height(), bg="#eee", highlightthickness=1, highlightbackground="#999", cursor="crosshair")
+                        ac.pack(anchor="w")
+                        ac.create_image(0, 0, anchor="nw", image=pi)
+
+                        ads = {"sx": 0, "sy": 0, "rid": None, "pf": pf, "sc": ps}
+
+                        def ap(e, s=ads):
+                            s["sx"], s["sy"] = e.x, e.y
+                            if s["rid"]: e.widget.delete(s["rid"])
+                            s["rid"] = e.widget.create_rectangle(e.x, e.y, e.x, e.y, outline="#00cc44", width=2, dash=(4, 2))
+
+                        def am(e, s=ads):
+                            if s["rid"]: e.widget.coords(s["rid"], s["sx"], s["sy"], e.x, e.y)
+
+                        def ar(e, s=ads, par=inner):
+                            if s["rid"]:
+                                e.widget.delete(s["rid"])
+                                s["rid"] = None
+                            sc = s["sc"]
+                            x1 = int(min(s["sx"], e.x) / sc)
+                            y1 = int(min(s["sy"], e.y) / sc)
+                            x2 = int(max(s["sx"], e.x) / sc)
+                            y2 = int(max(s["sy"], e.y) / sc)
+                            if (x2 - x1) < 30 or (y2 - y1) < 30: return
+                            cnt = len(meta) + 1
+                            bstem = Path(html_path).stem
+                            pnum = s["pf"].replace("full_p", "").replace(".png", "")
+                            nn = f"{bstem}_p{pnum}_manual{cnt}.png"
+                            fpp = os.path.join(graphs_dir, s["pf"])
+                            try:
+                                with Image.open(fpp) as src:
+                                    pw, ph = src.size
+                                    crop = src.crop((x1, y1, x2, y2))
+                                    crop.save(os.path.join(graphs_dir, nn))
+                                ni = {"full_image": s["pf"], "box_abs": [x1, y1, x2, y2], "page_width": pw, "page_height": ph, "story": "", "type": "graph"}
+                                meta[nn] = ni
+                                build_card(nn, ni, par)
+                                self.gui_handler.log(f"   + Added: {nn}")
+                            except Exception as err:
+                                self.gui_handler.log(f"   [ADD] Error: {err}")
+
+                        ac.bind("<ButtonPress-1>", ap)
+                        ac.bind("<B1-Motion>", am)
+                        ac.bind("<ButtonRelease-1>", ar)
+
+            btn_bar = tk.Frame(dialog, bg="#1a1a2e")
+            btn_bar.pack(fill="x", padx=15, pady=10)
+
+            def on_approve():
+                for gn, info in meta.items():
+                    w = info.pop("_alt_widget", None)
+                    if w:
+                        try: info["story"] = w.get("1.0", "end").strip()
+                        except: pass
+
+                with open(meta_path, "w", encoding="utf-8") as mf:
+                    json.dump(meta, mf, indent=2)
+
+                try:
+                    from bs4 import BeautifulSoup
+                    with open(html_path, "r", encoding="utf-8") as f:
+                        soup = BeautifulSoup(f.read(), "html.parser")
+
+                    for gn, info in meta.items():
+                        at = info.get("story", "Visual Element")
+                        if not at or at.lower() == "none": at = "Visual Element"
+                        for it in soup.find_all("img"):
+                            if gn in it.get("src", ""):
+                                it["alt"] = at
+
+                    cdiv = soup.find("div", class_="content-wrapper") or soup.find("body") or soup
+                    for gn, info in meta.items():
+                        if "manual" in gn:
+                            already = any(gn in (it.get("src", "") or "") for it in soup.find_all("img"))
+                            if not already:
+                                bstem = Path(html_path).stem
+                                rs = f"{bstem}_graphs/{gn}"
+                                at = info.get("story", "Visual Element") or "Visual Element"
+                                nd = soup.new_tag("div", attrs={"class": "mosh-visual", "style": "text-align: center;"})
+                                ni = soup.new_tag("img", src=rs, alt=at, style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; margin: 20px auto;")
+                                nd.append(ni)
+                                cdiv.append(nd)
+
+                    for dn in deleted_items:
+                        for dv in soup.find_all("div", class_="mosh-visual"):
+                            im = dv.find("img")
+                            if im and dn in im.get("src", ""):
+                                dv.decompose()
+
+                    with open(html_path, "w", encoding="utf-8") as f:
+                        f.write(str(soup))
+                except Exception as e:
+                    self.gui_handler.log(f"   [Review] Error saving: {e}")
+
+                result["approved"] = True
+                canvas_scroll.unbind_all("<MouseWheel>")
+                dialog.destroy()
+                event.set()
+
+            def on_cancel():
+                result["approved"] = False
+                canvas_scroll.unbind_all("<MouseWheel>")
+                dialog.destroy()
+                event.set()
+
+            dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+
+            tk.Button(btn_bar, text="Approve and Continue", command=on_approve, font=("Segoe UI", 13, "bold"), bg="#4CAF50", fg="white", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
+            tk.Button(btn_bar, text="Cancel Upload", command=on_cancel, font=("Segoe UI", 13), bg="#ffcdd2", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
+
+        self.root.after(0, build_dialog)
+        event.wait()
+        return result["approved"]
+
+
     def _show_link_dialog(self, message, href, context=None):
         """Custom dialog to show link details and prompt for text."""
         dialog = Toplevel(self.root)
@@ -4813,6 +5169,17 @@ YOUR WORKFLOW:
                 except Exception as e:
                      log(f"   [DESIGN] Skipping Design improvements: {e}")
 
+                # 2.5 [NEW] Interactive Visual Review (blocks until user approves)
+                dest_stem = Path(dest).stem
+                graphs_dir = str(Path(dest).parent / f"{dest_stem}_graphs")
+                if os.path.isdir(graphs_dir):
+                    log(f"   🖼️ Opening Visual Review for {os.path.basename(dest)}...")
+                    approved = self._show_visual_review(dest, graphs_dir)
+                    if not approved:
+                        log(f"   ⏩ User cancelled upload for {os.path.basename(dest)}")
+                        return
+                    log(f"   ✅ Visual review approved!")
+
                 # 3. Update Links
                 converter_utils.update_doc_links_to_html(
                     self.target_dir,
@@ -4821,16 +5188,15 @@ YOUR WORKFLOW:
                     log_func=log,
                 )
 
-                # 3. Update Manifest so Canvas Modules don't drop the file
+                # 4. Update Manifest so Canvas Modules don't drop the file
                 source_rel = os.path.relpath(source, self.target_dir)
                 dest_rel = os.path.relpath(dest, self.target_dir)
                 converter_utils.update_manifest_resource(self.target_dir, source_rel, dest_rel)
 
-                # 4. Archive Original
+                # 5. Archive Original
                 converter_utils.archive_source_file(source, log_func=log)
 
-
-                # 4. Auto-Upload to Canvas (if API connected)
+                # 6. Auto-Upload to Canvas (if API connected)
                 api = self._get_canvas_api()
                 if api:
                     # Silent upload with auto-confirm
@@ -5001,6 +5367,17 @@ YOUR WORKFLOW:
                         f.write(result)
 
                     self.gui_handler.log(f"\n✨ SUCCESS! Saved to: {output_path}")
+
+                    # [NEW] Interactive Visual Review before finalizing
+                    dest_stem = Path(output_path).stem
+                    graphs_dir = str(Path(output_path).parent / f"{dest_stem}_graphs")
+                    if os.path.isdir(graphs_dir):
+                        self.gui_handler.log(f"   🖼️ Opening Visual Review...")
+                        approved = self._show_visual_review(output_path, graphs_dir)
+                        if not approved:
+                            self.gui_handler.log(f"   ⏩ Upload cancelled by user.")
+                            return
+                        self.gui_handler.log(f"   ✅ Visual review approved!")
 
                     # Use the unified workflow (DIRECT call to avoid deadlock)
                     file_pairs = [(file_path, output_path)]

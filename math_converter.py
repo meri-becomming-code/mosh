@@ -183,8 +183,27 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
         # e.g. output_dir/MyPDF_graphs/MyPDF_p1_graph1.png
         # The HTML <img src> uses a relative path: MyPDF_graphs/filename.png
         # This keeps paths correct whether the HTML is in web_resources or anywhere else.
+        # This keeps paths correct whether the HTML is in web_resources or anywhere else.
         graphs_dir = Path(output_dir) / f"{base_name}_graphs"
         graphs_dir.mkdir(exist_ok=True)
+        
+        # [NEW] Save full original page for later interactive re-cropping
+        import shutil
+        import json
+        full_page_name = f"full_p{page_num + 1}.png"
+        full_page_path = graphs_dir / full_page_name
+        if not full_page_path.exists():
+            shutil.copy(image_path, full_page_path)
+        
+        crop_meta_path = graphs_dir / "crop_meta.json"
+        
+        # Load existing meta to append (since it processes page by page)
+        meta_data = {}
+        if crop_meta_path.exists():
+            try:
+                with open(crop_meta_path, 'r', encoding='utf-8') as f:
+                    meta_data = json.load(f)
+            except: pass
         
         # 2. Open Source Image
         with Image.open(image_path) as img:
@@ -224,6 +243,16 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     save_path = graphs_dir / graph_filename
                     crop.save(save_path)
                     
+                    # Store crop metadata for Interactive Review UI
+                    meta_data[graph_filename] = {
+                        "full_image": full_page_name,
+                        "box_abs": [xmin, ymin, xmax, ymax],
+                        "page_width": width,
+                        "page_height": height,
+                        "story": story,
+                        "type": img_type
+                    }
+                    
                     # 6. Build relative src path (relative to the HTML file's location)
                     # graphs_dir is a sibling of the HTML, so just use folder/filename
                     rel_src = f"{base_name}_graphs/{graph_filename}"
@@ -253,6 +282,10 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     # Remove token on error to clean up
                     html_content = html_content.replace(match.group(0), "")
                     
+            # Save updated meta
+            with open(crop_meta_path, 'w', encoding='utf-8') as mf:
+                json.dump(meta_data, mf, indent=2)
+                
     except Exception as e:
         pass
         
