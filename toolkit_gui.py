@@ -238,6 +238,44 @@ class ToolkitGUI:
         )
         self.txt_log.tag_bind("link", "<Button-1>", self._on_log_click)
 
+        # [NEW] Auto-detect Poppler (Portable or Home dir)
+        self._auto_detect_poppler()
+
+    def _auto_detect_poppler(self):
+        """Try to find poppler in known locations if not configured."""
+        if self.config.get("poppler_path") and os.path.isdir(self.config.get("poppler_path")):
+            return
+
+        # 1. Check local mosh_helpers folder next to EXE (Portable Mode)
+        try:
+            # sys.executable is the .exe path in PyInstaller
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            local_path = os.path.join(exe_dir, "mosh_helpers", "poppler", "bin")
+            # Fallback for nested mosh_helpers/poppler/poppler-xx/bin
+            if not os.path.isdir(local_path):
+                found = list(Path(exe_dir).glob("mosh_helpers/poppler/**/bin"))
+                if found: local_path = str(found[0])
+
+            if os.path.isdir(local_path):
+                self._update_config(poppler_path=local_path)
+                self.gui_handler.log(f"   \u2705 [System] Detected portable Poppler at: {local_path}")
+                return
+        except: pass
+
+        # 2. Check Home directory mosh_helpers (Default)
+        try:
+            home_path = os.path.join(os.path.expanduser("~"), "mosh_helpers", "poppler")
+            bin_folders = list(Path(home_path).glob("**/bin"))
+            if not bin_folders:
+                # Check legacy hidden folder .mosh_helpers
+                home_path = os.path.join(os.path.expanduser("~"), ".mosh_helpers", "poppler")
+                bin_folders = list(Path(home_path).glob("**/bin"))
+                
+            if bin_folders:
+                self._update_config(poppler_path=str(bin_folders[0]))
+                self.gui_handler.log(f"   \u2705 [System] Detected Poppler in home directory.")
+        except: pass
+
     def _load_config(self):
         try:
             if os.path.exists(CONFIG_FILE):
@@ -2887,13 +2925,13 @@ h1 {{ color: #4b3190; }}
                 # AI buttons row (separate from label to prevent cutoff)
                 ai_row = tk.Frame(af, bg="white")
                 ai_row.pack(fill="x", pady=(3, 0))
-                tk.Button(ai_row, text="🤖 AI Describe", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", cursor="hand2", padx=8).pack(side="left", padx=(0, 5))
-                tk.Button(ai_row, text="📄 Long Description", command=lambda g=gn, w=ae: threading.Thread(target=lambda: generate_long_description(g, w), daemon=True).start(), font=("Segoe UI", 8), bg="#e8f5e9", fg="#2e7d32", cursor="hand2", padx=8).pack(side="left")
+                tk.Button(ai_row, text="\U0001f916 AI Describe", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", activebackground="#bbdefb", activeforeground="#0d47a1", relief="flat", borderwidth=0, cursor="hand2", padx=8).pack(side="left", padx=(0, 5))
+                tk.Button(ai_row, text="\U0001f4c4 Long Description", command=lambda g=gn, w=ae: threading.Thread(target=lambda: generate_long_description(g, w), daemon=True).start(), font=("Segoe UI", 8), bg="#e8f5e9", fg="#2e7d32", activebackground="#c8e6c9", activeforeground="#1b5e20", relief="flat", borderwidth=0, cursor="hand2", padx=8).pack(side="left")
 
                 # Nudge + Reset row
                 nf = tk.LabelFrame(right, text="Adjust Crop", bg="white", font=("Segoe UI", 8))
                 nf.pack(fill="x", pady=3)
-                bs = {"font": ("Segoe UI", 9), "bg": "#e8f0fe", "cursor": "hand2", "width": 12}
+                bs = {"font": ("Segoe UI", 9), "bg": "#e8f0fe", "cursor": "hand2", "width": 12, "activebackground": "#d0e0fd", "activeforeground": "#333", "relief": "flat", "borderwidth": 0}
                 r1 = tk.Frame(nf, bg="white")
                 r1.pack()
                 tk.Button(r1, text="⬆ Top +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "up", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
@@ -2904,18 +2942,18 @@ h1 {{ color: #4b3190; }}
                 tk.Button(r2, text="➡ Right +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "right", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
                 r3 = tk.Frame(nf, bg="white")
                 r3.pack()
-                tk.Button(r3, text="↩ Reset to Original", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: reset_crop(g, i, p, l, d), font=("Segoe UI", 9), bg="#fff3e0", fg="#e65100", cursor="hand2", width=26).pack(padx=2, pady=1)
+                tk.Button(r3, text="\u21a9 Reset to Original", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: reset_crop(g, i, p, l, d), font=("Segoe UI", 9), bg="#fff3e0", fg="#e65100", activebackground="#ffe0b2", activeforeground="#bf360c", relief="flat", borderwidth=0, cursor="hand2", width=26).pack(padx=2, pady=1)
 
                 # Action row
                 act_row = tk.Frame(right, bg="white")
                 act_row.pack(fill="x", pady=3)
-                tk.Button(act_row, text="🗑 Delete", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2", padx=10).pack(side="left", padx=(0, 5))
+                tk.Button(act_row, text="\U0001f5d1 Delete", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", activebackground="#fecaca", activeforeground="#991b1b", relief="flat", borderwidth=0, cursor="hand2", padx=10).pack(side="left", padx=(0, 5))
 
                 def mark_decorative(g=gn, w=ae, i=info):
                     w.delete("1.0", "end")
                     i["decorative"] = True
                     self.gui_handler.log(f"   [DECORATIVE] {g} marked as decorative (alt=\"\")")
-                tk.Button(act_row, text="🎨 Decorative", command=mark_decorative, font=("Segoe UI", 9), bg="#f3e5f5", fg="#7b1fa2", cursor="hand2", padx=10).pack(side="left")
+                tk.Button(act_row, text="\U0001f3a8 Decorative", command=mark_decorative, font=("Segoe UI", 9), bg="#f3e5f5", fg="#7b1fa2", activebackground="#e1bee7", activeforeground="#4a148c", relief="flat", borderwidth=0, cursor="hand2", padx=10).pack(side="left")
 
             for gn, info in list(meta.items()):
                 build_card(gn, info, inner)
@@ -3108,8 +3146,8 @@ h1 {{ color: #4b3190; }}
 
             dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
-            tk.Button(btn_bar, text="Looks Good \u2014 Save & Upload", command=on_approve, font=("Segoe UI", 13, "bold"), bg="#4CAF50", fg="white", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
-            tk.Button(btn_bar, text="Skip This Page", command=on_cancel, font=("Segoe UI", 13), bg="#ffcdd2", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
+            tk.Button(btn_bar, text="Looks Good \u2014 Save & Upload", command=on_approve, font=("Segoe UI", 13, "bold"), bg="#4CAF50", fg="white", activebackground="#388E3C", activeforeground="white", relief="flat", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
+            tk.Button(btn_bar, text="Skip This Page", command=on_cancel, font=("Segoe UI", 13), bg="#ffcdd2", fg="#333", activebackground="#ef9a9a", activeforeground="#333", relief="flat", cursor="hand2", padx=25, pady=10).pack(side="right", padx=5)
 
         self.root.after(0, build_dialog)
         event.wait()
@@ -3734,13 +3772,21 @@ Website: meri-becomming-code.github.io/mosh
         This tool helps you fix your Canvas classes so everyone can read them.
 
         HERE IS WHAT YOU DO:
-        1.  START: Click 'CONNECT & SETUP' on the left side of the screen.
-        2.  LOAD: Put your Canvas course file (.imscc) in box #4.
-        3.  FIX: Click 'CANVAS REMEDIATION' and press the buttons.
-        4.  DONE: Put the fixed file back into Canvas.
+        1.  CONNECT: Click 'CONNECT & SETUP' and enter your Canvas + Gemini details.
+
+        2.  MATH FIRST! If your course has math, graphs, or equations:
+              • Click 'MATH CONVERSION' in the sidebar BEFORE anything else.
+              • Run the math converter on your PDF/DOCX files first.
+              • Review each page's visual elements when prompted.
+              → If you skip this and use regular bulk conversion on math files,
+                weird things will happen! Math needs the math tool.
+
+        3.  LOAD: Put your Canvas course file (.imscc) in box #4.
+        4.  FIX: Click 'CANVAS REMEDIATION' and press the buttons.
+        5.  DONE: Put the fixed file back into Canvas.
 
         EASY PEASY! 🍋
-        
+
         NEED HELP?
         If you get stuck, just ask Mosh! (Or email Meredith)
         """
@@ -5778,7 +5824,8 @@ YOUR WORKFLOW:
                     self.root.after(0, lambda: lbl_status.config(text=msg))
 
                 update_status("Preparing folders...")
-                helper_dir = Path.home() / ".mosh_helpers"
+                # Use visible 'mosh_helpers' in home dir
+                helper_dir = Path.home() / "mosh_helpers"
                 helper_dir.mkdir(exist_ok=True)
                 zip_path = helper_dir / "poppler.zip"
                 extract_path = helper_dir / "poppler"
@@ -6024,6 +6071,8 @@ YOUR WORKFLOW:
                 return
 
             self.mirror_active = True
+            self.config["mirror_active"] = True
+            self._save_config_simple()
             self.btn_mirror_toggle.config(text="🟢 MIRROR MODE: ON", bg="#D1FAE5")
             self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
             self.gui_handler.log("🚀 [Mirror] ACTIVE. Watching project for saves...")
@@ -6040,6 +6089,8 @@ YOUR WORKFLOW:
         else:
             # STOP
             self.mirror_active = False
+            self.config["mirror_active"] = False
+            self._save_config_simple()
             self.btn_mirror_toggle.config(text="🔴 MIRROR MODE: OFF", bg="#f3f4f6")
             self.lbl_mirror_status.config(text="Idle", fg="gray")
             self.gui_handler.log("🛑 [Mirror] Deactivated.")
