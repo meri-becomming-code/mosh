@@ -2479,9 +2479,11 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             hdr = tk.Frame(dialog, bg="#1a1a2e")
             hdr.pack(fill="x", padx=20, pady=(15, 0))
-            tk.Label(hdr, text="Visual Element Review", font=("Segoe UI", 18, "bold"), bg="#1a1a2e", fg="white").pack(side="left")
-            tk.Label(hdr, text=f"{total_items} images found", font=("Segoe UI", 11), bg="#1a1a2e", fg="#4fc3f7").pack(side="left", padx=15)
-            tk.Label(hdr, text="Click and drag on the page to redefine crops. Use buttons to nudge 50px.", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(side="left", padx=10)
+            hdr_top = tk.Frame(hdr, bg="#1a1a2e")
+            hdr_top.pack(fill="x")
+            tk.Label(hdr_top, text="Visual Element Review", font=("Segoe UI", 18, "bold"), bg="#1a1a2e", fg="white").pack(side="left")
+            tk.Label(hdr_top, text=f"{total_items} image(s) found", font=("Segoe UI", 11), bg="#1a1a2e", fg="#4fc3f7").pack(side="left", padx=15)
+            tk.Label(hdr, text="Drag on the page preview to redefine crops  |  Use +/- buttons to nudge 50px  |  Type dropdown to reclassify", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(anchor="w", pady=(3, 0))
 
             outer = ttk.Frame(dialog)
             outer.pack(fill="both", expand=True, padx=15, pady=10)
@@ -2869,13 +2871,11 @@ h1 {{ color: #4b3190; }}
                 dim_lbl = tk.Label(cf2, text=f"Size: {crop_w} x {crop_h} px{warn_str}", font=("Segoe UI", 8), bg="white", fg=dim_color)
                 dim_lbl.pack(anchor="w")
 
-                # Description row with AI button
+                # Description row
                 af = tk.Frame(right, bg="white")
                 af.pack(fill="x", pady=3)
-                alt_hdr = tk.Frame(af, bg="white")
-                alt_hdr.pack(fill="x")
-                tk.Label(alt_hdr, text="Description for Blind Students:", font=("Segoe UI", 9, "bold"), bg="white").pack(side="left")
-                tk.Label(af, text="(This will be read aloud by screen readers)", font=("Segoe UI", 8, "italic"), bg="white", fg="#888").pack(anchor="w")
+                tk.Label(af, text="Description for Blind Students:", font=("Segoe UI", 9, "bold"), bg="white").pack(anchor="w")
+                tk.Label(af, text="(Read aloud by screen readers)", font=("Segoe UI", 8, "italic"), bg="white", fg="#888").pack(anchor="w")
                 ae = tk.Text(af, height=2, width=45, font=("Segoe UI", 9), wrap="word")
                 sv = info.get("story", "")
                 ae.insert("1.0", sv if sv.lower() != "none" else "")
@@ -2884,36 +2884,38 @@ h1 {{ color: #4b3190; }}
                 alt_widgets_map[gn] = ae
                 ae_placeholder[0] = ae  # Link back for type dropdown
 
-                # AI Describe + Long Description buttons
-                tk.Button(alt_hdr, text="AI Describe This", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", cursor="hand2").pack(side="right", padx=3)
-                tk.Button(alt_hdr, text="Long Description Page", command=lambda g=gn, w=ae: threading.Thread(target=lambda: generate_long_description(g, w), daemon=True).start(), font=("Segoe UI", 8), bg="#e8f5e9", fg="#2e7d32", cursor="hand2").pack(side="right", padx=3)
+                # AI buttons row (separate from label to prevent cutoff)
+                ai_row = tk.Frame(af, bg="white")
+                ai_row.pack(fill="x", pady=(3, 0))
+                tk.Button(ai_row, text="🤖 AI Describe", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", cursor="hand2", padx=8).pack(side="left", padx=(0, 5))
+                tk.Button(ai_row, text="📄 Long Description", command=lambda g=gn, w=ae: threading.Thread(target=lambda: generate_long_description(g, w), daemon=True).start(), font=("Segoe UI", 8), bg="#e8f5e9", fg="#2e7d32", cursor="hand2", padx=8).pack(side="left")
 
                 # Nudge + Reset row
-                nf = tk.LabelFrame(right, text="Fine-Tune Crop (+/- 50px)", bg="white", font=("Segoe UI", 8))
+                nf = tk.LabelFrame(right, text="Adjust Crop", bg="white", font=("Segoe UI", 8))
                 nf.pack(fill="x", pady=3)
-                bs = {"font": ("Segoe UI", 9), "bg": "#e8f0fe", "cursor": "hand2", "width": 10}
+                bs = {"font": ("Segoe UI", 9), "bg": "#e8f0fe", "cursor": "hand2", "width": 12}
                 r1 = tk.Frame(nf, bg="white")
                 r1.pack()
-                tk.Button(r1, text="+ Top", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "up", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
-                tk.Button(r1, text="+ Bottom", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "down", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r1, text="⬆ Top +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "up", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r1, text="⬇ Bottom +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "down", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
                 r2 = tk.Frame(nf, bg="white")
                 r2.pack()
-                tk.Button(r2, text="+ Left", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "left", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
-                tk.Button(r2, text="+ Right", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "right", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r2, text="⬅ Left +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "left", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r2, text="➡ Right +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "right", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
                 r3 = tk.Frame(nf, bg="white")
                 r3.pack()
-                tk.Button(r3, text="Reset to Original", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: reset_crop(g, i, p, l, d), font=("Segoe UI", 9), bg="#fff3e0", fg="#e65100", cursor="hand2", width=22).pack(padx=2, pady=1)
+                tk.Button(r3, text="↩ Reset to Original", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: reset_crop(g, i, p, l, d), font=("Segoe UI", 9), bg="#fff3e0", fg="#e65100", cursor="hand2", width=26).pack(padx=2, pady=1)
 
-                # Delete + Decorative + action row
+                # Action row
                 act_row = tk.Frame(right, bg="white")
                 act_row.pack(fill="x", pady=3)
-                tk.Button(act_row, text="Delete This Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2").pack(side="left", padx=(0, 5))
+                tk.Button(act_row, text="🗑 Delete", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", cursor="hand2", padx=10).pack(side="left", padx=(0, 5))
 
                 def mark_decorative(g=gn, w=ae, i=info):
                     w.delete("1.0", "end")
                     i["decorative"] = True
                     self.gui_handler.log(f"   [DECORATIVE] {g} marked as decorative (alt=\"\")")
-                tk.Button(act_row, text="Mark as Decorative", command=mark_decorative, font=("Segoe UI", 9), bg="#f3e5f5", fg="#7b1fa2", cursor="hand2").pack(side="left")
+                tk.Button(act_row, text="🎨 Decorative", command=mark_decorative, font=("Segoe UI", 9), bg="#f3e5f5", fg="#7b1fa2", cursor="hand2", padx=10).pack(side="left")
 
             for gn, info in list(meta.items()):
                 build_card(gn, info, inner)
