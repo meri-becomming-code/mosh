@@ -2579,8 +2579,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 """Use Gemini to describe just this cropped image."""
                 api_key = self.config.get("api_key", "").strip()
                 if not api_key:
-                    ae_widget.delete("1.0", "end")
-                    ae_widget.insert("1.0", "[No API key configured]")
+                    self.root.after(0, lambda: [ae_widget.delete("1.0", "end"), ae_widget.insert("1.0", "[No API key configured]")])
                     return
                 cp = os.path.join(graphs_dir, gn)
                 if not os.path.exists(cp):
@@ -2599,12 +2598,19 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         ]
                     )
                     desc = response.text.strip() if response.text else "[No description generated]"
-                    ae_widget.delete("1.0", "end")
-                    ae_widget.insert("1.0", desc)
+                    def update_widget(d=desc):
+                        ae_widget.delete("1.0", "end")
+                        ae_widget.insert("1.0", d)
+                    self.root.after(0, update_widget)
                     self.gui_handler.log(f"   [AI-ALT] Generated description for {gn}")
                 except Exception as err:
-                    ae_widget.delete("1.0", "end")
-                    ae_widget.insert("1.0", f"[Error: {err}]")
+                    def show_err(e=str(err)):
+                        ae_widget.delete("1.0", "end")
+                        ae_widget.insert("1.0", f"[Error: {e}]")
+                    self.root.after(0, show_err)
+
+            # Track alt widgets for auto-describe
+            alt_widgets_map = {}
 
             def del_item(gn, cf):
                 try:
@@ -2722,6 +2728,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 ae.insert("1.0", sv if sv.lower() != "none" else "")
                 ae.pack(fill="x")
                 info["_alt_widget"] = ae
+                alt_widgets_map[gn] = ae
 
                 # AI Describe button
                 tk.Button(alt_hdr, text="AI Describe This", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", cursor="hand2").pack(side="right", padx=3)
@@ -2755,6 +2762,26 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             for gn, info in list(meta.items()):
                 build_card(gn, info, inner)
+
+            # [NEW] Auto-describe all crops in background thread
+            def auto_describe_all():
+                api_key = self.config.get("api_key", "").strip()
+                if not api_key:
+                    self.gui_handler.log("   [AI-ALT] Skipping auto-describe (no API key)")
+                    return
+                self.gui_handler.log(f"   [AI-ALT] Auto-generating descriptions for {len(alt_widgets_map)} images...")
+                for gn, widget in alt_widgets_map.items():
+                    # Skip if user already typed something meaningful
+                    current = ""
+                    try:
+                        current = widget.get("1.0", "end").strip()
+                    except: pass
+                    if current and current.lower() != "none" and len(current) > 10:
+                        continue  # User or AI already provided a good description
+                    ai_describe(gn, widget)
+                self.gui_handler.log("   [AI-ALT] Auto-describe complete!")
+
+            threading.Thread(target=auto_describe_all, daemon=True).start()
 
             add_frame = tk.LabelFrame(inner, text="Add Missing Element", bg="white", font=("Segoe UI", 10, "bold"), fg="#2c3e50")
             add_frame.pack(fill="x", padx=10, pady=10)
