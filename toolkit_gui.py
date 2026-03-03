@@ -3606,8 +3606,6 @@ Website: meri-becomming-code.github.io/mosh
         self.lbl_status_text.config(text=f"Running {task_name}...", fg="blue")
         self._disable_buttons()
 
-        self.gui_handler.log(f"DEBUG: Preparing thread for {task_name}...")
-
         # Check if handler exists (Safety for early calls)
         if not hasattr(self, "gui_handler"):
             print("CRITICAL: GUI Handler missing!")
@@ -3625,13 +3623,8 @@ Website: meri-becomming-code.github.io/mosh
                     pass
 
             try:
-                print(f"DEBUG: Thread {task_name} started execution.")  # Console backup
-                self.gui_handler.log(f"DEBUG: Thread {task_name} started execution.")
                 self.gui_handler.log(f"\n--- Started: {task_name} ---")
                 task_func()
-                self.gui_handler.log(
-                    f"DEBUG: Thread {task_name} finished successfully."
-                )
             except BaseException as e:
                 import traceback
 
@@ -3660,9 +3653,7 @@ Website: meri-becomming-code.github.io/mosh
                 self.root.after(0, self._enable_buttons)
 
         thread = threading.Thread(target=worker, daemon=True)
-        self.gui_handler.log(f"DEBUG: Starting thread {task_name}...")
         thread.start()
-        self.gui_handler.log(f"DEBUG: Thread {task_name} start() called.")
 
     def _get_all_html_files(self):
         """Standardized helper to find all HTML files in the target directory (Optimized)."""
@@ -5517,7 +5508,6 @@ YOUR WORKFLOW:
 
     def _convert_math_canvas_export(self):
         """Processes an entire IMSCC course package for math content."""
-        self.gui_handler.log("DEBUG: _convert_math_canvas_export triggered")
         api_key = self.config.get("api_key", "").strip()
         if not api_key:
             self.gui_handler.log("ERROR: No Gemini API Key found.")
@@ -5527,8 +5517,6 @@ YOUR WORKFLOW:
             )
             return
 
-        self.gui_handler.log(f"DEBUG: API Key OK. Checking project: {self.target_dir}")
-
         if not self.target_dir or not os.path.exists(self.target_dir):
             self.gui_handler.log("ERROR: No project loaded.")
             messagebox.showwarning(
@@ -5537,33 +5525,25 @@ YOUR WORKFLOW:
             )
             return
 
-        self.gui_handler.log("DEBUG: Project OK. Checking Poppler...")
-
         # Poppler check: Don't restrict to just Windows (nt) anymore
         import shutil
 
         has_poppler = self.config.get("poppler_path") or shutil.which("pdftoppm")
         if not has_poppler:
-            self.gui_handler.log("DEBUG: Poppler not found. Prompting user.")
             if messagebox.askyesno(
                 "Setup Helper Needed",
                 "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nRun 'Auto-Setup' in the 'CONNECT & SETUP' view?",
             ):
                 self._switch_view("setup")
             else:
-                self.gui_handler.log("DEBUG: User declined Poppler setup.")
+                pass
             return
-
-        self.gui_handler.log("DEBUG: Poppler OK. Requesting confirmation...")
 
         if not messagebox.askyesno(
             "Confirm",
             "This will convert ALL math in your project using AI.\n\nIt may take a while. Continue?",
         ):
-            self.gui_handler.log("DEBUG: User cancelled or closed confirmation dialog.")
             return
-
-        self.gui_handler.log("DEBUG: Confirmed. Starting background task...")
 
         def task():
             import math_converter
@@ -5700,10 +5680,8 @@ YOUR WORKFLOW:
                     ),
                 )
 
-        self.gui_handler.log("DEBUG: Task defined. Attempting to launch thread...")
         try:
             self._run_task_in_thread(task, "Bulk Math Conversion")
-            self.gui_handler.log("DEBUG: Thread launch command issued.")
         except Exception as e:
             import traceback
 
@@ -5717,8 +5695,6 @@ YOUR WORKFLOW:
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
         try:
-            self.gui_handler.log(f"[DEBUG] Math button clicked for type: {file_type}")
-
             # Check if busy
             if self.is_running:
                 messagebox.showwarning(
@@ -5776,7 +5752,6 @@ YOUR WORKFLOW:
                 return
 
             if not file_path:
-                self.gui_handler.log("[DEBUG] No file selected (cancelled).")
                 return
 
             def task():
