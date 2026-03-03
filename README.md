@@ -1,6 +1,8 @@
 # MOSH ADA Toolkit 🤖♿
 **"Making Online Spaces Helpful" — The Intelligent Accessibility Suite for Educators**
 
+> 🧪 **Pre-Release / Release Candidate** — Currently in institutional testing at McHenry County College. Feedback welcome! Full public launch planned for April 2026.
+
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Website](https://img.shields.io/badge/Website-Live-green.svg)](https://meri-becomming-code.github.io/mosh/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
