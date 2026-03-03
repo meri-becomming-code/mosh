@@ -4,6 +4,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Website](https://img.shields.io/badge/Website-Live-green.svg)](https://meri-becomming-code.github.io/mosh/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![YouTube](https://img.shields.io/badge/YouTube-Tutorial%20Videos-red.svg)](https://www.youtube.com/@mccmeri)
 
 MOSH is a mission-driven, professional-grade accessibility suite designed to solve the massive "remediation gap" facing K-12 and Higher Education as the **April 2026 ADA compliance deadline** approaches. Unlike generic tools, MOSH is a specialized engine that understands the nuances of Canvas LMS exports, complex math notation, and semantic document structure.
 
@@ -43,8 +44,9 @@ I believe that accessibility is a foundational human right. This tool is release
 
 ## 🏁 Getting Started
 1. **Visit our [Live Site](https://meri-becomming-code.github.io/mosh/)** to see the vision.
-2. Download the latest `MOSH_ADA_Toolkit_RCxx.exe` from the [Releases](https://github.com/meri-becomming-code/mosh/releases) page.
-3. **No Setup required**: Use the *Auto-Setup* button in the app to grab everything you need in one click.
+2. **Watch the [Tutorial Video Series](https://www.youtube.com/@mccmeri)** on YouTube for a full walkthrough.
+3. Download the latest `MOSH_ADA_Toolkit_RCxx.exe` from the [Releases](https://github.com/meri-becomming-code/mosh/releases) page.
+4. **No Setup required**: Use the *Auto-Setup* button in the app to grab everything you need in one click.
 
 ## ⚖️ License
 Released under the **GNU General Public License v3.0**. Built with love, AI, and a commitment to inclusive education.
