@@ -62,6 +62,26 @@ from gui.handler import ThreadSafeGuiHandler
 from gui.components.tooltips import ToolTip
 
 
+def open_file_or_folder(path):
+    """
+    Cross-platform helper to open a file or folder in the system default application.
+    Works on Windows, macOS, and Linux.
+    """
+    import subprocess
+    import platform
+    
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(path)
+        elif system == "Darwin":  # macOS
+            subprocess.Popen(["open", path])
+        else:  # Linux and others
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:
+        print(f"[Warning] Could not open path: {path} - {e}")
+
+
 # Colors
 # --- Themes ---
 THEMES = {
@@ -177,7 +197,7 @@ class ToolkitGUI:
                 self._update_config(poppler_path=local_path)
                 self.gui_handler.log(f"   \u2705 [System] Detected portable Poppler at: {local_path}")
                 return
-        except Exception: pass
+        except: pass
 
         # 2. Check Home directory mosh_helpers (Default)
         try:
@@ -191,14 +211,14 @@ class ToolkitGUI:
             if bin_folders:
                 self._update_config(poppler_path=str(bin_folders[0]))
                 self.gui_handler.log(f"   \u2705 [System] Detected Poppler in home directory.")
-        except Exception: pass
+        except: pass
 
     def _load_config(self):
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, "r") as f:
                     return json.load(f)
-        except Exception:
+        except:
             pass
         return {
             "show_instructions": True,
@@ -581,7 +601,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 "<Button-1>", lambda e: self._switch_view("dashboard")
             )
             ToolTip(self.lbl_mosh_icon, "Back to Home Dashboard")
-        except Exception:
+        except:
             pass
 
         lbl_logo = ttk.Label(
@@ -943,7 +963,12 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             if not url or not token or not cid:
                 messagebox.showwarning(
-                    "Incomplete", "Please fill out Canvas settings (Step 1)."
+                    "Missing Information", 
+                    "Please complete all Canvas settings:\n\n"
+                    "• Canvas URL (e.g., https://your-school.instructure.com)\n"
+                    "• Access Token (from Canvas Account Settings)\n"
+                    "• Course ID (the number in your course URL)\n\n"
+                    "Need help? Click the '?' icons next to each field."
                 )
                 return
 
@@ -1037,7 +1062,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 )
             else:
                 self.lbl_ai_status.config(text="❌ Invalid Key", fg="red")
-                messagebox.showerror("Key Error", f"Validation Failed:\n\n{msg}")
+                messagebox.showerror(
+                    "API Key Problem", 
+                    f"Could not validate your Google AI key:\n\n{msg}\n\n"
+                    "Common fixes:\n"
+                    "• Make sure you copied the ENTIRE key\n"
+                    "• Check if the key has expired in Google AI Studio\n"
+                    "• Verify your internet connection\n\n"
+                    "Click 'Get Key' to create a new one."
+                )
 
         tk.Button(
             btn_ai_frame,
@@ -1825,6 +1858,17 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 self.root.after(0, lambda: self._finalize_import(extract_to))
             else:
                 self.gui_handler.log(f"[ERROR] Import Failed: {msg}")
+                def show_import_error():
+                    messagebox.showerror(
+                        "Import Failed",
+                        f"Could not extract the course package:\n\n{msg}\n\n"
+                        "Possible causes:\n"
+                        "• The .imscc file may be corrupted\n"
+                        "• Not enough disk space\n"
+                        "• File permissions issue\n\n"
+                        "Try downloading the course export again from Canvas."
+                    )
+                self.root.after(0, show_import_error)
                 self.root.after(
                     0,
                     lambda: messagebox.showerror(
@@ -1855,7 +1899,14 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # Check target dir first
         self.target_dir = self.lbl_dir.get().strip()
         if not os.path.isdir(self.target_dir):
-            messagebox.showerror("Error", "Please select a valid project folder first.")
+            messagebox.showerror(
+                "No Project Loaded", 
+                "Please load a project folder first.\n\n"
+                "How to load a project:\n"
+                "1. Go to 'Connect & Setup'\n"
+                "2. Click 'Browse...' to select your folder\n"
+                "   OR drag-drop an .imscc file to import from Canvas"
+            )
             return
 
         # Default Name: folder_name_remediated.imscc
@@ -1899,6 +1950,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         self._run_task_in_thread(task, "Course Packaging")
 
+    # [FIX] Maximum log lines to prevent unbounded memory growth
+    MAX_LOG_LINES = 5000
+
     def _log(self, msg):
         self.txt_log.configure(state="normal")
 
@@ -1930,6 +1984,12 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 tag_end = f"{line_no}.{m_end}"
                 self.txt_log.tag_add("link", tag_start, tag_end)
 
+        # [FIX] Trim old lines to prevent unbounded memory growth
+        total_lines = int(self.txt_log.index("end-1c").split(".")[0])
+        if total_lines > self.MAX_LOG_LINES:
+            lines_to_delete = total_lines - self.MAX_LOG_LINES
+            self.txt_log.delete("1.0", f"{lines_to_delete}.0")
+
         self.txt_log.see(tk.END)
         self.txt_log.configure(state="disabled")
 
@@ -1960,9 +2020,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             if os.path.exists(path_val):
                 if path_val.lower().endswith(".html"):
-                    webbrowser.open(f"file:///{os.path.abspath(path_val)}")
+                    webbrowser.open(Path(path_val).as_uri())
                 else:
-                    os.startfile(
+                    open_file_or_folder(
                         os.path.dirname(path_val)
                         if os.path.isfile(path_val)
                         else path_val
@@ -2238,7 +2298,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             )
             lbl_p.image = tk_p
             lbl_p.pack(pady=10)
-        except Exception:
+        except:
             pass
 
         def on_apply():
@@ -2253,23 +2313,6 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         btn_action = tk.Frame(editor_frame, bg=colors["bg"])
         btn_action.pack(fill="x")
-
-        tk.Button(
-            btn_action,
-            text="✨ APPLY TO PAGE",
-            command=on_apply,
-            bg="#dcedc8",
-            font=("bold"),
-            cursor="hand2",
-            width=25,
-        ).pack(side="right")
-        tk.Button(
-            btn_action,
-            text="❌ Cancel",
-            command=math_win.destroy,
-            bg="#ffcdd2",
-            cursor="hand2",
-        ).pack(side="left")
 
         tk.Button(
             btn_action,
@@ -2507,12 +2550,19 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
 
-        if not meta:
+        # [FIX] Pop up even if meta is empty, so long as we have full page PNGs 
+        # for manual selection (Feature 5: select things that were not selected)
+        fpages = [f for f in os.listdir(graphs_dir) if f.startswith("full_p") and f.endswith(".png")]
+        if not meta and not fpages:
             return True
 
         result = {"approved": False}
         event = threading.Event()
         full_pages_cache = {}
+        
+        # [FIX] Thread-safe lock for meta dictionary access
+        # Protects against race conditions between UI thread and auto_describe_all() thread
+        meta_lock = threading.Lock()
 
         def build_dialog():
             nonlocal full_pages_cache
@@ -2628,7 +2678,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 elif d == "left":  box[0] = max(0, box[0] - 50)
                 elif d == "right": box[2] = min(pw, box[2] + 50)
                 info["box_abs"] = box
-                meta[gn] = info
+                with meta_lock:
+                    meta[gn] = info
                 do_recrop(gn, info, pcv, lbl, dim_lbl)
 
             def reset_crop(gn, info, pcv, lbl, dim_lbl=None):
@@ -2636,7 +2687,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 orig = info.get("original_box")
                 if orig:
                     info["box_abs"] = list(orig)
-                    meta[gn] = info
+                    with meta_lock:
+                        meta[gn] = info
                     do_recrop(gn, info, pcv, lbl, dim_lbl)
 
             def ai_describe(gn, ae_widget):
@@ -2746,7 +2798,8 @@ h1 {{ color: #4b3190; }}
                     long_desc_pages[gn] = desc_filename
                     info_for_gn = meta.get(gn, {})
                     info_for_gn["long_desc"] = desc_filename
-                    meta[gn] = info_for_gn
+                    with meta_lock:
+                        meta[gn] = info_for_gn
 
                     # Update the short alt text to reference the long description
                     current_alt = ae_widget.get("1.0", "end").strip()
@@ -2792,7 +2845,8 @@ h1 {{ color: #4b3190; }}
                     if "<table" in table_html.lower():
                         info_for_gn = meta.get(gn, {})
                         info_for_gn["table_html"] = table_html
-                        meta[gn] = info_for_gn
+                        with meta_lock:
+                            meta[gn] = info_for_gn
                         def update_w():
                             ae_widget.delete("1.0", "end")
                             ae_widget.insert("1.0", "Data table (converted to accessible HTML table)")
@@ -2811,7 +2865,8 @@ h1 {{ color: #4b3190; }}
                 """Handle type dropdown change."""
                 new_type = combo.get()
                 info["type"] = new_type.lower()
-                meta[gn] = info
+                with meta_lock:
+                    meta[gn] = info
                 if new_type == "Decorative":
                     ae_widget.delete("1.0", "end")
                     info["decorative"] = True
@@ -2831,7 +2886,8 @@ h1 {{ color: #4b3190; }}
                     cp = os.path.join(graphs_dir, gn)
                     if os.path.exists(cp): os.remove(cp)
                     deleted_items.add(gn)
-                    if gn in meta: del meta[gn]
+                    with meta_lock:
+                        if gn in meta: del meta[gn]
                     cf.destroy()
                 except Exception as err:
                     self.gui_handler.log(f"   [DEL] Error: {err}")
@@ -2909,7 +2965,8 @@ h1 {{ color: #4b3190; }}
                         y2 = int(max(s["sy"], e.y) / sc)
                         if (x2 - x1) < 30 or (y2 - y1) < 30: return
                         i["box_abs"] = [x1, y1, x2, y2]
-                        meta[g] = i
+                        with meta_lock:
+                            meta[g] = i
                         do_recrop(g, i, pcv, lbl_c, dim_lbl)
 
                     pcv.bind("<ButtonPress-1>", press)
@@ -2955,7 +3012,7 @@ h1 {{ color: #4b3190; }}
                     # [NEW] Click-to-Zoom
                     lbl_c.bind("<Button-1>", lambda e, p=cp: self._show_zoom(dialog, p))
                     ToolTip(lbl_c, "Click to Zoom Full Size")
-                except Exception:
+                except:
                     lbl_c = tk.Label(cf2, text="[Error]", bg="white", fg="red")
                     lbl_c.pack()
                     crop_w, crop_h = 0, 0
@@ -3035,7 +3092,7 @@ h1 {{ color: #4b3190; }}
                     read_event = threading.Event()
                     def read_widget(w=widget, h=current_holder, ev=read_event):
                         try: h[0] = w.get("1.0", "end").strip()
-                        except Exception: pass
+                        except: pass
                         ev.set()
                     self.root.after(0, read_widget)
                     read_event.wait(timeout=2)
@@ -3127,21 +3184,32 @@ h1 {{ color: #4b3190; }}
             btn_bar.pack(fill="x", padx=15, pady=10)
 
             def on_approve():
-                for gn, info in meta.items():
+                # [FIX] Use lock when iterating over meta to prevent race conditions
+                with meta_lock:
+                    meta_snapshot = dict(meta)  # Take snapshot for safe iteration
+                
+                for gn, info in meta_snapshot.items():
                     w = info.pop("_alt_widget", None)
                     if w:
                         try: info["story"] = w.get("1.0", "end").strip()
-                        except Exception: pass
+                        except: pass
 
+                with meta_lock:
+                    # Update meta with final values before saving
+                    for gn, info in meta_snapshot.items():
+                        meta[gn] = info
+                
                 with open(meta_path, "w", encoding="utf-8") as mf:
-                    json.dump(meta, mf, indent=2)
+                    with meta_lock:
+                        json.dump(meta, mf, indent=2)
 
                 try:
                     from bs4 import BeautifulSoup
                     with open(html_path, "r", encoding="utf-8") as f:
                         soup = BeautifulSoup(f.read(), "html.parser")
 
-                    for gn, info in meta.items():
+                    # Use meta_snapshot for safe iteration (already captured above)
+                    for gn, info in meta_snapshot.items():
                         if info.get("decorative"):
                             for it in soup.find_all("img"):
                                 if gn in it.get("src", ""):
@@ -3155,7 +3223,7 @@ h1 {{ color: #4b3190; }}
                                     it["alt"] = at
 
                     cdiv = soup.find("div", class_="content-wrapper") or soup.find("body") or soup
-                    for gn, info in meta.items():
+                    for gn, info in meta_snapshot.items():
                         if "manual" in gn:
                             already = any(gn in (it.get("src", "") or "") for it in soup.find_all("img"))
                             if not already:
@@ -3175,7 +3243,7 @@ h1 {{ color: #4b3190; }}
 
                     # Inject long description links
                     bstem = Path(html_path).stem
-                    for gn, info in meta.items():
+                    for gn, info in meta_snapshot.items():
                         ld = info.get("long_desc")
                         if ld:
                             for dv in soup.find_all("div", class_="mosh-visual"):
@@ -3190,7 +3258,7 @@ h1 {{ color: #4b3190; }}
                                     dv.append(link_tag)
 
                     # Replace table images with actual HTML tables
-                    for gn, info in meta.items():
+                    for gn, info in meta_snapshot.items():
                         th = info.get("table_html")
                         if th:
                             for dv in soup.find_all("div", class_="mosh-visual"):
@@ -3214,12 +3282,18 @@ h1 {{ color: #4b3190; }}
 
                 result["approved"] = True
                 canvas_scroll.unbind_all("<MouseWheel>")
+                # [FIX] Memory cleanup - clear image references to prevent memory leak
+                tk_images.clear()
+                full_pages_cache.clear()
                 dialog.destroy()
                 event.set()
 
             def on_cancel():
                 result["approved"] = False
                 canvas_scroll.unbind_all("<MouseWheel>")
+                # [FIX] Memory cleanup - clear image references to prevent memory leak
+                tk_images.clear()
+                full_pages_cache.clear()
                 dialog.destroy()
                 event.set()
 
@@ -3548,7 +3622,7 @@ Website: meri-becomming-code.github.io/mosh
             if btn:
                 try:
                     btn.config(state="disabled")
-                except Exception:
+                except:
                     pass
 
         self.gui_handler.stop_requested = False
@@ -3578,7 +3652,7 @@ Website: meri-becomming-code.github.io/mosh
             if btn:
                 try:
                     btn.config(state="normal")
-                except Exception:
+                except:
                     pass
 
         # self.is_running = False # Managed by caller or thread
@@ -3606,6 +3680,8 @@ Website: meri-becomming-code.github.io/mosh
         self.lbl_status_text.config(text=f"Running {task_name}...", fg="blue")
         self._disable_buttons()
 
+        self.gui_handler.log(f"DEBUG: Preparing thread for {task_name}...")
+
         # Check if handler exists (Safety for early calls)
         if not hasattr(self, "gui_handler"):
             print("CRITICAL: GUI Handler missing!")
@@ -3619,12 +3695,17 @@ Website: meri-becomming-code.github.io/mosh
 
                     # ES_CONTINUOUS | ES_SYSTEM_REQUIRED (0x80000000 | 0x00000001)
                     ctypes.windll.kernel32.SetThreadExecutionState(0x80000001)
-                except Exception:
+                except:
                     pass
 
             try:
+                print(f"DEBUG: Thread {task_name} started execution.")  # Console backup
+                self.gui_handler.log(f"DEBUG: Thread {task_name} started execution.")
                 self.gui_handler.log(f"\n--- Started: {task_name} ---")
                 task_func()
+                self.gui_handler.log(
+                    f"DEBUG: Thread {task_name} finished successfully."
+                )
             except BaseException as e:
                 import traceback
 
@@ -3632,8 +3713,16 @@ Website: meri-becomming-code.github.io/mosh
                 print(f"CRITICAL THREAD ERROR: {e}\n{err_details}")
                 self.gui_handler.log(f"\n[CRITICAL ERROR] {task_name} Failed: {e}")
                 self.gui_handler.log(f"Details: {err_details}")
-                err_msg = f"Error in {task_name}:\n{str(e)}"
-                self.root.after(0, lambda: messagebox.showerror("Error", err_msg))
+                err_msg = (
+                    f"Something went wrong during {task_name}:\n\n"
+                    f"{str(e)}\n\n"
+                    "What to do:\n"
+                    "• Check the Activity Log below for details\n"
+                    "• Make sure all files are closed\n"
+                    "• Try running the task again\n\n"
+                    "If this keeps happening, please report the issue."
+                )
+                self.root.after(0, lambda: messagebox.showerror("Task Failed", err_msg))
             finally:
                 # [NEW] Restore Windows sleep state
                 if os.name == "nt":
@@ -3642,7 +3731,7 @@ Website: meri-becomming-code.github.io/mosh
 
                         # ES_CONTINUOUS (0x80000000)
                         ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
-                    except Exception:
+                    except:
                         pass
 
                 self.is_running = False
@@ -3653,7 +3742,9 @@ Website: meri-becomming-code.github.io/mosh
                 self.root.after(0, self._enable_buttons)
 
         thread = threading.Thread(target=worker, daemon=True)
+        self.gui_handler.log(f"DEBUG: Starting thread {task_name}...")
         thread.start()
+        self.gui_handler.log(f"DEBUG: Thread {task_name} start() called.")
 
     def _get_all_html_files(self):
         """Standardized helper to find all HTML files in the target directory (Optimized)."""
@@ -4202,7 +4293,7 @@ YOUR WORKFLOW:
                 self.gui_handler.log(
                     "📂 Opening archive folder with your original files for safekeeping..."
                 )
-                os.startfile(archive_path)
+                open_file_or_folder(archive_path)
 
             messagebox.showinfo(
                 "Done",
@@ -4291,8 +4382,8 @@ YOUR WORKFLOW:
 
             # 2. Preview (Open both)
             try:
-                os.startfile(file_path)  # Open Original
-                os.startfile(output_path)  # Open New Page
+                open_file_or_folder(file_path)  # Open Original
+                open_file_or_folder(output_path)  # Open New Page
             except Exception as e:
                 self.gui_handler.log(f"   [WARNING] Could not auto-open files: {e}")
 
@@ -4307,7 +4398,7 @@ YOUR WORKFLOW:
                 try:
                     os.remove(output_path)
                     self.gui_handler.log("   Discarded.")
-                except Exception:
+                except:
                     pass
                 return
 
@@ -4688,7 +4779,7 @@ YOUR WORKFLOW:
                 self.gui_handler.log(
                     "📂 Opening archive folder with your original files for safekeeping..."
                 )
-                os.startfile(archive_path)
+                open_file_or_folder(archive_path)
 
             msg = (
                 f"Processed {len(found_files)} files.\nCheck the logs for details.\n\n"
@@ -4705,24 +4796,23 @@ YOUR WORKFLOW:
     # --- [NEW] Pre-Flight & Push Logic ---
 
     def _show_preflight_dialog(self):
-        """Displays a simple dashboard checking course readiness."""
+        """Displays a simple dashboard checking course readiness (Threaded & Interactive)."""
         dialog = Toplevel(self.root)
         dialog.title("🚦 Pre-Flight Check")
-        dialog.geometry("550x650")
+        dialog.geometry("550x700")
         dialog.transient(self.root)
         dialog.grab_set()
 
         colors = THEMES[self.config.get("theme", "light")]
         dialog.configure(bg=colors["bg"])
 
-        ttk.Label(dialog, text="🚦 Pre-Flight Check", style="Header.TLabel").pack(
-            pady=10
-        )
-        ttk.Label(
+        ttk.Label(dialog, text="🚦 Pre-Flight Check", style="Header.TLabel").pack(pady=10)
+        status_lbl = ttk.Label(
             dialog,
             text="Checking if your course is safe to upload...",
             font=("Segoe UI", 10),
-        ).pack(pady=5)
+        )
+        status_lbl.pack(pady=5)
 
         # Main container with scrollable results
         main_container = ttk.Frame(dialog)
@@ -4751,88 +4841,78 @@ YOUR WORKFLOW:
 
         checks = [
             ("Converted Files", self._check_source_files),
+            ("Math Visuals", self._check_math_visuals),
             ("Alt Text & Links", self._check_ada_issues),
             ("Document Links", self._check_and_repair_links),
             ("Canvas Connection", self._check_canvas_ready),
             ("Project Cleanup", self._check_janitor_needed),
         ]
 
-        ready_count = 0
-        for i, (label, check_func) in enumerate(checks):
-            passed, detail = check_func()
-            status_icon = "✅" if passed else "⚠️"
-            if passed:
-                ready_count += 1
+        # UI trackers for results
+        row_widgets = []
+        for i, (label, _) in enumerate(checks):
+            icon_lbl = ttk.Label(results_frame, text="⏳", font=("Segoe UI", 11, "bold"))
+            icon_lbl.grid(row=i, column=0, sticky="w", pady=5)
+            
+            ttk.Label(results_frame, text=label, font=("Segoe UI", 11, "bold")).grid(row=i, column=1, sticky="w", padx=5)
+            
+            detail_lbl = ttk.Label(results_frame, text="Waiting...", font=("Segoe UI", 9), wraplength=350)
+            detail_lbl.grid(row=i, column=2, sticky="w", padx=10)
+            
+            row_widgets.append((icon_lbl, detail_lbl))
 
-            ttk.Label(
-                results_frame,
-                text=f"{status_icon} {label}",
-                font=("Segoe UI", 11, "bold"),
-            ).grid(row=i, column=0, sticky="w", pady=5)
-            lbl_detail = ttk.Label(
-                results_frame, text=detail, font=("Segoe UI", 9), wraplength=400
-            )
-            lbl_detail.grid(row=i, column=1, sticky="w", padx=10)
-
-        # Fixed Footer for action buttons
+        # Footer
         footer = ttk.Frame(dialog, padding=10)
         footer.pack(side="bottom", fill="x")
-
-        # Final Score Header
+        
         score_header = ttk.Frame(footer)
-        score_header.pack(fill="x", pady=10)
-
-        if ready_count == len(checks):
-            msg = "🚀 YOU ARE CLEAR FOR TAKEOFF!"
-            color = "#2E7D32"  # Forest Green
-            advice = "Mosh: 'Great job! You've put in the work, now let's show Canvas how it's done.'"
-            push_text = "🚀 Send My Clean Course to Canvas Now"
-        else:
-            msg = "🛠️ Almost there! Some items need attention."
-            color = "#d4a017"  # Amber
-            advice = "Mosh: 'Remediation is tough, but you're doing great. I recommend fixing the issues above, but you're the pilot!'"
-            push_text = "🚀 Upload to Canvas Anyway (Not Recommended)"
-
-        tk.Label(
-            score_header,
-            text=msg,
-            font=("Segoe UI", 12, "bold"),
-            fg=color,
-            bg=colors["bg"],
-        ).pack()
-        tk.Label(
-            score_header,
-            text=advice,
-            font=("Segoe UI", 10, "italic"),
-            fg=colors.get("fg", "#212121"),
-            bg=colors["bg"],
-        ).pack(pady=5)
-
-        def on_upload():
-            dialog.destroy()
-            self._push_to_canvas()
-
-        # Primary Action Button
-        btn_push = ttk.Button(
-            footer,
-            text=push_text,
-            command=on_upload,
-            style="Action.TButton",
-            cursor="hand2",
-        )
+        score_header.pack(fill="x", pady=5)
+        
+        final_msg = tk.Label(score_header, text="Calculating readiness...", font=("Segoe UI", 11, "bold"), bg=colors["bg"])
+        final_msg.pack()
+        
+        btn_push = ttk.Button(footer, text="Please wait...", state="disabled", style="Action.TButton")
         btn_push.pack(side="left", padx=5)
 
-        # Explicit Upload Page Button
-        ttk.Button(
-            footer,
-            text="☁️ Direct Canvas Upload",
-            command=self._push_to_canvas,
-            cursor="hand2",
-        ).pack(side="left", padx=5)
+        ttk.Button(footer, text="Close", command=dialog.destroy).pack(side="right", padx=5)
 
-        ttk.Button(footer, text="Close", command=dialog.destroy, cursor="hand2").pack(
-            side="left", padx=5
-        )
+        def run_checks():
+            ready_count = 0
+            for i, (label, check_func) in enumerate(checks):
+                # Update detail to "Scanning..."
+                self.root.after(0, lambda idx=i: row_widgets[idx][1].config(text="Scanning..."))
+                
+                passed, detail = check_func()
+                
+                status_icon = "✅" if passed else "⚠️"
+                if passed:
+                    ready_count += 1
+                
+                # Captured UI update
+                def update_row(idx=i, icon=status_icon, det=detail):
+                    row_widgets[idx][0].config(text=icon)
+                    row_widgets[idx][1].config(text=det)
+                
+                self.root.after(0, update_row)
+
+            # Final Score Logic
+            def finish_ui():
+                if ready_count == len(checks):
+                    msg = "🚀 YOU ARE CLEAR FOR TAKEOFF!"
+                    color = "#2E7D32"
+                    push_text = "🚀 Send My Clean Course to Canvas Now"
+                else:
+                    msg = "🛠️ Almost there! Some items need attention."
+                    color = "#d4a017"
+                    push_text = "🚀 Upload to Canvas Anyway"
+                
+                final_msg.config(text=msg, fg=color)
+                btn_push.config(text=push_text, state="normal", command=lambda: [dialog.destroy(), self._push_to_canvas()])
+                status_lbl.config(text="Check complete.")
+            
+            self.root.after(0, finish_ui)
+
+        threading.Thread(target=run_checks, daemon=True).start()
 
     def _check_source_files(self):
         """Checks if there are still unconverted Word/PPT/PDFs."""
@@ -4892,6 +4972,41 @@ YOUR WORKFLOW:
             return True, f"Verified/Repaired {total_repaired} links for {doc_count} documents."
         return True, "No document links needed repair."
 
+    def _check_math_visuals(self):
+        """Scans for math-remediated folders and prompts for review."""
+        if not self.target_dir:
+            return True, "No project loaded."
+
+        found_folders = []
+        for root, dirs, files in os.walk(self.target_dir):
+            if root.endswith("_graphs") or "remediated_graphs" in root:
+                # Check if it has a corresponding HTML file
+                stem = os.path.basename(root).replace("_graphs", "").replace("remediated_graphs", "")
+                # Find html file in parent or peer
+                parent = os.path.dirname(root)
+                html_candidates = [
+                    os.path.join(parent, stem + ".html"),
+                    os.path.join(self.target_dir, stem + ".html")
+                ]
+                for h in html_candidates:
+                    if os.path.exists(h):
+                        found_folders.append((h, root))
+                        break
+        
+        if not found_folders:
+            return True, "No math documents needing visual review."
+            
+        reviewed_count = 0
+        for html_p, graphs_dir in found_folders:
+            # Trigger the Interactive Review via Thread-Safe Handler!
+            self.gui_handler.log(f"   [PRE-FLIGHT] Reviewing visual elements for {os.path.basename(html_p)}...")
+            # This call blocks this worker thread until the user approves or skips
+            approved = self.gui_handler.prompt_visual_review(html_p, graphs_dir)
+            if approved:
+                reviewed_count += 1
+                
+        return True, f"Verified visuals for {reviewed_count} documents."
+
     def _check_ada_issues(self):
         """Scans for remaining ADA markers like [FIX_ME] and runs Auto-Fixer one last time."""
         markers = 0
@@ -4903,12 +5018,16 @@ YOUR WORKFLOW:
                 if f.endswith(".html"):
                     html_files.append(os.path.join(root, f))
 
-        # Proactive: Run Auto-Fixer on everything before checking markers
+        # Proactive: Run BOTH Auto-Fixer AND Interactive Review before checking markers
         if html_files:
             import interactive_fixer
-
+            self.gui_handler.log("   [PRE-FLIGHT] Checking accessibility & image descriptions...")
             for fp in html_files:
+                # 1. Apply structural fixes (Heading levels, tables, etc.)
                 interactive_fixer.run_auto_fixer(fp, self.gui_handler)
+                
+                # 2. Interactive Image Review (Manual adjustment prompts)
+                interactive_fixer.scan_and_fix_file(fp, self.gui_handler, self.target_dir)
 
         # Now check for markers
         for fp in html_files:
@@ -4916,7 +5035,7 @@ YOUR WORKFLOW:
                 with open(fp, "r", encoding="utf-8", errors="ignore") as f_obj:
                     if "[FIX_ME]" in f_obj.read().upper():
                         markers += 1
-            except Exception:
+            except:
                 pass
 
         if markers == 0:
@@ -5158,7 +5277,7 @@ YOUR WORKFLOW:
                         detailed_log.append(
                             f"   [BROKEN LINK] {os.path.basename(fp)} -> {href}"
                         )
-            except Exception:
+            except:
                 pass
 
         self.gui_handler.log(f"✅ Audit Complete: Scanned {len(html_files)} pages.")
@@ -5292,6 +5411,9 @@ YOUR WORKFLOW:
                 elif rtype == "link":
                     # args were help_url, context
                     result = self._show_link_dialog(msg, arg1, arg2)
+                elif rtype == "visual_review":
+                    # arg1=html_path, arg2=graphs_dir
+                    result = self._show_visual_review(arg1, arg2)
 
                 self.gui_handler.input_response_queue.put(result)
         except queue.Empty:
@@ -5494,8 +5616,8 @@ YOUR WORKFLOW:
         if file_pairs:
             folder = os.path.dirname(file_pairs[0][1])
             try:
-                os.startfile(folder)
-            except Exception:
+                open_file_or_folder(folder)
+            except:
                 pass
 
             # [FIX] Explicit "Upload Needed" Warning for cloud-expecting users
@@ -5508,6 +5630,7 @@ YOUR WORKFLOW:
 
     def _convert_math_canvas_export(self):
         """Processes an entire IMSCC course package for math content."""
+        self.gui_handler.log("DEBUG: _convert_math_canvas_export triggered")
         api_key = self.config.get("api_key", "").strip()
         if not api_key:
             self.gui_handler.log("ERROR: No Gemini API Key found.")
@@ -5517,6 +5640,8 @@ YOUR WORKFLOW:
             )
             return
 
+        self.gui_handler.log(f"DEBUG: API Key OK. Checking project: {self.target_dir}")
+
         if not self.target_dir or not os.path.exists(self.target_dir):
             self.gui_handler.log("ERROR: No project loaded.")
             messagebox.showwarning(
@@ -5525,25 +5650,33 @@ YOUR WORKFLOW:
             )
             return
 
+        self.gui_handler.log("DEBUG: Project OK. Checking Poppler...")
+
         # Poppler check: Don't restrict to just Windows (nt) anymore
         import shutil
 
         has_poppler = self.config.get("poppler_path") or shutil.which("pdftoppm")
         if not has_poppler:
+            self.gui_handler.log("DEBUG: Poppler not found. Prompting user.")
             if messagebox.askyesno(
                 "Setup Helper Needed",
                 "MOSH needs a helper tool (Poppler) to read math from PDFs.\n\nRun 'Auto-Setup' in the 'CONNECT & SETUP' view?",
             ):
                 self._switch_view("setup")
             else:
-                pass
+                self.gui_handler.log("DEBUG: User declined Poppler setup.")
             return
+
+        self.gui_handler.log("DEBUG: Poppler OK. Requesting confirmation...")
 
         if not messagebox.askyesno(
             "Confirm",
             "This will convert ALL math in your project using AI.\n\nIt may take a while. Continue?",
         ):
+            self.gui_handler.log("DEBUG: User cancelled or closed confirmation dialog.")
             return
+
+        self.gui_handler.log("DEBUG: Confirmed. Starting background task...")
 
         def task():
             import math_converter
@@ -5608,7 +5741,7 @@ YOUR WORKFLOW:
                 graphs_dir = str(Path(dest).parent / f"{dest_stem}_graphs")
                 if os.path.isdir(graphs_dir):
                     log(f"   🖼️ Opening Visual Review for {os.path.basename(dest)}...")
-                    approved = self._show_visual_review(dest, graphs_dir)
+                    approved = self.gui_handler.prompt_visual_review(dest, graphs_dir)
                     if not approved:
                         log(f"   ⏩ User cancelled upload for {os.path.basename(dest)}")
                         return
@@ -5660,8 +5793,8 @@ YOUR WORKFLOW:
                 if result:
                     folder = os.path.dirname(result[0][1])
                     try:
-                        os.startfile(folder)
-                    except Exception:
+                        open_file_or_folder(folder)
+                    except:
                         pass
 
                 msg_done = (
@@ -5680,8 +5813,10 @@ YOUR WORKFLOW:
                     ),
                 )
 
+        self.gui_handler.log("DEBUG: Task defined. Attempting to launch thread...")
         try:
             self._run_task_in_thread(task, "Bulk Math Conversion")
+            self.gui_handler.log("DEBUG: Thread launch command issued.")
         except Exception as e:
             import traceback
 
@@ -5695,6 +5830,8 @@ YOUR WORKFLOW:
     def _convert_math_files(self, file_type):
         """Convert individual math files using Gemini."""
         try:
+            self.gui_handler.log(f"[DEBUG] Math button clicked for type: {file_type}")
+
             # Check if busy
             if self.is_running:
                 messagebox.showwarning(
@@ -5752,6 +5889,7 @@ YOUR WORKFLOW:
                 return
 
             if not file_path:
+                self.gui_handler.log("[DEBUG] No file selected (cancelled).")
                 return
 
             def task():
@@ -5802,7 +5940,7 @@ YOUR WORKFLOW:
                     graphs_dir = str(Path(output_path).parent / f"{dest_stem}_graphs")
                     if os.path.isdir(graphs_dir):
                         self.gui_handler.log(f"   🖼️ Opening Visual Review...")
-                        approved = self._show_visual_review(output_path, graphs_dir)
+                        approved = self.gui_handler.prompt_visual_review(output_path, graphs_dir)
                         if not approved:
                             self.gui_handler.log(f"   ⏩ Upload cancelled by user.")
                             return
@@ -6188,7 +6326,7 @@ YOUR WORKFLOW:
                             self.root.after(
                                 0, lambda p=fstr: self._mirror_trigger_upload(p, api)
                             )
-                    except Exception:
+                    except:
                         pass
 
                 # Poll every 2 seconds

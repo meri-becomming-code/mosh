@@ -169,9 +169,6 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
     Parses [GRAPH_BBOX] tokens, crops images from the source page, 
     saves them alongside the HTML output, and replaces tokens with <img> tags.
     """
-    if '[GRAPH_BBOX:' not in html_content:
-        return html_content
-        
     try:
         # Save cropped images into a subfolder next to the HTML file.
         # e.g. output_dir/MyPDF_graphs/MyPDF_p1_graph1.png
