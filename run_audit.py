@@ -119,7 +119,7 @@ def check_reflow_styles(tag):
             w = float(width_match.group(1))
             if w > 400:
                 return f"Fixed large width ({w}px) may break mobile reflow"
-        except: pass
+        except Exception: pass
         
     # Check for nowrap on long lines
     if 'white-space: nowrap' in style and len(tag.get_text()) > 50:

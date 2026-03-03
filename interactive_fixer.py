@@ -126,7 +126,7 @@ def normalize_image_key(src, full_path=None):
             # We use filename + size as a lightweight 'unique enough' key
             # This prevents 'image1.png' from one PPT being confused with 'image1.png' from another.
             return f"{key}|sz:{size}"
-        except:
+        except Exception:
             pass
             
     return key
@@ -229,7 +229,7 @@ def get_link_suggestion(href, context=None):
                 return page_part
                 
             return domain
-        except:
+        except Exception:
             return None
             
     return None

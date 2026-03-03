@@ -23,6 +23,7 @@ No commands, no terminal, no code. Just a simple window with buttons.
 
 ### 3. The "Brain" (Gemini AI)
 - Get a free Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+- For a full course, you are going to need to pay for Gemini for while you use it. It has a small page limit for free.
 - Paste it into the **AI Key** box in MOSH.
 - Now the app can "think" and describe images for you.
 
@@ -45,7 +46,8 @@ If your course has math equations, go to the **Math Converter** tab first.
 1.  Click **"Guided Review"**.
 2.  MOSH will show you any missing image descriptions.
 3.  **Use the AI**: Click the **🤖 Auto-Describe** button, and the AI will write the description for you!
-4.  Click **"Looks Good — Save"**.
+4.  You can check the trust AI checkbox and have it automatically apply the alt tags. You can watch it work in the Activity Log. 
+5.  Or Manually supervise
 
 ---
 
@@ -67,3 +69,9 @@ MOSH is here to help! If you get stuck:
 
 ---
 *MOSH is dedicated to inclusive education for all students. Go get some coffee—we'll handle the accessibility! ☕*
+## 🎯 Project Mission & Dedication
+MOSH was born from a personal journey. Dedicated to my son **Michael Joshua (MOSH) Albright**, who battles Diabetic Retinopathy, this project is a gift back to the education community. 
+
+I believe that accessibility is a foundational human right. This tool is released **freely and open-source** to ensure that no teacher is left behind by the digital transition.
+
+*— Developed by Dr. Meri Kasprak*

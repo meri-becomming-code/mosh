@@ -177,7 +177,7 @@ class ToolkitGUI:
                 self._update_config(poppler_path=local_path)
                 self.gui_handler.log(f"   \u2705 [System] Detected portable Poppler at: {local_path}")
                 return
-        except: pass
+        except Exception: pass
 
         # 2. Check Home directory mosh_helpers (Default)
         try:
@@ -191,14 +191,14 @@ class ToolkitGUI:
             if bin_folders:
                 self._update_config(poppler_path=str(bin_folders[0]))
                 self.gui_handler.log(f"   \u2705 [System] Detected Poppler in home directory.")
-        except: pass
+        except Exception: pass
 
     def _load_config(self):
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, "r") as f:
                     return json.load(f)
-        except:
+        except Exception:
             pass
         return {
             "show_instructions": True,
@@ -581,7 +581,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 "<Button-1>", lambda e: self._switch_view("dashboard")
             )
             ToolTip(self.lbl_mosh_icon, "Back to Home Dashboard")
-        except:
+        except Exception:
             pass
 
         lbl_logo = ttk.Label(
@@ -2238,7 +2238,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             )
             lbl_p.image = tk_p
             lbl_p.pack(pady=10)
-        except:
+        except Exception:
             pass
 
         def on_apply():
@@ -2955,7 +2955,7 @@ h1 {{ color: #4b3190; }}
                     # [NEW] Click-to-Zoom
                     lbl_c.bind("<Button-1>", lambda e, p=cp: self._show_zoom(dialog, p))
                     ToolTip(lbl_c, "Click to Zoom Full Size")
-                except:
+                except Exception:
                     lbl_c = tk.Label(cf2, text="[Error]", bg="white", fg="red")
                     lbl_c.pack()
                     crop_w, crop_h = 0, 0
@@ -3035,7 +3035,7 @@ h1 {{ color: #4b3190; }}
                     read_event = threading.Event()
                     def read_widget(w=widget, h=current_holder, ev=read_event):
                         try: h[0] = w.get("1.0", "end").strip()
-                        except: pass
+                        except Exception: pass
                         ev.set()
                     self.root.after(0, read_widget)
                     read_event.wait(timeout=2)
@@ -3131,7 +3131,7 @@ h1 {{ color: #4b3190; }}
                     w = info.pop("_alt_widget", None)
                     if w:
                         try: info["story"] = w.get("1.0", "end").strip()
-                        except: pass
+                        except Exception: pass
 
                 with open(meta_path, "w", encoding="utf-8") as mf:
                     json.dump(meta, mf, indent=2)
@@ -3548,7 +3548,7 @@ Website: meri-becomming-code.github.io/mosh
             if btn:
                 try:
                     btn.config(state="disabled")
-                except:
+                except Exception:
                     pass
 
         self.gui_handler.stop_requested = False
@@ -3578,7 +3578,7 @@ Website: meri-becomming-code.github.io/mosh
             if btn:
                 try:
                     btn.config(state="normal")
-                except:
+                except Exception:
                     pass
 
         # self.is_running = False # Managed by caller or thread
@@ -3621,7 +3621,7 @@ Website: meri-becomming-code.github.io/mosh
 
                     # ES_CONTINUOUS | ES_SYSTEM_REQUIRED (0x80000000 | 0x00000001)
                     ctypes.windll.kernel32.SetThreadExecutionState(0x80000001)
-                except:
+                except Exception:
                     pass
 
             try:
@@ -3649,7 +3649,7 @@ Website: meri-becomming-code.github.io/mosh
 
                         # ES_CONTINUOUS (0x80000000)
                         ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
-                    except:
+                    except Exception:
                         pass
 
                 self.is_running = False
@@ -4316,7 +4316,7 @@ YOUR WORKFLOW:
                 try:
                     os.remove(output_path)
                     self.gui_handler.log("   Discarded.")
-                except:
+                except Exception:
                     pass
                 return
 
@@ -4925,7 +4925,7 @@ YOUR WORKFLOW:
                 with open(fp, "r", encoding="utf-8", errors="ignore") as f_obj:
                     if "[FIX_ME]" in f_obj.read().upper():
                         markers += 1
-            except:
+            except Exception:
                 pass
 
         if markers == 0:
@@ -5167,7 +5167,7 @@ YOUR WORKFLOW:
                         detailed_log.append(
                             f"   [BROKEN LINK] {os.path.basename(fp)} -> {href}"
                         )
-            except:
+            except Exception:
                 pass
 
         self.gui_handler.log(f"✅ Audit Complete: Scanned {len(html_files)} pages.")
@@ -5504,7 +5504,7 @@ YOUR WORKFLOW:
             folder = os.path.dirname(file_pairs[0][1])
             try:
                 os.startfile(folder)
-            except:
+            except Exception:
                 pass
 
             # [FIX] Explicit "Upload Needed" Warning for cloud-expecting users
@@ -5681,7 +5681,7 @@ YOUR WORKFLOW:
                     folder = os.path.dirname(result[0][1])
                     try:
                         os.startfile(folder)
-                    except:
+                    except Exception:
                         pass
 
                 msg_done = (
@@ -6213,7 +6213,7 @@ YOUR WORKFLOW:
                             self.root.after(
                                 0, lambda p=fstr: self._mirror_trigger_upload(p, api)
                             )
-                    except:
+                    except Exception:
                         pass
 
                 # Poll every 2 seconds

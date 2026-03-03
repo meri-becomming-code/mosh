@@ -13,7 +13,7 @@ rm check_models.py
 git rm check_models.py
 
 # Step 2: Check git history for leaks
-git log --all -S "AIzaSyBmi28or6Mcw1NUq1A2tm2Cv-jsg3U3cBc" --oneline
+git log --all -S "REDACTED_API_KEY" --oneline
 
 # Step 3: If found in history, use BFG Repo-Cleaner
 brew install bfg

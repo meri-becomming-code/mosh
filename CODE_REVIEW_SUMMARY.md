@@ -308,7 +308,7 @@ def convert_pdf_to_latex(
 
 **Critical Issue Found:** `check_models.py` contains hardcoded API key!
 ```python
-key = "AIzaSyBmi28or6Mcw1NUq1A2tm2Cv-jsg3U3cBc"  # ⚠️ EXPOSED!
+key = "REDACTED"  # ⚠️ Key was exposed — rotate immediately
 ```
 
 **Recommendation:**

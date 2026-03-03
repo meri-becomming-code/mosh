@@ -30,7 +30,7 @@ def hex_to_rgb(color_str):
         # [FIX] Robustness: Ensure only hex digits are parsed
         if not all(c in '0123456789abcdef' for c in hex_color): return None
         return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-    except:
+    except Exception:
         return None
 
 def get_luminance(rgb):
@@ -103,7 +103,7 @@ def fix_emoji_accessibility(soup):
                 emoji = match.group()
                 try:
                     desc = unicodedata.name(emoji).title()
-                except:
+                except Exception:
                     desc = "Emoji"
                 
                 span = soup.new_tag("span", attrs={"role": "img", "aria-label": desc})
@@ -654,7 +654,7 @@ def remediate_html_file(filepath):
                     if 'float' not in current_style:
                         img['style'] = img.get('style', '') + " float: right; margin: 10px 0 15px 20px; max-width: 40%;"
                         fixes.append(f"Applied smart float-right to small image: {os.path.basename(img.get('src',''))}")
-            except: pass
+            except Exception: pass
 
     # --- Part 8: Deprecated Tags ---
     # Convert <b> to <strong>

@@ -13,7 +13,7 @@ class CanvasAPI:
                 base_url = f"https://{base_url}"
             parsed = urlparse(base_url)
             self.base_url = f"{parsed.scheme}://{parsed.netloc}"
-        except:
+        except Exception:
             self.base_url = base_url
 
         # 2. Clean Course ID: In case they paste a full URL
@@ -24,7 +24,7 @@ class CanvasAPI:
                 self.course_id = cid_str.split('/courses/')[-1].split('/')[0]
             else:
                 self.course_id = cid_str
-        except:
+        except Exception:
             self.course_id = course_id
 
         self.token = token
@@ -55,8 +55,8 @@ class CanvasAPI:
                 # If there are pages, it's not empty/new
                 return len(pages) == 0, f"Course found with {len(pages)} existing pages."
             return False, "Could not check course content."
-        except:
-            return False, "Safety check failed."
+        except Exception as e:
+            return False, f"Safety check failed: {e}"
 
     def upload_file(self, file_path, folder_path=None):
         """
@@ -221,9 +221,14 @@ class CanvasAPI:
                             }
                             post_res = requests.post(f"{modules_url}/{mod_id}/items", headers=self.headers, data=payload, timeout=30)
                             if post_res.status_code in [200, 201]:
-                                # 4. Delete the old File item
-                                requests.delete(f"{modules_url}/{mod_id}/items/{item_id}", headers=self.headers, timeout=30)
-                                replacements += 1
+                                # 4. Delete the old File item and verify it succeeded
+                                del_res = requests.delete(f"{modules_url}/{mod_id}/items/{item_id}", headers=self.headers, timeout=30)
+                                if del_res.status_code in [200, 204]:
+                                    replacements += 1
+                                else:
+                                    # New page was created but old file item wasn't removed — log but don't crash.
+                                    import sys
+                                    print(f"[Warning] Could not delete old module item {item_id}: {del_res.status_code}", file=sys.stderr)
             
             return True, replacements
         except Exception as e:

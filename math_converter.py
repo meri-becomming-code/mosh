@@ -5,6 +5,12 @@ Integrates with Gemini AI to convert handwritten math to Canvas LaTeX
 """
 
 import os
+import re
+import time
+import random
+import html as html_lib
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from PIL import Image
 
@@ -18,10 +24,6 @@ try:
     from pdf2image import convert_from_path
 except ImportError:
     convert_from_path = None
-
-import re
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def clean_gemini_response(text):
     """
@@ -42,8 +44,6 @@ def clean_gemini_response(text):
     # 3. Strip other boilerplate if body tag wasn't strict
     if '<!DOCTYPE html>' in text:
         text = re.sub(r'<!DOCTYPE html>.*', '', text, flags=re.DOTALL)
-        
-    return text.strip()
 
     return text.strip()
 
@@ -102,53 +102,47 @@ def generate_content_with_retry(client, model, contents, log_func=None):
     """
     max_retries = 6
     base_delay = 5  # Start with 5 seconds
-    
-    for attempt in range(max_retries):
-        import concurrent.futures
-        
-        # We wrap the API call in a hard-timeout future 
-        # to guarantee the thread doesn't hang forever on the network
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(
-            client.models.generate_content,
-            model=model,
-            contents=contents
-        )
-        try:
-            result = future.result(timeout=120)  # 2 minute absolute maximum
-            executor.shutdown(wait=False, cancel_futures=True)
-            return result
-        except concurrent.futures.TimeoutError as e:
-            executor.shutdown(wait=False, cancel_futures=True)
-            error_str = "timeout"
-            is_retryable = True
-        except Exception as e:
-            executor.shutdown(wait=False, cancel_futures=True)
-            error_str = str(e).lower()
-            
-            # Check for Rate Limits (429) OR Connection Resets (10054) OR Timeout
-            is_retryable = (
-                "429" in error_str or 
-                "resource_exhausted" in error_str or
-                "connection" in error_str or 
-                "10054" in error_str or
-                "remote host" in error_str or
-                "deadline" in error_str or
-                "timeout" in error_str
-            )
 
-            if is_retryable:
-                import random
-                jitter = random.uniform(1.0, 3.0)
-                wait_time = base_delay * (2 ** attempt) + jitter # 5, 10, 20, 40, 80... + jitter
-                if log_func:
-                    reason = "Quota" if ("429" in error_str or "exhausted" in error_str) else "Network"
-                    log_func(f"   ⏳ {reason} Hiccup. Pausing for {wait_time:.1f}s... (Attempt {attempt+1}/{max_retries})")
-                time.sleep(wait_time)
-            else:
-                # If it's a real Auth error or something else, don't wait 2 minutes
-                raise e
-    
+    for attempt in range(max_retries):
+        # Use a context manager so the executor is always cleaned up, even on unexpected exceptions.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                client.models.generate_content,
+                model=model,
+                contents=contents
+            )
+            try:
+                result = future.result(timeout=120)  # 2 minute absolute maximum
+                return result
+            except concurrent.futures.TimeoutError:
+                error_str = "timeout"
+                is_retryable = True
+            except Exception as e:
+                error_str = str(e).lower()
+
+                # Check for Rate Limits (429) OR Connection Resets (10054) OR Timeout
+                is_retryable = (
+                    "429" in error_str or
+                    "resource_exhausted" in error_str or
+                    "connection" in error_str or
+                    "10054" in error_str or
+                    "remote host" in error_str or
+                    "deadline" in error_str or
+                    "timeout" in error_str
+                )
+
+                if not is_retryable:
+                    # Real auth error or other unrecoverable — re-raise immediately.
+                    raise
+
+        if is_retryable:
+            jitter = random.uniform(1.0, 3.0)
+            wait_time = base_delay * (2 ** attempt) + jitter  # 5, 10, 20, 40, 80… + jitter
+            if log_func:
+                reason = "Quota" if ("429" in error_str or "exhausted" in error_str) else "Network"
+                log_func(f"   ⏳ {reason} Hiccup. Pausing for {wait_time:.1f}s... (Attempt {attempt+1}/{max_retries})")
+            time.sleep(wait_time)
+
     raise Exception("MOSH Magic failed after multiple retries. The AI server might be too busy or your connection is unstable. Please try again in a few minutes.")
 
 def detect_visual_elements(client, model, img, log_func=None):
@@ -202,7 +196,8 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
             try:
                 with open(crop_meta_path, 'r', encoding='utf-8') as f:
                     meta_data = json.load(f)
-            except: pass
+            except Exception:
+                pass
         
         # 2. Open Source Image
         with Image.open(image_path) as img:
@@ -264,14 +259,15 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                         style = "max-width: 50%; height: auto; border: 1px solid #ccc; margin: 20px auto;"
                     
                     img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="{rel_src}" alt="Visual Element" style="{style}">'
-                    
+
                     # Feature 5: Storytelling (Long Description)
                     if story.lower() != 'none':
                         if log_func:
                             preview = story if len(story) <= 80 else story[:77] + "..."
                             log_func(f"   ✅ [Math-Alt] {graph_filename}: \"{preview}\"")
-                        
-                        img_tag += f'<details style="margin-top: 5px;"><summary style="color: #4b3190; cursor: pointer; font-style: italic; font-size: 0.9em;">View Description</summary><div style="padding: 10px; background: #f9f9f9; border-left: 3px solid #4b3190; text-align: left; font-size: 0.95em;">{story}</div></details>'
+
+                        safe_story = html_lib.escape(story)
+                        img_tag += f'<details style="margin-top: 5px;"><summary style="color: #4b3190; cursor: pointer; font-style: italic; font-size: 0.9em;">View Description</summary><div style="padding: 10px; background: #f9f9f9; border-left: 3px solid #4b3190; text-align: left; font-size: 0.95em;">{safe_story}</div></details>'
                     
                     img_tag += '</div>'
                     
@@ -401,14 +397,18 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                 except Exception as e:
                      if log_func: log_func(f"   ⚠️ Graph crop warning p{i+1}: {e}")
                 final_pages.append(content)
+            else:
+                if log_func:
+                    log_func(f"   ⚠️ Page {i+1} produced no content and was skipped.")
                 
         # Combine everything
         final_html_content = "\n<hr>\n".join(final_pages)
         
         # Clean up temp images
         try:
-             del images
-        except: pass
+            del images
+        except Exception:
+            pass
         
         # Robust cleanup
         try:
@@ -441,27 +441,26 @@ def convert_image_to_latex(api_key, image_path, log_func=None):
         
         if log_func:
             log_func(f"📸 Converting image: {Path(image_path).name}")
-        
-        img = Image.open(image_path)
-        
-        # Pass 1: Probing
-        visual_context = detect_visual_elements(client, model, img, log_func)
-        
-        # Pass 2: Final Conversion with Context
-        if log_func:
-            log_func("   ✨  Converting content (Pass 2)...")
-            
-        conversion_prompt = MATH_PROMPT
-        if visual_context:
-            conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
 
-        response = generate_content_with_retry(
-            client=client,
-            model=model,
-            contents=[conversion_prompt, img],
-            log_func=log_func
-        )
-        
+        with Image.open(image_path) as img:
+            # Pass 1: Probing
+            visual_context = detect_visual_elements(client, model, img, log_func)
+
+            # Pass 2: Final Conversion with Context
+            if log_func:
+                log_func("   ✨  Converting content (Pass 2)...")
+
+            conversion_prompt = MATH_PROMPT
+            if visual_context:
+                conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
+
+            response = generate_content_with_retry(
+                client=client,
+                model=model,
+                contents=[conversion_prompt, img],
+                log_func=log_func
+            )
+
         if response.text:
             cleaned_text = clean_gemini_response(response.text)
             
@@ -600,17 +599,21 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
                         log_func(f"✅ Converted Word doc preserving full text, layout, and math")
                     
                     # Cleanup Gemini servers
-                    try: client.files.delete(name=doc_file.name)
-                    except: pass
-                    
+                    try:
+                        client.files.delete(name=doc_file.name)
+                    except Exception:
+                        pass
+
                     return True, html
                 else:
                     return False, "No response from Gemini API for Word Document."
             
             finally:
                 # Cleanup local temp file
-                try: os.remove(temp_xml_path)
-                except: pass
+                try:
+                    os.remove(temp_xml_path)
+                except Exception:
+                    pass
                 
         except Exception as e:
             if log_func: log_func(f"   ⚠️ Gemini DOCX extraction failed for {Path(doc_path).name}: {e}")
@@ -641,7 +644,11 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
     # STEP 1: Check licensing FIRST
     if log_func:
         log_func("\n🔍 STEP 1: Checking file licenses to protect you from copyright issues...")
-    
+
+    # Pre-initialise so the fallback branch and the attribution lookup below always see defined names.
+    safe_files = []
+    risky_files = []
+
     try:
         import attribution_checker
         safe_files, risky_files, blocked_files = attribution_checker.scan_export_for_licensing(
@@ -723,7 +730,8 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 if on_file_converted:
                     try:
                         on_file_converted(str(file_path), str(html_output_path))
-                    except: pass
+                    except Exception:
+                        pass
                 continue
 
             if log_func:
@@ -792,8 +800,9 @@ def create_canvas_html(content, title="Canvas Math Content"):
     Creates a standalone HTML file with the converted content.
     Uses INLINE STYLES for maximum compatibility with Canvas LMS.
     """
-    import re
-    
+    # Escape the title so a filename like <script>... can't inject into the <title> tag.
+    safe_title = html_lib.escape(title)
+
     # Inject inline styles into standard elements returned by Gemini
     content = re.sub(
         r'<details\s*>', 
@@ -814,11 +823,10 @@ def create_canvas_html(content, title="Canvas Math Content"):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
+    <title>{safe_title}</title>
     <!-- MathJax for local preview -->
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-</head>
     <style>
         body {{
             font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
@@ -838,7 +846,7 @@ def create_canvas_html(content, title="Canvas Math Content"):
             font-weight: 700;
         }}
         h2, h3 {{ color: #2c3e50; margin-top: 30px; }}
-        
+
         /* Table Handling - Prevent Cutoff */
         table {{
             display: table;
@@ -854,7 +862,7 @@ def create_canvas_html(content, title="Canvas Math Content"):
             text-align: left;
         }}
         th {{ background-color: #f8f9fa; color: #4b3190; }}
-        
+
         /* Interactive Solutions */
         details {{
             background-color: #f8f9fa;
@@ -872,20 +880,20 @@ def create_canvas_html(content, title="Canvas Math Content"):
             padding-bottom: 5px;
         }}
         summary:hover {{ color: #2c3e50; }}
-        
+
         /* Images */
-        img {{ 
-            max-width: 50%; 
-            height: auto; 
-            border-radius: 4px; 
+        img {{
+            max-width: 50%;
+            height: auto;
+            border-radius: 4px;
             display: block;
             margin: 10px 0;
         }}
-        
+
         @media (max-width: 768px) {{
             img {{ max-width: 100% !important; }}
         }}
-        
+
         /* Print Friendly */
         @media print {{
             body {{ max-width: 100%; padding: 0; }}
@@ -895,8 +903,8 @@ def create_canvas_html(content, title="Canvas Math Content"):
     </style>
 </head>
 <body>
-    <h1>{title}</h1>
-    
+    <h1>{safe_title}</h1>
+
     <div class="content-wrapper">
         {content}
     </div>

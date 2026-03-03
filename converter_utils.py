@@ -4,6 +4,7 @@
 import os
 import shutil
 import re
+import html as html_lib
 from datetime import datetime
 import zipfile
 import base64
@@ -402,7 +403,7 @@ def convert_docx_to_html(docx_path, io_handler=None, log_func=None):
                         style_attr = ""  # Keep natural
                     else:
                         width_attr = str(min(w, 800))
-            except:
+            except Exception:
                 pass
 
             # [INTERACTIVE] Prompt for Alt Text
@@ -548,17 +549,17 @@ def convert_excel_to_html(xlsx_path):
                                         classes.append("negative")
                                         # Accounting format often uses ( ) for negatives
                                         str_val = f"({str_val.replace('-', '')})"
-                                except:
+                                except Exception:
                                     pass
                             elif "%" in fmt:
                                 try:
                                     str_val = f"{val*100:.1f}%"
-                                except:
+                                except Exception:
                                     pass
                             elif "yyyy" in fmt or "mm" in fmt:
                                 try:
                                     str_val = val.strftime("%Y-%m-%d")
-                                except:
+                                except Exception:
                                     pass
 
                         # C. Borders (Total Rows)
@@ -574,7 +575,7 @@ def convert_excel_to_html(xlsx_path):
                             classes.append("total-row")  # Use same bolding style
 
                         class_attr = f' class="{" ".join(classes)}"' if classes else ""
-                        html_parts.append(f"<td{class_attr}>{str_val}</td>")
+                        html_parts.append(f"<td{class_attr}>{html_lib.escape(str_val)}</td>")
 
                     html_parts.append("</tr>")
                 html_parts.append("</tbody>")
@@ -605,7 +606,7 @@ def get_shape_text_styles(shape, theme=None):
             rgb = shape.fill.fore_color.rgb
             if rgb:
                 styles.append(f"background-color: #{rgb};")
-    except:
+    except Exception:
         pass
 
     # 2. Border / Line
@@ -615,14 +616,14 @@ def get_shape_text_styles(shape, theme=None):
             width = int(shape.line.width / 12700)  # CM to Px approx
             if rgb:
                 styles.append(f"border: {width}px solid #{rgb};")
-    except:
+    except Exception:
         pass
 
     # 3. Rotation
     try:
         if shape.rotation != 0:
             styles.append(f"transform: rotate({shape.rotation}deg);")
-    except:
+    except Exception:
         pass
 
     # 4. Text Color (Looking at first paragraph/run)
@@ -635,7 +636,7 @@ def get_shape_text_styles(shape, theme=None):
                     styles.append(f"color: #{rgb};")
             elif para.font.color and para.font.color.rgb:
                 styles.append(f"color: #{para.font.color.rgb};")
-    except:
+    except Exception:
         pass
 
     # 5. Padding/Border ONLY if it's a visually distinct box (colored bg or border)
@@ -669,7 +670,7 @@ def get_image_styles(shape):
             width = int(shape.line.width / 12700)
             if rgb:
                 styles.append(f"border: {width}px solid #{rgb};")
-    except:
+    except Exception:
         pass
     return " ".join(styles)
 
@@ -766,7 +767,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                     # Prioritize images slightly if they are on the same line to ensure they float correctly
                     priority = 0 if s.shape_type == MSO_SHAPE_TYPE.PICTURE else 1
                     return (round(top / 95250) * 10, priority, left)
-                except:
+                except Exception:
                     return (0, 0, 0)
 
             sorted_shapes = sorted(all_shapes, key=shape_sort_key)
@@ -797,7 +798,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                 if shape.fill.type == 1:  # Solid fill
                                     rgb = shape.fill.fore_color.rgb
                                     bg_color = f"#{rgb}"
-                            except:
+                            except Exception:
                                 pass
 
                             # Try to extract Text Color from first run
@@ -806,7 +807,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                     rgb = para.runs[0].font.color.rgb
                                     if rgb:
                                         text_color = f"#{rgb}"
-                            except:
+                            except Exception:
                                 pass
 
                     if is_code:
@@ -880,7 +881,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                         transformed = f"<strong>{transformed}</strong>"
                                     if run.font.italic:
                                         transformed = f"<em>{transformed}</em>"
-                                except:
+                                except Exception:
                                     pass
                                 para_html_parts.append(transformed)
 
@@ -897,7 +898,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                 ("•", "-", "*", "◦", "▪")
                             ):
                                 is_bullet = True
-                        except:
+                        except Exception:
                             pass
 
                         if is_bullet:
@@ -945,7 +946,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                 cell_text = ""
                                 if cell.text_frame:
                                     cell_text = cell.text_frame.text.strip()
-                                html_parts.append(f"<td>{cell_text}</td>")
+                                html_parts.append(f"<td>{html_lib.escape(cell_text)}</td>")
                             html_parts.append("</tr>")
                         html_parts.append("</table>")
 
@@ -1111,7 +1112,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                             f"<strong>Speaker Notes:</strong><br>{notes_html}"
                         )
                         html_parts.append("</div>")
-            except:
+            except Exception:
                 pass
 
             html_parts.append("</div>")
@@ -1599,7 +1600,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None, force_ocr=False):
         if "doc" in locals() and doc:
             try:
                 doc.close()
-            except:
+            except Exception:
                 pass
         return None, f"PyMuPDF Error: {str(e)}"
 
@@ -1798,7 +1799,7 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
                         with open(filepath, "w", encoding="utf-8") as f:
                             f.write(str(soup))
                         total_files_updated += 1
-                except:
+                except Exception:
                     pass
 
     if log_func:
@@ -2133,7 +2134,7 @@ def archive_source_file(file_path, log_func=None):
         if os.path.exists(new_path):
             try:
                 os.remove(new_path)
-            except:
+            except Exception:
                 base, ext = os.path.splitext(new_path)
                 timestamp = datetime.now().strftime("%H%M%S")
                 new_path = f"{base}_{timestamp}{ext}"

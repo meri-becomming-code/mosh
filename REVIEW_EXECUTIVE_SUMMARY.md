@@ -59,7 +59,7 @@
 
 ```python
 # DO NOT COMMIT CODE LIKE THIS:
-key = "AIzaSyBmi28or6Mcw1NUq1A2tm2Cv-jsg3U3cBc"  # ⚠️ EXPOSED!
+key = "REDACTED"  # ⚠️ Key was exposed — rotate immediately
 ```
 
 **Fix Time:** 30 minutes

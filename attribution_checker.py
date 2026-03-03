@@ -105,7 +105,7 @@ def extract_text(file_path):
             return extract_text_from_html(file_path)
         else:
             return ""
-    except:
+    except Exception:
         return ""
 
 def extract_text_from_pdf(pdf_path):
@@ -116,7 +116,7 @@ def extract_text_from_pdf(pdf_path):
         # images = convert_from_path(str(pdf_path), dpi=150, last_page=1)
         # Placeholder: Real OCR would go here. For now, return empty.
         return ""
-    except:
+    except Exception:
         return ""
 
 def extract_text_from_word(doc_path):
@@ -126,7 +126,7 @@ def extract_text_from_word(doc_path):
         doc = Document(doc_path)
         text = '\n'.join([para.text for para in doc.paragraphs])
         return text
-    except:
+    except Exception:
         return ""
 
 def extract_text_from_html(html_path):
@@ -145,7 +145,7 @@ def extract_text_from_html(html_path):
         extractor = TextExtractor()
         extractor.feed(content)
         return ' '.join(extractor.text)
-    except:
+    except Exception:
         return ""
 
 def generate_attribution_footer(file_name, license_type, author="Unknown", source_url=""):

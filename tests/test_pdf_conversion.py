@@ -57,16 +57,20 @@ def print_stats(label, stats):
 
 def test_pdf_conversion():
     """Test PDF conversion with improved algorithm"""
+    import pytest
     print("=" * 60)
     print("Testing Improved PDF to HTML Conversion")
     print("=" * 60)
     
-    # Test file path - use the one directly in Downloads
-    test_pdf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Chapter 7 Note Packet (Key) (3)_ MATH ADA Test.pdf")
+    # Test file path - look in tests/ directory first, then workspace root
+    _tests_dir = os.path.dirname(os.path.abspath(__file__))
+    _root_dir = os.path.dirname(_tests_dir)
+    test_pdf = os.path.join(_tests_dir, "Chapter 7 Note Packet (Key) (3)_ MATH ADA Test.pdf")
+    if not os.path.exists(test_pdf):
+        test_pdf = os.path.join(_root_dir, "Chapter 7 Note Packet (Key) (3)_ MATH ADA Test.pdf")
     
     if not os.path.exists(test_pdf):
-        print(f"ERROR: Test PDF not found: {test_pdf}")
-        return False
+        pytest.skip(f"Test PDF not found; place 'Chapter 7 Note Packet (Key) (3)_ MATH ADA Test.pdf' in tests/ to enable")
     
     print(f"\nTesting with: {os.path.basename(test_pdf)}")
     
@@ -74,9 +78,7 @@ def test_pdf_conversion():
     print("\nConverting PDF...")
     result_path, error = converter_utils.convert_pdf_to_html(test_pdf)
     
-    if error:
-        print(f"ERROR: Conversion failed: {error}")
-        return False
+    assert not error, f"Conversion failed: {error}"
     
     print(f"✓ Conversion successful: {os.path.basename(result_path)}")
     
@@ -142,7 +144,7 @@ def test_pdf_conversion():
     print(f"Full output file: {result_path}")
     print("=" * 60)
     
-    return checks_passed >= 3  # Pass if at least 3/4 checks pass
+    assert checks_passed >= 3, f"Only {checks_passed}/{checks_total} PDF structure checks passed"
 
 if __name__ == "__main__":
     success = test_pdf_conversion()

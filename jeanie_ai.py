@@ -12,7 +12,7 @@ def check_connectivity():
         # Google is the most reliable ping for "is the internet working"
         requests.get("https://www.google.com", timeout=3)
         return True
-    except:
+    except Exception:
         return False
 
 
@@ -24,9 +24,9 @@ def validate_api_key(api_key):
     if not api_key:
         return False, "No API Key provided."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
 
     # Simple text prompt
     payload = {
@@ -57,7 +57,7 @@ def validate_api_key(api_key):
                     err_json = response.json()
                     msg = err_json.get("error", {}).get("message", response.text)
                     return False, f"API Error: {msg}"
-                except:
+                except Exception:
                     return False, f"API Error ({response.status_code}): {response.text}"
 
         except Exception as e:
@@ -99,9 +99,9 @@ def generate_latex_from_image(image_path, api_key):
         mime_type = mime_type_map.get(ext, "image/png")  # Default to PNG if unknown
 
         # 3. Prepare API Call
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
 
         payload = {
             "contents": [
@@ -226,9 +226,9 @@ def generate_table_from_image(image_path, api_key):
         mime_type = mime_type_map.get(ext, "image/png")  # Default to PNG if unknown
 
         # 3. Prepare API Call
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
 
         prompt = (
             "You are a document OCR and accessibility expert. Convert the table shown in this image into a clean, accessible HTML table. "
@@ -327,9 +327,9 @@ def generate_text_from_scanned_image(image_path, api_key):
         mime_type = mime_type_map.get(ext, "image/png")  # Default to PNG if unknown
 
         # 3. Prepare API Call
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
 
         prompt = (
             "You are a document OCR expert. Extract ALL text from this scanned document image. "
@@ -410,9 +410,9 @@ def generate_alt_text_from_image(image_path, api_key, context=None):
         mime_type = mime_type_map.get(ext, "image/png")  # Default to PNG if unknown
 
         # 3. Prepare API Call
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
 
         prompt = "You are an accessibility expert. Write a very brief, concise alt text for this image (under 120 characters if possible). "
         if context:
@@ -517,8 +517,8 @@ def improve_html_design(html_content, api_key):
         return None, "Error: No API Key provided."
 
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
         prompt = (
             "You are an expert web accessibility and UI designer for Canvas LMS. "
             "Take the following HTML content and improve its design to make it highly responsive "
