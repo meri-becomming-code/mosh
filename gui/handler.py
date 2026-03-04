@@ -83,3 +83,22 @@ class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
             return True
         self.input_request_queue.put(("visual_review", html_path, graphs_dir, None, None))
         return self._wait_for_response(True)  # Default to approved if timeout
+
+    def prompt_bbox_review(self, page_data):
+        """
+        Request the main thread to show pre-crop bounding box review interface.
+        
+        Args:
+            page_data: List of dicts from math_converter containing:
+                - page_index: int
+                - image_path: str
+                - boxes: list of parsed bounding boxes
+                - width/height: image dimensions
+        
+        Returns:
+            dict: {page_idx: [corrected_boxes]} or None to use AI boxes as-is
+        """
+        if self.is_stopped():
+            return None
+        self.input_request_queue.put(("bbox_review", page_data, None, None, None))
+        return self._wait_for_response(None)  # Default to None (use AI boxes)

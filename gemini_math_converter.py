@@ -37,11 +37,15 @@ CONVERSION_PROMPT = """You are a Canvas LMS math content expert. Convert ALL mat
 CRITICAL RULES:
 1. Use \\(...\\) for inline equations (within text)
 2. Use $$...$$ for display equations (on their own line)
-3. Convert ALL handwritten math you see
-4. Preserve the structure (numbered problems, steps, etc.)
-5. Add descriptive text between equations if needed
-6. Be 100% accurate with mathematical notation
-7. DO NOT return a full HTML document (no <html>, <head>, <body> tags). Return ONLY the content.
+3. For systems of equations, use \\begin{cases}...\\end{cases} wrapped in $$ delimiters
+4. For crossed-out terms, use \\cancel{} 
+5. Use \\qquad for large spacing between aligned equation steps
+6. Use \\text{} for text within equations
+7. Convert ALL handwritten math you see
+8. Preserve the structure (numbered problems, steps, etc.)
+9. Add descriptive text between equations if needed
+10. Be 100% accurate with mathematical notation
+11. DO NOT return a full HTML document (no <html>, <head>, <body> tags). Return ONLY the content.
 
 OUTPUT FORMAT:
 - Return clean, ready-to-paste Canvas HTML/LaTeX
@@ -227,7 +231,17 @@ def create_html_wrapper(title, content):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    <!-- MathJax for local preview -->
+    <!-- MathJax for local preview with cancel extension -->
+    <script>
+    window.MathJax = {{
+        tex: {{
+            packages: {{'[+]': ['cancel', 'cases']}}
+        }},
+        loader: {{
+            load: ['[tex]/cancel', '[tex]/cases']
+        }}
+    }};
+    </script>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>

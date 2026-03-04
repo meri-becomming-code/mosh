@@ -70,6 +70,96 @@ def build():
     args.append("--hidden-import=pptx")
     args.append("--hidden-import=docx")
 
+    # Exclude optional/dev-only modules to reduce false-positive missing-module warnings
+    # in PyInstaller analysis output. These are not required for toolkit runtime features.
+    excluded_modules = [
+        # google-genai optional integrations
+        "google.genai.live",
+        "google.genai.tunings",
+        "google.genai.replay_api_client",
+        "mcp",
+        "mcp.types",
+        "IPython",
+        "IPython.display",
+        "aiohttp",
+        "multidict",
+        # optional async/network extras
+        "trio",
+        "trio.lowlevel",
+        "trio.from_thread",
+        "trio.to_thread",
+        "trio.socket",
+        "trio.testing",
+        "outcome",
+        "uvloop",
+        "winloop",
+        "h2",
+        "h2.connection",
+        "h2.events",
+        "h2.config",
+        "h2.exceptions",
+        "h2.settings",
+        "socks",
+        "socksio",
+        "python_socks",
+        "python_socks.async_",
+        "python_socks.sync",
+        # CLI/dev tooling extras
+        "rich",
+        "rich.console",
+        "rich.pretty",
+        "rich.table",
+        "rich.syntax",
+        "rich.progress",
+        "rich.markup",
+        "click",
+        "pygments",
+        "pygments.util",
+        "mypy",
+        "mypy.version",
+        "mypy.util",
+        "mypy.typevars",
+        "mypy.types",
+        "mypy.server",
+        "mypy.semanal",
+        "mypy.plugins",
+        "mypy.plugin",
+        "mypy.options",
+        "mypy.nodes",
+        "mypy.typeops",
+        "mypy.type_visitor",
+        "mypy.state",
+        "mypy.expandtype",
+        "hypothesis",
+        "toml",
+        "yaml",
+        "tornado",
+        "tornado.concurrent",
+        # optional parsing/compression extras
+        "html5lib",
+        "html5lib.treebuilders",
+        "html5lib.constants",
+        "lxml_html_clean",
+        "cssselect",
+        "brotli",
+        "brotlicffi",
+        "zstandard",
+        # optional crypto/auth extras
+        "OpenSSL",
+        "OpenSSL.crypto",
+        "rsa",
+        "bcrypt",
+        "pyu2f",
+        "pyu2f.model",
+        "pyu2f.errors",
+        # optional data science helpers not used by the GUI
+        "numpy",
+        "pandas",
+        "pygame",
+    ]
+    for mod in excluded_modules:
+        args.append(f"--exclude-module={mod}")
+
     print("Building with PyInstaller...")
     PyInstaller.__main__.run(args)
 
