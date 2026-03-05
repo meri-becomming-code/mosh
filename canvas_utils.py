@@ -138,13 +138,13 @@ class CanvasAPI:
         except Exception as e:
             return False, str(e)
 
-    def update_page(self, slug, title, body):
+    def update_page(self, slug, title, body, published=True):
         """Updates an existing WikiPage."""
         url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages/{slug}"
         payload = {
             "wiki_page[title]": title,
             "wiki_page[body]": body,
-            "wiki_page[published]": False
+            "wiki_page[published]": bool(published)
         }
         try:
             response = requests.put(url, headers=self.headers, data=payload, timeout=30)
@@ -154,13 +154,13 @@ class CanvasAPI:
         except Exception as e:
             return False, str(e)
 
-    def create_page(self, title, body):
+    def create_page(self, title, body, published=True):
         """Creates a new WikiPage in the specified course."""
         url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages"
         payload = {
             "wiki_page[title]": title,
             "wiki_page[body]": body,
-            "wiki_page[published]": False # Keep it unpublished for faculty review
+            "wiki_page[published]": bool(published)
         }
         try:
             response = requests.post(url, headers=self.headers, data=payload, timeout=30)

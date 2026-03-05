@@ -6041,10 +6041,10 @@ YOUR WORKFLOW:
             if success_get and "url" in res_get:
                 self.gui_handler.log(f"   [Sync] Updating existing page: {page_title}")
                 success_page, res_page = api.update_page(
-                    res_get["url"], page_title, str(soup)
+                    res_get["url"], page_title, str(soup), published=True
                 )
             else:
-                success_page, res_page = api.create_page(page_title, str(soup))
+                success_page, res_page = api.create_page(page_title, str(soup), published=True)
 
             if success_page:
                 canvas_page_url = res_page.get("html_url")

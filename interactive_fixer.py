@@ -533,13 +533,13 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         elif alt.lower() == img_filename.lower():
             issue = "Filename used as alt text"
         
-           # [NEW] Math Equation Check (Flagged by run_fixer)
+        # [NEW] Math Equation Check (Flagged by run_fixer)
         if img.has_attr('data-math-check'):
-             issue = "Potential Math Equation (Needs Verification/LaTeX)"
+            issue = "Potential Math Equation (Needs Verification/LaTeX)"
 
-           # [NEW] Table Image Check (Flagged by run_fixer)
-           elif img.has_attr('data-table-check'):
-               issue = "Potential Data Table (Convert image to real HTML table)"
+        # [NEW] Table Image Check (Flagged by run_fixer)
+        elif img.has_attr('data-table-check'):
+            issue = "Potential Data Table (Convert image to real HTML table)"
         
         # [SMART SILENCE] Only flag "Review suggested" if we DON'T have a memory for this image.
         # If we have a memory, even if it contains the word "image", we trust the user's previous choice.
@@ -634,12 +634,12 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                     modified = True
                     continue
 
-              if img.has_attr('data-math-check'):
-                 prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX. If no, enter Alt Text: "
-              elif img.has_attr('data-table-check'):
-                  prompt_text = "    > Verify: Is this a Data Table? Use 'Convert to Table (AI)' or enter Alt Text: "
+            if img.has_attr('data-math-check'):
+                prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX. If no, enter Alt Text: "
+            elif img.has_attr('data-table-check'):
+                prompt_text = "    > Verify: Is this a Data Table? Use 'Convert to Table (AI)' or enter Alt Text: "
             else:
-                 prompt_text = "    > Enter Alt Text (Press Enter to accept suggestion): " + prompt_suffix
+                prompt_text = "    > Enter Alt Text (Press Enter to accept suggestion): " + prompt_suffix
             
             if img_full_path and os.path.exists(img_full_path):
                  # Pass the AI suggestion (or filename based on if no AI) to the UI
