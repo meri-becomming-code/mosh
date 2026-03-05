@@ -5984,6 +5984,49 @@ YOUR WORKFLOW:
             self.gui_handler.log(f"   [Sync] Running Final ADA Compliance Check...")
             interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
 
+            # [NEW] Mandatory final responsive pass before upload, followed by ADA re-check.
+            api_key = self.config.get("api_key", "").strip()
+            if api_key and self.config.get("math_auto_responsive", True):
+                try:
+                    import jeanie_ai
+                    with open(html_path, "r", encoding="utf-8") as _rf:
+                        _pre_upload_content = _rf.read()
+                    _new_html, _msg = jeanie_ai.improve_html_design(_pre_upload_content, api_key)
+                    if _new_html and "Error" not in _msg:
+                        with open(html_path, "w", encoding="utf-8") as _wf:
+                            _wf.write(_new_html)
+                        self.gui_handler.log("   [DESIGN] Final responsive formatting applied before upload.")
+                        self.gui_handler.log("   [ADA] Re-checking after final responsive formatting...")
+                        interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
+                except Exception as design_err:
+                    self.gui_handler.log(f"   [DESIGN] Final responsive pass skipped: {design_err}")
+
+            if self.config.get("math_final_ada_check", True):
+                try:
+                    _audit_res = run_audit.audit_file(html_path)
+                    _score = run_audit.calculate_accessibility_score(_audit_res)
+                    _summary = run_audit.get_issue_summary(_audit_res)
+                    self.gui_handler.log(f"   [ADA] Pre-upload score: {_score}%")
+                    if _summary:
+                        self.gui_handler.log(f"   [ADA] {_summary}")
+                except Exception as audit_err:
+                    self.gui_handler.log(f"   [ADA] Pre-upload audit skipped: {audit_err}")
+
+            # Ensure review-only flags (math/table image checks) are surfaced to user
+            # during upload flow, not just in separate manual review steps.
+            try:
+                with open(html_path, "r", encoding="utf-8") as _rf:
+                    _post_fix_html = _rf.read()
+                if ('data-math-check' in _post_fix_html) or ('data-table-check' in _post_fix_html):
+                    self.gui_handler.log("   [Sync] Interactive review needed for flagged math/table images...")
+                    interactive_fixer.scan_and_fix_file(
+                        html_path,
+                        self.gui_handler,
+                        self.target_dir,
+                    )
+            except Exception as review_err:
+                self.gui_handler.log(f"   [Sync] Interactive review skipped: {review_err}")
+
             # 1. Read HTML
             with open(html_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
@@ -6025,6 +6068,43 @@ YOUR WORKFLOW:
                             self.gui_handler.log(
                                 f"      [WARNING] Image upload failed: {res_img}"
                             )
+                    else:
+                        self.gui_handler.log(
+                            f"      [MISSING IMAGE] Could not find local image: {clean_src}"
+                        )
+
+                        # Let user decide: replace with a new local path, remove image, or keep as-is.
+                        replacement = self.gui_handler.prompt(
+                            "      Enter replacement image full path, type REMOVE to delete image, or press Enter to keep: "
+                        ).strip()
+
+                        if replacement.upper() == "REMOVE":
+                            img.decompose()
+                            self.gui_handler.log("      Removed broken image from page.")
+                        elif replacement:
+                            replacement = replacement.strip('"').strip("'")
+                            if os.path.exists(replacement):
+                                success_img, res_img = api.upload_file(
+                                    replacement, folder_path="remediated_images"
+                                )
+                                if success_img:
+                                    canvas_img_url = f"/courses/{self.config['canvas_course_id']}/files/{res_img['id']}/preview"
+                                    img["src"] = canvas_img_url
+                                    self.gui_handler.log(
+                                        f"      Uploaded replacement: {os.path.basename(replacement)}"
+                                    )
+                                else:
+                                    self.gui_handler.log(
+                                        f"      [WARNING] Replacement upload failed: {res_img}"
+                                    )
+                            else:
+                                self.gui_handler.log(
+                                    "      [WARNING] Replacement path not found; keeping current image tag."
+                                )
+                        else:
+                            self.gui_handler.log(
+                                "      Keeping current image tag (may remain broken if source is unavailable)."
+                            )
 
             # 3. Create or Update Page (Upsert Strategy)
             # [FIX] Always produce a true Canvas WikiPage title (never an .html file name).
@@ -6036,15 +6116,31 @@ YOUR WORKFLOW:
             if not page_title:
                 page_title = os.path.splitext(html_fname)[0].strip() or "Converted Page"
 
+            # Final upload-time cleanup for mojibake artifacts that may survive prior passes.
+            cleaned_html = str(soup)
+            upload_cleanup_map = {
+                "&Acirc;&nbsp;": " ",
+                "&acirc;&nbsp;": " ",
+                "Â\xa0": " ",
+                "Â ": " ",
+                "&Acirc;&copy;": "&copy;",
+                "&acirc;&copy;": "&copy;",
+                "&eth;&sup1;": "🎥",
+                "ð¹": "🎥",
+            }
+            for bad, good in upload_cleanup_map.items():
+                if bad in cleaned_html:
+                    cleaned_html = cleaned_html.replace(bad, good)
+
             # Check if page exists to avoid duplicates
             success_get, res_get = api.get_page(page_title)
             if success_get and "url" in res_get:
                 self.gui_handler.log(f"   [Sync] Updating existing page: {page_title}")
                 success_page, res_page = api.update_page(
-                    res_get["url"], page_title, str(soup), published=True
+                    res_get["url"], page_title, cleaned_html, published=True
                 )
             else:
-                success_page, res_page = api.create_page(page_title, str(soup), published=True)
+                success_page, res_page = api.create_page(page_title, cleaned_html, published=True)
 
             if success_page:
                 canvas_page_url = res_page.get("html_url")

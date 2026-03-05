@@ -137,6 +137,42 @@ def remediate_html_file(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         html_content = f.read()
 
+    # --- Encoding cleanup (common mojibake artifacts) ---
+    # Example: "Â©" appears when UTF-8 content is mis-decoded as cp1252.
+    mojibake_map = {
+        "Â©": "©",
+        "â€™": "’",
+        "â€œ": "“",
+        "â€": "”",
+        "â€“": "–",
+        "â€”": "—",
+        "â€¦": "…",
+        "ð¹": "🎥",
+        "Â": "",
+    }
+    # Entity-encoded mojibake observed in Canvas editor/source views.
+    mojibake_entity_map = {
+        "&Acirc;&nbsp;": "&nbsp;",
+        "&acirc;&nbsp;": "&nbsp;",
+        "&Acirc;&copy;": "&copy;",
+        "&acirc;&copy;": "&copy;",
+        "&eth;&sup1;": "🎥",
+    }
+    replaced_any_mojibake = False
+    for bad, good in mojibake_map.items():
+        if bad in html_content:
+            html_content = html_content.replace(bad, good)
+            replaced_any_mojibake = True
+    for bad, good in mojibake_entity_map.items():
+        if bad in html_content:
+            html_content = html_content.replace(bad, good)
+            replaced_any_mojibake = True
+
+    # Common broken range marker from mis-decoded en-dash (e.g., "15â30").
+    html_content = re.sub(r"(\d)â(\d)", r"\1–\2", html_content)
+    if replaced_any_mojibake:
+        fixes.append("Normalized mis-encoded UTF-8 characters (mojibake)")
+
     # --- Part 1: Cleanup (Toolkit 1 Logic) ---
     # Strip <font> tags but keep content
     # [REMOVED] Destructive stripping. Handled in Part 8 via BeautifulSoup to preserve info.
@@ -178,7 +214,7 @@ def remediate_html_file(filepath):
     if reflow_fixed:
         fixes.append("Converted fixed widths >320px to responsive max-width")
 
-    # Fix 3: Font Size Remediation (Bumping < 12px to 14px for accessibility)
+    # Fix 3: Font Size Remediation (align with audit thresholds)
     def font_size_bump(match):
         nonlocal reflow_fixed
         val = float(match.group(1))
@@ -187,9 +223,13 @@ def remediate_html_file(filepath):
             return "font-size: 14px"
         elif unit == 'pt' and val < 9:
             return "font-size: 10.5pt" # ~14px
+        elif unit == 'em' and val < 0.75:
+            return "font-size: 0.8em"
+        elif unit == 'rem' and val < 0.75:
+            return "font-size: 0.8rem"
         return match.group(0)
 
-    html_content = re.sub(r'font-size:\s*([0-9.]+)(px|pt)', font_size_bump, html_content, flags=re.IGNORECASE)
+    html_content = re.sub(r'font-size:\s*([0-9.]+)(px|pt|em|rem)', font_size_bump, html_content, flags=re.IGNORECASE)
 
     soup = BeautifulSoup(html_content, 'html.parser')
 
@@ -201,14 +241,43 @@ def remediate_html_file(filepath):
             fixes.append("Reverted broken HTML from <title> tag")
 
     # --- Part 2: Document Structure ---
-    # Ensure Mobile Viewport (Reflow Fix)
+    # Ensure valid html/head/body skeleton for fragments, then enforce viewport.
+    if not soup.find('html'):
+        html_tag = soup.new_tag('html')
+        body_tag = soup.new_tag('body')
+        for element in list(soup.contents):
+            body_tag.append(element.extract())
+        html_tag.append(body_tag)
+        soup.append(html_tag)
+        fixes.append("Wrapped HTML fragment in <html><body>")
+
+    if not soup.find('body'):
+        html_tag = soup.find('html')
+        body_tag = soup.new_tag('body')
+        for element in list(html_tag.contents):
+            if getattr(element, 'name', None) != 'head':
+                body_tag.append(element.extract())
+        html_tag.append(body_tag)
+        fixes.append("Created missing <body> element")
+
     head = soup.find('head')
     if not head:
-        if soup.html:
-             head = soup.new_tag('head')
-             soup.html.insert(0, head)
+        html_tag = soup.find('html')
+        head = soup.new_tag('head')
+        html_tag.insert(0, head)
+        fixes.append("Created missing <head> element")
     
     if head:
+        meta_charset = head.find('meta', attrs={'charset': True})
+        if not meta_charset:
+            # Place charset first in head when possible.
+            new_charset = soup.new_tag('meta', attrs={'charset': 'utf-8'})
+            if head.contents:
+                head.insert(0, new_charset)
+            else:
+                head.append(new_charset)
+            fixes.append("Added UTF-8 charset meta tag")
+
         meta_viewport = head.find('meta', attrs={'name': 'viewport'})
         if not meta_viewport:
             new_meta = soup.new_tag('meta', attrs={'name': 'viewport', 'content': 'width=device-width, initial-scale=1'})
@@ -316,6 +385,39 @@ def remediate_html_file(filepath):
     # OR we just assume if they exist, Canvas catches them.
     # We will just ensure that standard LaTeX is not mangled.
     # The current script doesn't mangle brackets, so we are good.
+
+    # C. PPT "text-box" code blocks often contain light syntax colors on white backgrounds.
+    # Force a dark code-panel background to satisfy contrast checks.
+    for box in soup.find_all('div', class_='text-box'):
+        box_style = box.get('style', '')
+        box_style_low = box_style.lower()
+
+        # Keep existing styles, but enforce accessible code panel colors.
+        if 'background-color' not in box_style_low:
+            box_style = box_style.rstrip('; ') + f"; background-color: {COLOR_BG_DARK};"
+        else:
+            box_style = re.sub(r'background-color\s*:\s*[^;]+', f'background-color: {COLOR_BG_DARK}', box_style, flags=re.IGNORECASE)
+
+        if 'color' not in box_style_low:
+            box_style = box_style.rstrip('; ') + f"; color: {COLOR_TEXT_WHITE};"
+        else:
+            box_style = re.sub(r'color\s*:\s*[^;]+', f'color: {COLOR_TEXT_WHITE}', box_style, flags=re.IGNORECASE)
+
+        if 'padding' not in box_style_low:
+            box_style = box_style.rstrip('; ') + "; padding: 12px;"
+        if 'border-radius' not in box_style_low:
+            box_style = box_style.rstrip('; ') + "; border-radius: 6px;"
+        if 'overflow-x' not in box_style_low:
+            box_style = box_style.rstrip('; ') + "; overflow-x: auto;"
+
+        box['style'] = box_style.strip().rstrip(';') + ';'
+        fixes.append("Applied accessible dark theme to text-box code panel")
+
+        # Ensure child text is readable on dark background.
+        for child in box.find_all(['p', 'span', 'li']):
+            child_style = child.get('style', '')
+            if 'color' not in child_style.lower():
+                child['style'] = (child_style.rstrip('; ') + f"; color: {COLOR_TEXT_WHITE};").strip().rstrip(';') + ';'
 
     # --- Part 5: Tables (AGGRESSIVE REMEDIATION) ---
     for table in soup.find_all('table'):
@@ -587,8 +689,20 @@ def remediate_html_file(filepath):
         # 7d. POTENTIAL EQUATION DETECTION (Math Check)
         # Heuristic: Small images with high contrast, or alt text containing math terms but no LaTeX
         src = img.get('src', '').lower()
+        # Clear stale math-review flags on known non-math UI/icon assets.
+        icon_like = (
+            'icons%20full%20size' in src
+            or 'icons full size' in src
+            or 'assignment-full-size' in src
+            or 'assignment_full_size' in src
+            or 'icon' in src
+        )
+        if icon_like and img.has_attr('data-math-check'):
+            del img['data-math-check']
+            fixes.append(f"Cleared false math-review flag on icon asset: {os.path.basename(src)}")
+
         # [FIX] Idempotency: skip if already flagged or math'd
-        if not img.has_attr('data-math') and not img.has_attr('data-math-check') and (any(term in alt_val.lower() or term in src for term in ['eq', 'formula', 'math', 'sigma', 'sqrt', 'frac'])):
+        if (not icon_like) and (not img.has_attr('data-math')) and (not img.has_attr('data-math-check')) and (any(term in alt_val.lower() or term in src for term in ['eq', 'formula', 'math', 'sigma', 'sqrt', 'frac'])):
              # Mark for interactive review to suggest LaTeX
              img['data-math-check'] = "true"
              fixes.append(f"Flagged potential math equation for accessibility verification: {os.path.basename(src)}")
@@ -603,6 +717,23 @@ def remediate_html_file(filepath):
             img['data-table-check'] = "true"
             fixes.append(f"Flagged potential table image for HTML table conversion: {os.path.basename(src)}")
 
+    # --- Part 7f: Horizontal Rule Contrast/Visibility ---
+    for hr in soup.find_all('hr'):
+        hr_style = hr.get('style', '')
+        style_low = hr_style.lower()
+
+        # Remove low-contrast defaults and enforce school-color rule.
+        if 'border' in style_low:
+            hr_style = re.sub(r'border\s*:[^;]*;?', '', hr_style, flags=re.IGNORECASE)
+            hr_style = re.sub(r'border-top\s*:[^;]*;?', '', hr_style, flags=re.IGNORECASE)
+
+        if 'background' in style_low:
+            hr_style = re.sub(r'background(?:-color)?\s*:[^;]*;?', '', hr_style, flags=re.IGNORECASE)
+
+        enforced = "border: 0; border-top: 3px solid #4b3190; opacity: 1; margin: 24px 0;"
+        hr['style'] = (hr_style.strip().rstrip(';') + '; ' + enforced).strip('; ').strip() + ';'
+        fixes.append("Applied school-color high-contrast style to <hr>")
+
     # --- Part 8: Typography & Accessibility (Small Fonts / AUTO-CONTRAST) ---
     import run_audit # Use get_style_property for robust lookup
     
@@ -616,9 +747,9 @@ def remediate_html_file(filepath):
             unit = size_match.group(2)
             needs_elevation = False
             new_val = 12
-            if unit == 'px' and val < 10: needs_elevation = True
-            elif unit == 'pt' and val < 8: needs_elevation = True; new_val = 9
-            elif unit in ['em', 'rem'] and val < 0.7: needs_elevation = True; new_val = 0.8
+            if unit == 'px' and val < 12: needs_elevation = True; new_val = 14
+            elif unit == 'pt' and val < 9: needs_elevation = True; new_val = 10.5
+            elif unit in ['em', 'rem'] and val < 0.75: needs_elevation = True; new_val = 0.8
             if needs_elevation:
                 tag['style'] = re.sub(rf'font-size:\s*[0-9.]+{unit}', f'font-size: {new_val}{unit}', tag['style'], flags=re.IGNORECASE)
                 fixes.append(f"Elevated small font size ({val}{unit} -> {new_val}{unit})")
@@ -849,7 +980,30 @@ def remediate_html_file(filepath):
 
     # Deduplicate fixes
     unique_fixes = list(set(fixes))
-    return str(soup), unique_fixes
+
+    # Final serialization cleanup for lingering mojibake/entity artifacts.
+    remediated_html = str(soup)
+    final_cleanup = {
+        "&Acirc;&nbsp;": " ",
+        "&acirc;&nbsp;": " ",
+        "Â\xa0": " ",
+        "Â ": " ",
+        "&Acirc;&copy;": "&copy;",
+        "&acirc;&copy;": "&copy;",
+        "&eth;&sup1;": "🎥",
+        "ð¹": "🎥",
+    }
+    cleaned_any = False
+    for bad, good in final_cleanup.items():
+        if bad in remediated_html:
+            remediated_html = remediated_html.replace(bad, good)
+            cleaned_any = True
+
+    remediated_html = re.sub(r"(\d)â(\d)", r"\1–\2", remediated_html)
+    if cleaned_any:
+        unique_fixes.append("Final output cleanup removed mojibake artifacts")
+
+    return remediated_html, unique_fixes
 
 def batch_remediate_v3(directory):
     """Processes all HTML files in a directory."""

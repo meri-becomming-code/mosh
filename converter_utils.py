@@ -313,8 +313,21 @@ def optimize_image(image_path, max_width=1100, make_transparent=False):
                         img, xy=corner, value=(255, 255, 255, 0), thresh=15
                     )
 
-        # 3. Save optimized
-        img.save(image_path, "PNG", optimize=True)
+        # 3. Save optimized in a format matching file extension to avoid broken files
+        ext = os.path.splitext(image_path)[1].lower()
+        if ext in [".jpg", ".jpeg"]:
+            if img.mode == "RGBA":
+                img = img.convert("RGB")
+            img.save(image_path, "JPEG", optimize=True, quality=90)
+        elif ext == ".gif":
+            img.save(image_path, "GIF")
+        elif ext in [".bmp"]:
+            img.save(image_path, "BMP")
+        elif ext in [".tif", ".tiff"]:
+            img.save(image_path, "TIFF")
+        else:
+            # Default to PNG for .png and unknown-safe web outputs
+            img.save(image_path, "PNG", optimize=True)
         return True
     except Exception as e:
         print(f"Image Optimization failed for {image_path}: {e}")
@@ -1004,11 +1017,25 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         html_parts.append("</table>")
 
                 # Images (Alt Text prompts only if no Silent Memory)
-                if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                linked_picture_type = getattr(MSO_SHAPE_TYPE, "LINKED_PICTURE", None)
+                valid_picture_types = {MSO_SHAPE_TYPE.PICTURE}
+                if linked_picture_type is not None:
+                    valid_picture_types.add(linked_picture_type)
+
+                if shape.shape_type in valid_picture_types:
                     try:
                         image = shape.image
                         image_bytes = image.blob
-                        ext = image.ext
+                        ext = (image.ext or "png").lower().strip()
+                        if ext == "jpeg":
+                            ext = "jpg"
+                        if not re.fullmatch(r"[a-z0-9]+", ext):
+                            ext = "png"
+
+                        # If image format is unknown to browsers, fall back to PNG container name.
+                        web_safe_exts = {"png", "jpg", "gif", "webp", "bmp", "tif", "tiff", "svg"}
+                        if ext not in web_safe_exts:
+                            ext = "png"
                         safe_filename = sanitize_filename(filename)
                         res_dir = os.path.join(
                             output_dir, "web_resources", safe_filename
@@ -1016,18 +1043,17 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         if not os.path.exists(res_dir):
                             os.makedirs(res_dir)
 
-                        # [FIX] Always use .png for PPT images because we optimize/transparency them
-                        image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.png"
+                        image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.{ext}"
                         image_full_path = os.path.join(res_dir, image_filename)
 
                         # 1. Save original bytes first
                         with open(image_full_path, "wb") as img_f:
                             img_f.write(image_bytes)
 
-                        # 2. [NEW] Image Optimization & Magic Transparency
-                        # We save as PNG for transparency support
+                        # 2. Optimize image, but do NOT force transparency removal for PPT assets
+                        # (it can erase intentional white regions and make images appear missing).
                         optimize_image(
-                            image_full_path, max_width=400, make_transparent=True
+                            image_full_path, max_width=400, make_transparent=False
                         )
 
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
@@ -1695,6 +1721,13 @@ def update_links_in_directory(directory, old_filename, new_filename):
     count = 0
     old_base = os.path.basename(old_filename)
     new_base = os.path.basename(new_filename)
+    old_stem = os.path.splitext(old_base)[0]
+
+    def _norm_stem(value):
+        s = os.path.splitext(os.path.basename(str(value or "")))[0].lower()
+        return re.sub(r"[^a-z0-9]+", "", s)
+
+    old_stem_norm = _norm_stem(old_stem)
 
     # URL encoded version for comparison
     old_base_enc = old_base.replace(" ", "%20")
@@ -1729,8 +1762,9 @@ def update_links_in_directory(directory, old_filename, new_filename):
 
                         # Preserve prefixes like $IMS-CC-FILEBASE$/ by only replacing the filename part
                         # Case-insensitive comparison, handles missing extensions
-                        old_stem = os.path.splitext(old_base)[0].lower()
-                        href_stem = clean_href_no_qs.split("/")[-1].lower()
+                        href_leaf = clean_href_no_qs.split("/")[-1]
+                        href_stem = href_leaf.lower()
+                        href_stem_norm = _norm_stem(href_leaf)
                         
                         if (
                             clean_href_no_qs.lower().endswith(
@@ -1739,22 +1773,32 @@ def update_links_in_directory(directory, old_filename, new_filename):
                             or href_stem == old_stem
                             or href.lower() == old_base_enc.lower()
                         ):
-                            # Use regex or simple replace that targets the specific filename
-                            # We use a case-insensitive sub/replace if possible
-                            a["href"] = re.sub(
-                                re.escape(old_base), new_base, href, flags=re.IGNORECASE
-                            )
-                            a["href"] = re.sub(
-                                re.escape(old_base_enc),
-                                new_base.replace(" ", "%20"),
-                                a["href"],
-                                flags=re.IGNORECASE,
-                            )
+                            # For local file links, preserve path prefix if present.
+                            # For live Canvas URLs, write direct target URL.
+                            if new_filename.startswith("http"):
+                                a["href"] = new_href
+                            else:
+                                a["href"] = re.sub(
+                                    re.escape(old_base), new_base, href, flags=re.IGNORECASE
+                                )
+                                a["href"] = re.sub(
+                                    re.escape(old_base_enc),
+                                    new_base.replace(" ", "%20"),
+                                    a["href"],
+                                    flags=re.IGNORECASE,
+                                )
 
                             # Update link text to be human-readable
                             a.string = new_link_text
                             
                             # Add descriptive title
+                            a['title'] = new_link_text
+                            modified = True
+                        elif old_stem_norm and href_stem_norm == old_stem_norm:
+                            # Handles Canvas file_contents style links that often omit extension,
+                            # e.g. /file_contents/.../2-dot-1-the-print-statement?canvas_=1
+                            a["href"] = new_href
+                            a.string = new_link_text
                             a['title'] = new_link_text
                             modified = True
 
