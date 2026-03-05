@@ -56,6 +56,68 @@ def clean_gemini_response(text):
     return text.strip()
 
 
+def repair_docx_placeholder_image_sources(html_content, source_docx_path, log_func=None):
+    """Replace AI placeholder/external DOCX image URLs with local extracted graph paths."""
+    try:
+        src_path = Path(source_docx_path)
+        if src_path.suffix.lower() != ".docx":
+            return html_content
+
+        graph_dir = src_path.parent / f"{src_path.stem}_graphs"
+        if not graph_dir.exists():
+            return html_content
+
+        local_images = sorted(
+            [
+                p.name
+                for p in graph_dir.iterdir()
+                if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+            ]
+        )
+        if not local_images:
+            return html_content
+
+        img_tag_pattern = re.compile(
+            r'(<img\b[^>]*\bsrc\s*=\s*)(["\'])(.*?)(\2)',
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        replace_count = 0
+        idx = 0
+
+        def _replace(match):
+            nonlocal replace_count, idx
+            prefix, quote, src, _ = match.groups()
+            src_clean = (src or "").strip()
+            src_l = src_clean.lower()
+
+            looks_placeholder = (
+                "example.com" in src_l
+                or src_l.startswith("http://")
+                or src_l.startswith("https://")
+            )
+
+            if not looks_placeholder:
+                return match.group(0)
+
+            if idx >= len(local_images):
+                return match.group(0)
+
+            new_src = f"{src_path.stem}_graphs/{local_images[idx]}"
+            idx += 1
+            replace_count += 1
+            return f"{prefix}{quote}{new_src}{quote}"
+
+        repaired = img_tag_pattern.sub(_replace, html_content)
+        if replace_count and log_func:
+            log_func(f"   [IMG-REMAP] Replaced {replace_count} placeholder image URL(s) with local graph assets")
+        return repaired
+    except Exception as e:
+        if log_func:
+            log_func(f"   [IMG-REMAP] Skipped: {e}")
+        return html_content
+
+
 def remove_duplicate_headers(pages):
     """
     Remove duplicate page headers from subsequent pages.
@@ -142,12 +204,57 @@ RULES:
 11. REPEATED HEADERS:
     - If the page header (e.g., "MAT 165 Notes Chapter 10") appears at the top of every page,
       only include it ONCE at the very beginning. Skip it on subsequent pages.
+12. ARROW-BASED CONTINUATION (TEACHER WORKFLOW):
+        - If a teacher draws arrows to continue work in another column/region, preserve that flow order.
+        - Read in logical solving order (top-to-bottom, then follow drawn arrows to the next region).
+        - Keep the continuation explicit by including arrow connectors (→) or short transition text like
+            "Continue in right column:" when needed.
+        - Do NOT treat these continuation arrows as standalone decorative visuals.
+            They are part of the math solution structure unless clearly a separate diagram.
 
 Goal: A perfect accessible digital version of this document."""
 
 # Simple rate limiter to track API calls and enforce delays
 _api_call_times = []
 _current_tier = "free"  # "free" or "paid"
+
+DEFAULT_STYLE_PREFERENCES = {
+    "image_margin_px": 15,
+    "h1_color": "#4b3190",
+    "h2_color": "#2c3e50",
+    "h3_color": "#2c3e50",
+    "h4_color": "#374151",
+    "h5_color": "#4b5563",
+    "h6_color": "#6b7280",
+}
+
+_style_preferences = DEFAULT_STYLE_PREFERENCES.copy()
+
+
+def _normalize_hex_color(value, fallback):
+    s = str(value or "").strip()
+    if re.fullmatch(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})", s):
+        return s
+    return fallback
+
+
+def set_style_preferences(preferences=None):
+    """Set module-wide style preferences for generated Canvas math HTML."""
+    global _style_preferences
+    prefs = dict(DEFAULT_STYLE_PREFERENCES)
+    incoming = preferences or {}
+
+    try:
+        margin = int(incoming.get("image_margin_px", prefs["image_margin_px"]))
+    except Exception:
+        margin = prefs["image_margin_px"]
+    prefs["image_margin_px"] = max(0, min(80, margin))
+
+    for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+        key = f"{tag}_color"
+        prefs[key] = _normalize_hex_color(incoming.get(key), prefs[key])
+
+    _style_preferences = prefs
 
 def set_api_tier(tier):
     """Set the API tier to adjust rate limiting. Call this before processing."""
@@ -386,11 +493,12 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     rel_src = f"{base_name}_graphs/{graph_filename}"
                     
                     # 7. Replace Token with Adaptive Image Tag
-                    style = "max-width: 50%; height: auto; border: 1px solid #ccc; display: block; margin: 10px auto;"
+                    margin_px = _style_preferences.get("image_margin_px", 15)
+                    style = f"max-width: 500px; width: 100%; height: auto; border: 1px solid #ccc; display: block; margin: {margin_px}px auto;"
                     if img_type == 'icon':
                         style = "max-width: 120px; height: auto; vertical-align: middle; margin: 0 5px;"
                     elif img_type == 'graph':
-                        style = "max-width: 50%; height: auto; border: 1px solid #ccc; margin: 20px auto;"
+                        style = f"max-width: 500px; width: 100%; height: auto; border: 1px solid #ccc; margin: {margin_px}px auto;"
                     
                     # Use story as alt text if available, otherwise generic
                     alt_text = story if story.lower() != 'none' and len(story) > 5 else "Visual Element"
@@ -424,7 +532,7 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
         
     return html_content
 
-def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None, visual_review_callback=None):
+def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, manual_visual_selection=False):
     """
     Convert a PDF with handwritten math to Canvas LaTeX.
     
@@ -479,9 +587,11 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         
         if log_func:
             log_func(f"   ✅ Created {len(images)} page images")
+
+        total_image_count = len(images)
         
-        # Process each page using Multi-threading (3x Faster!)
-        all_content = [None] * len(images) # Preschool for ordered results
+        # Process each page sequentially (teacher-paced option supported)
+        all_content = [None] * len(images)
         progress_count = 0
         
         def process_page(index, img_path):
@@ -494,14 +604,22 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                 # [FIX] Use context manager to ensure file handle is closed
                 with Image.open(img_path) as img:
                     model = 'gemini-2.0-flash'
-                    
-                    # Pass 1: Probing
-                    visual_context = detect_visual_elements(client, model, img, log_func)
+                    visual_context = []
+
+                    # Pass 1: Probing (optional)
+                    if detect_visuals and not manual_visual_selection:
+                        visual_context = detect_visual_elements(client, model, img, log_func)
                     
                     # Pass 2: Final Conversion with Context
                     conversion_prompt = MATH_PROMPT
                     if visual_context:
                         conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
+                    elif (not detect_visuals) or manual_visual_selection:
+                        conversion_prompt += (
+                            "\n\nNO_VISUALS_MODE:\n"
+                            "Assume there are no diagrams/graphs/icons to extract. "
+                            "Do not emit any [GRAPH_BBOX: ...] tokens."
+                        )
 
                     response = generate_content_with_retry(
                         client=client,
@@ -515,31 +633,100 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                     log_func(f"   [Error] Page {index+1} failed: {e}")
                 return index, f"<p>[Error converting page {index+1}: {e}]</p>"
 
-        # Process pages sequentially to avoid API quota issues
-        # (Free tier: ~15 RPM, even paid has limits. Each page = 2 API calls)
+        def apply_corrected_boxes_to_content(content, new_boxes, page_w, page_h):
+            """Replace GRAPH_BBOX tokens in page content with corrected boxes."""
+            old_boxes = parse_bounding_boxes(content, page_w, page_h)
+            updated_content = content
+
+            # Remove old tokens first
+            for old_box in old_boxes:
+                updated_content = updated_content.replace(old_box.get('token', ''), '', 1)
+
+            # Append corrected tokens
+            for new_box in new_boxes:
+                if not new_box.get('include', True):
+                    continue
+                x1, y1, x2, y2 = new_box['abs_coords']
+                ymin_rel = int((y1 / page_h) * 1000)
+                xmin_rel = int((x1 / page_w) * 1000)
+                ymax_rel = int((y2 / page_h) * 1000)
+                xmax_rel = int((x2 / page_w) * 1000)
+                box_type = new_box.get('type', 'graph')
+                story = new_box.get('story', 'Visual element')
+                new_token = f"[GRAPH_BBOX: {ymin_rel}, {xmin_rel}, {ymax_rel}, {xmax_rel}, {box_type}, {story}]"
+                updated_content += f"\n{new_token}"
+
+            return updated_content
+
+        # Process pages sequentially to avoid API quota issues.
+        # Optional step_mode inserts teacher confirmation pauses between pages.
         sorted_image_paths = sorted(temp_dir.glob('*.png'))
-        
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            futures = []
-            for i, img_path in enumerate(sorted_image_paths):
-                futures.append(executor.submit(process_page, i, img_path))
-            
-            for future in as_completed(futures):
-                idx, content = future.result()
-                all_content[idx] = content
-                progress_count += 1
-                if progress_callback:
-                    progress_callback(progress_count, len(images))
-                if log_func:
-                    log_func(f"   ✅ Finished processing page {idx+1}/{len(images)}")
+
+        stop_early = False
+        total_pages = len(sorted_image_paths)
+        per_page_step_review = bool(visual_review_callback and step_mode and (detect_visuals or manual_visual_selection))
+        for i, img_path in enumerate(sorted_image_paths):
+            page_num = i + 1
+
+            if step_mode and page_gate_callback:
+                try:
+                    if not page_gate_callback(page_num, total_pages):
+                        stop_early = True
+                        if log_func:
+                            log_func(f"   ⏸️ Stopped by user before page {page_num}. Saving completed pages...")
+                        break
+                except Exception:
+                    # If gate callback fails, continue without blocking conversion.
+                    pass
+
+            idx, content = process_page(i, img_path)
+            all_content[idx] = content
+
+            # Teacher-paced mode: review each page immediately after conversion.
+            # This keeps flow predictable: review -> process next page.
+            if per_page_step_review and content:
+                try:
+                    with Image.open(sorted_image_paths[idx]) as img_page:
+                        w_page, h_page = img_page.size
+                    page_boxes = parse_bounding_boxes(content, w_page, h_page)
+                    page_review_data = [{
+                        'page_index': idx,
+                        'image_path': str(sorted_image_paths[idx]),
+                        'content': content,
+                        'boxes': page_boxes,
+                        'width': w_page,
+                        'height': h_page,
+                    }]
+                    if log_func:
+                        log_func(f"   👁️ Opening image selection review now (page {idx+1} ready)...")
+                    corrected_page = visual_review_callback(page_review_data)
+                    if corrected_page and idx in corrected_page:
+                        all_content[idx] = apply_corrected_boxes_to_content(
+                            content,
+                            corrected_page[idx],
+                            w_page,
+                            h_page,
+                        )
+                        if log_func:
+                            log_func(f"   ✅ Applied page {idx+1} review edits")
+                except Exception as e_early:
+                    if log_func:
+                        log_func(f"   ⚠️ Page {idx+1} review failed: {e_early}")
+
+            progress_count += 1
+            if progress_callback:
+                progress_callback(progress_count, total_image_count)
+            if log_func:
+                log_func(f"   ✅ Finished processing page {idx+1}/{total_image_count}")
         
         # [NEW] Post-Processing: Extract and Crop Graphs
-        if log_func: log_func("   ✂️  Auto-cropping graphs from pages...")
+        if (detect_visuals or manual_visual_selection) and log_func:
+            log_func("   ✂️  Auto-cropping graphs from pages...")
         output_dir = Path(pdf_path).parent
         pdf_stem = Path(pdf_path).stem
         
         # [VISUAL REVIEW] Parse all AI-detected boxes BEFORE cropping
-        if visual_review_callback:
+        if detect_visuals and (not manual_visual_selection) and visual_review_callback and not per_page_step_review:
             if log_func: log_func("   🔍 Parsing AI-detected bounding boxes for review...")
             
             # Collect page images and parsed boxes for review
@@ -572,39 +759,25 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                         if data['page_index'] in corrected_boxes:
                             # Rebuild AI content with corrected boxes
                             new_boxes = corrected_boxes[data['page_index']]
-                            # Replace original GRAPH_BBOX tokens with corrected ones
-                            # This updates all_content with the human-corrected positions
-                            updated_content = data['content']
-                            
-                            # Remove all old GRAPH_BBOX tokens
-                            old_pattern = r'\[GRAPH_BBOX:[^\]]+\]'
-                            for box in data['boxes']:
-                                updated_content = updated_content.replace(box['token'], '', 1)
-                            
-                            # Add new corrected GRAPH_BBOX tokens at the end (before any </p> or at end)
-                            for j, new_box in enumerate(new_boxes):
-                                x1, y1, x2, y2 = new_box['abs_coords']
-                                w, h = data['width'], data['height']
-                                # Convert back to relative coords (0-1000)
-                                ymin_rel = int((y1 / h) * 1000)
-                                xmin_rel = int((x1 / w) * 1000)
-                                ymax_rel = int((y2 / h) * 1000)
-                                xmax_rel = int((x2 / w) * 1000)
-                                box_type = new_box.get('type', 'graph')
-                                story = new_box.get('story', 'Visual element')
-                                new_token = f"[GRAPH_BBOX: {ymin_rel}, {xmin_rel}, {ymax_rel}, {xmax_rel}, {box_type}, {story}]"
-                                updated_content += f"\n{new_token}"
-                            
-                            all_content[data['page_index']] = updated_content
+                            all_content[data['page_index']] = apply_corrected_boxes_to_content(
+                                data['content'],
+                                new_boxes,
+                                data['width'],
+                                data['height'],
+                            )
         
         final_pages = []
         for i, content in enumerate(all_content):
             if content:
-                # Use the original temp image for cropping
-                try:
-                    content = extract_and_crop_graphs(content, sorted_image_paths[i], output_dir, pdf_stem, i, log_func)
-                except Exception as e:
-                     if log_func: log_func(f"   ⚠️ Graph crop warning p{i+1}: {e}")
+                if detect_visuals or manual_visual_selection:
+                    # Use the original temp image for cropping
+                    try:
+                        content = extract_and_crop_graphs(content, sorted_image_paths[i], output_dir, pdf_stem, i, log_func)
+                    except Exception as e:
+                        if log_func: log_func(f"   ⚠️ Graph crop warning p{i+1}: {e}")
+                else:
+                    # Safety cleanup if model still emitted bbox tokens while visuals are disabled.
+                    content = re.sub(r'\[GRAPH_BBOX:[^\]]+\]', '', content)
                 final_pages.append(content)
             else:
                 if log_func:
@@ -615,12 +788,6 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                 
         # Combine everything
         final_html_content = "\n<hr style=\"margin: 2% 0; border: 0; border-top: 1px solid #ccc;\">\n".join(final_pages)
-        
-        # Clean up temp images
-        try:
-            del images
-        except Exception:
-            pass
         
         # Robust cleanup
         try:
@@ -633,7 +800,11 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         html = create_canvas_html(final_html_content, title=title)
         
         if log_func:
-            log_func(f"✅ Conversion complete: {len(all_content)} pages")
+            completed_pages = len([p for p in all_content if p])
+            if stop_early:
+                log_func(f"✅ Partial conversion complete: {completed_pages}/{total_image_count} pages")
+            else:
+                log_func(f"✅ Conversion complete: {completed_pages}/{total_image_count} pages")
         
         return True, html
         
@@ -836,7 +1007,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"❌ Error: {e}")
         return False, str(e)
 
-def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None, visual_review_callback=None):
+def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, detect_visuals_callback=None, fast_license_mode=False, manual_visual_selection=False):
     """
     Process all PDFs in a Canvas export (IMSCC) structure.
     Includes licensing/attribution checking to protect teachers.
@@ -857,54 +1028,87 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
     if not web_resources.exists():
         return False, f"No web_resources folder found in {export_dir}"
     
-    # STEP 1: Check licensing FIRST
+    # STEP 1: Check licensing FIRST (or fast-start skip)
     if log_func:
-        log_func("\n🔍 STEP 1: Checking file licenses to protect you from copyright issues...")
+        if fast_license_mode:
+            log_func("\n⚡ FAST START: Skipping detailed licensing scan for this run.")
+            log_func("   You are responsible for attribution and rights checks.")
+        else:
+            log_func("\n🔍 STEP 1: Checking file licenses to protect you from copyright issues...")
 
     # Pre-initialise so the fallback branch and the attribution lookup below always see defined names.
     safe_files = []
     risky_files = []
 
+    def _is_archived_path(p):
+        return "_ORIGINALS_DO_NOT_UPLOAD_" in str(p)
+
+    def _dedupe_keep_order(paths):
+        out = []
+        seen = set()
+        for p in paths:
+            key = os.path.abspath(str(p))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(str(p))
+        return out
+
     try:
-        import attribution_checker
-        safe_files, risky_files, blocked_files = attribution_checker.scan_export_for_licensing(
-            export_dir, 
-            log_func
-        )
-        
-        # Create licensing report
-        report_path = export_path / "LICENSING_REPORT.md"
-        attribution_checker.create_licensing_report(export_dir, str(report_path))
-        
-        if log_func:
-            log_func(f"\n📄 Full licensing report saved: {report_path}")
-        
-        # Block conversion if proprietary content found
-        if blocked_files and log_func:
-            log_func("\n❌ STOPPING: Found publisher copyrighted materials!")
-            log_func("   Review LICENSING_REPORT.md for details.")
-            log_func("   DO NOT convert blocked files without written permission!")
-            return False, f"Found {len(blocked_files)} proprietary files. See LICENSING_REPORT.md"
-        
-        if risky_files and log_func:
-            log_func(f"\n⚠️  WARNING: {len(risky_files)} files need review")
-            log_func("   Proceeding with conversion, but CHECK LICENSING_REPORT.md")
-            log_func("   You are responsible for proper attribution!")
-        
-        # Get list of safe files (include risky/UNKNOWN files - teacher's own content)
-        # Only block PROPRIETARY publisher content
-        convertible_files = safe_files + risky_files
-        safe_file_paths = [f['path'] for f in convertible_files if f['path'].lower().endswith(('.pdf', '.docx'))]
-        
-        if not safe_file_paths:
-            return False, "No safe PDF or Word files found to convert"
-            
+        if fast_license_mode:
+            # Fast path: skip attribution scanner and start conversion immediately.
+            safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf') if not _is_archived_path(p)] + [str(p) for p in web_resources.glob('**/*.docx') if not _is_archived_path(p)]
+            safe_file_paths = _dedupe_keep_order(safe_file_paths)
+            if log_func:
+                log_func(f"   Found {len(safe_file_paths)} candidate file(s) for conversion.")
+        else:
+            import attribution_checker
+            # Keep scan silent to avoid long, noisy per-file UI logging.
+            safe_files, risky_files, blocked_files = attribution_checker.scan_export_for_licensing(
+                export_dir,
+                None,
+            )
+
+            # Create licensing report
+            report_path = export_path / "LICENSING_REPORT.md"
+            attribution_checker.create_licensing_report(export_dir, str(report_path))
+
+            if log_func:
+                log_func("\n📊 LICENSING SCAN RESULTS:")
+                log_func(f"   ✅ Safe to convert: {len(safe_files)}")
+                log_func(f"   ⚠️  Needs review: {len(risky_files)}")
+                log_func(f"   ❌ DO NOT convert: {len(blocked_files)}")
+                log_func(f"\n📄 Full licensing report saved: {report_path}")
+
+            # Block conversion if proprietary content found
+            if blocked_files:
+                if log_func:
+                    log_func("\n❌ STOPPING: Found publisher copyrighted materials!")
+                    log_func("   Review LICENSING_REPORT.md for details.")
+                    log_func("   DO NOT convert blocked files without written permission!")
+                return False, f"Found {len(blocked_files)} proprietary files. See LICENSING_REPORT.md"
+
+            if risky_files and log_func:
+                log_func(f"\n⚠️  WARNING: {len(risky_files)} files need review")
+                log_func("   Proceeding with conversion, but CHECK LICENSING_REPORT.md")
+                log_func("   You are responsible for proper attribution!")
+
+            # Get list of safe files (include risky/UNKNOWN files - teacher's own content)
+            # Only block PROPRIETARY publisher content
+            convertible_files = safe_files + risky_files
+            safe_file_paths = [f['path'] for f in convertible_files if f['path'].lower().endswith(('.pdf', '.docx')) and not _is_archived_path(f['path'])]
+            safe_file_paths = _dedupe_keep_order(safe_file_paths)
+
+            if not safe_file_paths:
+                return False, "No safe PDF or Word files found to convert"
+
     except Exception as e:
         if log_func:
             log_func(f"\n⚠️  Could not check licensing: {e}")
             log_func("   Proceeding cautiously - YOU must verify licensing manually!")
         # Fall back to processing all PDFs and Docx
-        safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf')] + [str(p) for p in web_resources.glob('**/*.docx')]
+        safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf') if not _is_archived_path(p)] + [str(p) for p in web_resources.glob('**/*.docx') if not _is_archived_path(p)]
+        safe_file_paths = _dedupe_keep_order(safe_file_paths)
     
     # STEP 2: Convert safe files
     if log_func:
@@ -932,6 +1136,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
     conversion_results = [] # List of (source_path, output_path)
     total_files = len(safe_file_paths)
     
+    stop_requested = False
     for i, file_path in enumerate(safe_file_paths, 1):
         if progress_callback:
             progress_callback(i, total_files)
@@ -954,9 +1159,30 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 log_func(f"   🔄 Converting: {p.name} ...")
 
             if ext == '.pdf':
+                detect_visuals_for_file = detect_visuals
+                if detect_visuals_callback:
+                    try:
+                        detect_choice = detect_visuals_callback(str(p))
+                        if detect_choice is None:
+                            if log_func:
+                                log_func(f"   ⏹️ Stopped by user before converting: {p.name}")
+                            stop_requested = True
+                            break
+                        detect_visuals_for_file = bool(detect_choice)
+                    except Exception as e_cb:
+                        if log_func:
+                            log_func(f"   ⚠️ Visual option callback error for {p.name}: {e_cb}. Using default.")
+
+                gate_cb = None
+                if step_mode and page_gate_callback:
+                    gate_cb = lambda page_num, total_pages, fname=p.name: page_gate_callback(fname, page_num, total_pages)
                 success, html_or_error = convert_pdf_to_latex(
                     api_key, str(p), log_func, poppler_path=poppler_path,
-                    visual_review_callback=visual_review_callback
+                    visual_review_callback=visual_review_callback,
+                    step_mode=step_mode,
+                    page_gate_callback=gate_cb,
+                    detect_visuals=detect_visuals_for_file,
+                    manual_visual_selection=manual_visual_selection,
                 )
             elif ext == '.docx':
                 success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
@@ -964,6 +1190,17 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 continue
 
             if success:
+                # Safety cleanup for leaked internal graph tokens.
+                html_or_error = re.sub(r'\[GRAPH_BBOX:[^\]]+\]', '', html_or_error)
+
+                # DOCX fallback: replace AI placeholder/external image URLs with local extracted assets.
+                if ext == '.docx':
+                    html_or_error = repair_docx_placeholder_image_sources(
+                        html_or_error,
+                        str(p),
+                        log_func,
+                    )
+
                 # Add attribution footer if needed
                 license_info = next((f for f in safe_files + risky_files if f['path'] == file_path), None)
                 
@@ -1003,6 +1240,11 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 log_func(f"   ❌ Oops! Problem with {Path(file_path).name}: {e_file}")
             continue
     
+    if stop_requested and conversion_results:
+        if log_func:
+            log_func(f"\n✅ Partial conversion complete: {len(conversion_results)} file(s) converted before stop.")
+        return True, conversion_results
+
     if conversion_results:
         if log_func:
             log_func(f"\n✅ Converted {len(conversion_results)} PDFs successfully!")
@@ -1037,6 +1279,14 @@ def create_canvas_html(content, title="Canvas Math Content"):
         flags=re.IGNORECASE
     )
 
+    margin_px = _style_preferences.get("image_margin_px", 15)
+    h1_color = _style_preferences.get("h1_color", "#4b3190")
+    h2_color = _style_preferences.get("h2_color", "#2c3e50")
+    h3_color = _style_preferences.get("h3_color", "#2c3e50")
+    h4_color = _style_preferences.get("h4_color", "#374151")
+    h5_color = _style_preferences.get("h5_color", "#4b5563")
+    h6_color = _style_preferences.get("h6_color", "#6b7280")
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1067,14 +1317,18 @@ def create_canvas_html(content, title="Canvas Math Content"):
             background-color: #ffffff;
         }}
         h1 {{
-            color: #4b3190;
-            border-bottom: 2px solid #4b3190;
+            color: {h1_color};
+            border-bottom: 2px solid {h1_color};
             padding-bottom: 15px;
             margin-bottom: 30px;
             font-size: 28px; /* Reduced from browser default */
             font-weight: 700;
         }}
-        h2, h3 {{ color: #2c3e50; margin-top: 30px; }}
+        h2 {{ color: {h2_color}; margin-top: 30px; }}
+        h3 {{ color: {h3_color}; margin-top: 30px; }}
+        h4 {{ color: {h4_color}; margin-top: 24px; }}
+        h5 {{ color: {h5_color}; margin-top: 20px; }}
+        h6 {{ color: {h6_color}; margin-top: 16px; }}
 
         /* Table Handling - Prevent Cutoff */
         table {{
@@ -1112,11 +1366,12 @@ def create_canvas_html(content, title="Canvas Math Content"):
 
         /* Images */
         img {{
-            max-width: 50%;
+            max-width: 500px;
+            width: 100%;
             height: auto;
             border-radius: 4px;
             display: block;
-            margin: 10px 0;
+            margin: {margin_px}px 0;
         }}
 
         @media (max-width: 768px) {{
@@ -1139,7 +1394,7 @@ def create_canvas_html(content, title="Canvas Math Content"):
     </div>
     
     <hr style="border: 0; border-top: 1px solid #eee; margin: 50px 0;">
-    <p style="font-size: 0.85em; color: #7f8c8d; text-align: center; font-family: monospace;">
+    <p style="font-size: 10px; color: #7f8c8d; text-align: center; font-family: monospace;">
         Accessible format created by MOSH Toolkit using Gemini AI
     </p>
 </body>

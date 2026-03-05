@@ -20,7 +20,7 @@ def build():
 
     args = [
         "toolkit_gui.py",
-        "--name=MOSH_ADA_Toolkit_v1.0.0_RC40",
+        "--name=MOSH_ADA_Toolkit_v1.0.0_RC73",
         "--noconfirm",
         "--onefile",
         "--windowed",  # No console window
@@ -45,6 +45,8 @@ def build():
     args.append("--hidden-import=jeanie_ai")
     args.append("--hidden-import=google")
     args.append("--hidden-import=google.genai")
+    args.append("--collect-all=google.genai")
+    args.append("--copy-metadata=google-genai")
     args.append("--hidden-import=darkdetect")  # [NEW]
     args.append("--hidden-import=pdf2image")  # [NEW]
 

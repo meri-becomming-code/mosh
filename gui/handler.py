@@ -102,3 +102,23 @@ class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
             return None
         self.input_request_queue.put(("bbox_review", page_data, None, None, None))
         return self._wait_for_response(None)  # Default to None (use AI boxes)
+
+    def prompt_latex_review(self, review_payload):
+        """
+        Request per-page LaTeX/HTML review before continuing to the next page.
+
+        Args:
+            review_payload: dict with fields such as:
+                - file_name: str
+                - page_num: int
+                - total_pages: int
+                - image_path: str
+                - content: str
+
+        Returns:
+            dict: {"action": "continue"|"skip_file", "content": str}
+        """
+        if self.is_stopped():
+            return {"action": "continue", "content": review_payload.get("content", "")}
+        self.input_request_queue.put(("latex_review", review_payload, None, None, None))
+        return self._wait_for_response({"action": "continue", "content": review_payload.get("content", "")})

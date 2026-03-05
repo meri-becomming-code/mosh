@@ -1,6 +1,7 @@
 import requests
 import os
 import mimetypes
+import re
 from urllib.parse import urlparse
 
 class CanvasAPI:
@@ -176,41 +177,74 @@ class CanvasAPI:
         modules_url = f"{self.base_url}/api/v1/courses/{self.course_id}/modules"
         replacements = 0
         try:
-            # 1. Fetch modules (handle pagination quickly)
-            # Typically 100 modules is enough for most courses
-            res_mods = requests.get(f"{modules_url}?per_page=100", headers=self.headers, timeout=30)
-            if res_mods.status_code != 200:
-                return False, f"Could not load modules: {res_mods.text}"
-            
-            modules = res_mods.json()
+            def _normalize_name(s):
+                # Case-insensitive, extension-insensitive, punctuation-light compare.
+                base = os.path.splitext((s or "").strip().lower())[0]
+                base = re.sub(r"[\s_\-\.]+", "", base)
+                base = re.sub(r"[^a-z0-9]", "", base)
+                return base
+
+            def _paged_get(url):
+                """Small pagination helper for Canvas list endpoints."""
+                out = []
+                next_url = url
+                seen = set()
+                while next_url and next_url not in seen:
+                    seen.add(next_url)
+                    res = requests.get(next_url, headers=self.headers, timeout=30)
+                    if res.status_code != 200:
+                        return False, res.text, out
+                    chunk = res.json() or []
+                    if isinstance(chunk, list):
+                        out.extend(chunk)
+
+                    # Parse RFC5988 Link header for rel="next"
+                    next_url = None
+                    link_header = res.headers.get("Link", "")
+                    if link_header:
+                        for part in link_header.split(','):
+                            seg = part.strip()
+                            if 'rel="next"' in seg:
+                                m = re.search(r'<([^>]+)>', seg)
+                                if m:
+                                    next_url = m.group(1)
+                                    break
+                return True, "Success", out
+
+            target_norm = _normalize_name(filename)
+
+            # 1. Fetch ALL modules (paginated)
+            ok_mods, msg_mods, modules = _paged_get(f"{modules_url}?per_page=100")
+            if not ok_mods:
+                return False, f"Could not load modules: {msg_mods}"
+
             for module in modules:
                 mod_id = module.get("id")
                 if not mod_id:
                     continue
-                
-                # 2. Fetch items per module
-                items_url = f"{modules_url}/{mod_id}/items?per_page=100"
-                res_items = requests.get(items_url, headers=self.headers, timeout=30)
-                if res_items.status_code != 200:
+
+                # 2. Fetch ALL items per module (paginated)
+                ok_items, _, items = _paged_get(f"{modules_url}/{mod_id}/items?per_page=100")
+                if not ok_items:
                     continue
-                
-                items = res_items.json()
+
                 for item in items:
                     item_id = item.get("id")
                     item_type = item.get("type", "")
-                    
+
                     if item_type == "File":
                         item_title = item.get("title", "")
-                        # Ignore extension in match to be safe
-                        import os
-                        name_no_ext = os.path.splitext(item_title)[0]
-                        file_no_ext = os.path.splitext(filename)[0]
-                        
-                        # Match precisely
-                        if item_title == filename or name_no_ext == file_no_ext:
+                        item_norm = _normalize_name(item_title)
+
+                        # Robust match: exact title, base-name match, or normalized compare.
+                        same_title = (item_title == filename)
+                        same_base = (os.path.splitext(item_title)[0].lower() == os.path.splitext(filename)[0].lower())
+                        same_norm = (item_norm and target_norm and item_norm == target_norm)
+
+                        if same_title or same_base or same_norm:
                             pos = item.get("position", 1)
                             indent = item.get("indent", 0)
-                            
+
                             # 3. Create the new Page item at the exact same spot
                             payload = {
                                 "module_item[title]": wiki_page_title,
@@ -229,6 +263,21 @@ class CanvasAPI:
                                     # New page was created but old file item wasn't removed — log but don't crash.
                                     import sys
                                     print(f"[Warning] Could not delete old module item {item_id}: {del_res.status_code}", file=sys.stderr)
+                            else:
+                                # Fallback: try in-place update from File -> Page
+                                patch_payload = {
+                                    "module_item[title]": wiki_page_title,
+                                    "module_item[type]": "Page",
+                                    "module_item[page_url]": wiki_page_slug,
+                                }
+                                put_res = requests.put(
+                                    f"{modules_url}/{mod_id}/items/{item_id}",
+                                    headers=self.headers,
+                                    data=patch_payload,
+                                    timeout=30,
+                                )
+                                if put_res.status_code in [200, 201]:
+                                    replacements += 1
             
             return True, replacements
         except Exception as e:

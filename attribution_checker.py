@@ -158,7 +158,7 @@ def generate_attribution_footer(file_name, license_type, author="Unknown", sourc
     
     footer = f"""
 <hr style="margin-top: 30px;">
-<div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4b3190; font-size: 0.9em;">
+<div style="background: #f8f9fa; padding: 15px; border-left: 4px solid #4b3190; font-size: 10px;">
     <strong>📜 Source Attribution</strong><br>
     Original material: <em>{file_name}</em><br>
 """

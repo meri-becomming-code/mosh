@@ -3,7 +3,7 @@
 
 import tkinter as tk
 
-VERSION = "1.0.0-RC17"
+VERSION = "1.0.0-RC73"
 from tkinter import (
     filedialog,
     messagebox,
@@ -134,8 +134,10 @@ class ToolkitGUI:
         self.is_running = False
         self.deferred_review = False
         self.current_dialog = None
+        self.visual_manifest_win = None
 
         # Mirror Mode State
+        self.mirror_should_start = bool(self.config.get("mirror_active", True))
         self.mirror_active = False
         self.mirror_thread = None
         self.mirror_target_file = None  # If we want to watch a SPECIFIC file
@@ -151,6 +153,7 @@ class ToolkitGUI:
         self.gui_handler = ThreadSafeGuiHandler(root, self.log_queue)
         self.gui_handler.api_key = self.config.get("api_key", "")
         self.gui_handler.trust_ai_alt = self.config.get("trust_ai_alt", False)
+        self._apply_style_preferences()
 
         # Check instructions
         if self.config.get("show_instructions", True):
@@ -160,6 +163,7 @@ class ToolkitGUI:
         self._build_styles()
         self._build_menu()
         self._build_ui_modern()
+        self.root.after(900, self._restore_mirror_mode_startup)
 
         # --- Start Polling Loops ---
         self.root.after(100, self._process_logs)
@@ -222,13 +226,28 @@ class ToolkitGUI:
             pass
         return {
             "show_instructions": True,
+            "mirror_active": True,
             "api_key": "",
             "gemini_tier": "free",  # free or paid
+            "math_step_mode": False,
+            "math_has_visuals": True,
+            "math_manual_visual_selection": True,
+            "math_auto_responsive": True,
+            "math_final_ada_check": True,
             "canvas_url": "",
             "canvas_token": "",
             "canvas_course_id": "",
             "theme": "light",
             "poppler_path": "",
+            "style_image_margin_px": 15,
+            "style_profile_mode": "default",
+            "style_school_url": "",
+            "style_h1_color": "#4b3190",
+            "style_h2_color": "#2c3e50",
+            "style_h3_color": "#444444",
+            "style_h4_color": "#374151",
+            "style_h5_color": "#4b5563",
+            "style_h6_color": "#6b7280",
         }
 
     def _update_config(self, **kwargs):
@@ -239,6 +258,7 @@ class ToolkitGUI:
             self.gui_handler.api_key = kwargs["api_key"]
         if "target_dir" in kwargs:
             self.target_dir = kwargs["target_dir"]
+        self._apply_style_preferences()
         self._save_config_simple()
 
     def _save_config(
@@ -300,12 +320,126 @@ class ToolkitGUI:
                 canvas_course_id=cid,
                 api_key=self.ent_api.get().strip(),
                 gemini_tier=getattr(self, 'var_gemini_tier', None) and self.var_gemini_tier.get() or "free",
+                math_step_mode=getattr(self, 'var_math_step_mode', None) and self.var_math_step_mode.get() or False,
+                math_has_visuals=getattr(self, 'var_math_has_visuals', None) and self.var_math_has_visuals.get() or False,
+                math_manual_visual_selection=getattr(self, 'var_math_manual_visual_selection', None) and self.var_math_manual_visual_selection.get() or False,
+                math_auto_responsive=getattr(self, 'var_math_auto_responsive', None) and self.var_math_auto_responsive.get() or False,
+                math_final_ada_check=getattr(self, 'var_math_final_ada_check', None) and self.var_math_final_ada_check.get() or False,
+                style_profile_mode=getattr(self, 'var_style_profile_mode', None) and self.var_style_profile_mode.get() or "default",
+                style_school_url=getattr(self, 'ent_school_url', None) and self.ent_school_url.get().strip() or "",
+                **self._collect_style_preferences_from_ui(),
                 # Poppler path is handled by its own entry
                 # Target Dir is handled by its own label/var
             )
             # No popup, just save
         except Exception as e:
             print(f"Quick save error: {e}")
+
+    def _normalize_hex_color(self, value, fallback):
+        """Return valid #RGB/#RRGGBB color or fallback."""
+        import re
+
+        s = str(value or "").strip()
+        if re.fullmatch(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})", s):
+            return s
+        return fallback
+
+    def _extract_school_primary_color(self, website_url):
+        """Best-effort extraction of a school primary color from a website."""
+        try:
+            url = str(website_url or "").strip()
+            if not url:
+                return None
+            if not url.startswith(("http://", "https://")):
+                url = f"https://{url}"
+
+            req = urllib.request.Request(url, headers={"User-Agent": "MOSH-ADA-Toolkit/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                html = resp.read(300000).decode("utf-8", errors="ignore")
+
+            import re
+            m = re.search(
+                r'<meta[^>]+name=["\']theme-color["\'][^>]+content=["\'](#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))["\']',
+                html,
+                flags=re.IGNORECASE,
+            )
+            if m:
+                return m.group(1)
+
+            colors = re.findall(r'#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})', html)
+            ignore = {"#fff", "#ffffff", "#000", "#000000", "#f5f5f5", "#fafafa"}
+            for c in colors:
+                if c.lower() not in ignore:
+                    return c
+        except Exception:
+            return None
+        return None
+
+    def _style_preferences_from_config(self):
+        """Load and sanitize style settings from config."""
+        try:
+            margin = int(self.config.get("style_image_margin_px", 15))
+        except Exception:
+            margin = 15
+        margin = max(0, min(80, margin))
+
+        defaults = {
+            "h1": "#4b3190",
+            "h2": "#2c3e50",
+            "h3": "#444444",
+            "h4": "#374151",
+            "h5": "#4b5563",
+            "h6": "#6b7280",
+        }
+
+        prefs = {"image_margin_px": margin}
+        for tag, default in defaults.items():
+            prefs[f"{tag}_color"] = self._normalize_hex_color(
+                self.config.get(f"style_{tag}_color", default), default
+            )
+
+        if self.config.get("style_profile_mode", "default") == "school":
+            school_url = self.config.get("style_school_url", "")
+            school_color = self._extract_school_primary_color(school_url)
+            if school_color:
+                prefs["h1_color"] = school_color
+                prefs["h2_color"] = "#2c3e50"
+                prefs["h3_color"] = "#444444"
+        return prefs
+
+    def _collect_style_preferences_from_ui(self):
+        """Collect style settings from Setup widgets if they exist."""
+        prefs = self._style_preferences_from_config()
+
+        if hasattr(self, "var_image_spacing"):
+            spacing_map = {
+                "Compact (8px)": 8,
+                "Standard (15px)": 15,
+                "Wide (24px)": 24,
+            }
+            prefs["image_margin_px"] = spacing_map.get(self.var_image_spacing.get(), 15)
+
+        for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            ent = getattr(self, f"ent_{tag}_color", None)
+            if ent and ent.winfo_exists():
+                default = prefs[f"{tag}_color"]
+                prefs[f"{tag}_color"] = self._normalize_hex_color(ent.get().strip(), default)
+
+        return {
+            "style_image_margin_px": prefs["image_margin_px"],
+            "style_h1_color": prefs["h1_color"],
+            "style_h2_color": prefs["h2_color"],
+            "style_h3_color": prefs["h3_color"],
+            "style_h4_color": prefs["h4_color"],
+            "style_h5_color": prefs["h5_color"],
+            "style_h6_color": prefs["h6_color"],
+        }
+
+    def _apply_style_preferences(self):
+        """Push saved style preferences into converter modules."""
+        prefs = self._style_preferences_from_config()
+        converter_utils.set_style_preferences(prefs)
+        math_converter.set_style_preferences(prefs)
 
     def _build_menu(self):
         menubar = Menu(self.root)
@@ -345,6 +479,83 @@ class ToolkitGUI:
             ):
                 return
         self.root.destroy()
+
+    def _center_window_on_root(self, win, width, height):
+        """Center a dialog over the main app window (not the monitor center)."""
+        self.root.update_idletasks()
+        rx = self.root.winfo_rootx()
+        ry = self.root.winfo_rooty()
+        rw = max(self.root.winfo_width(), 200)
+        rh = max(self.root.winfo_height(), 200)
+        x = max(0, rx + (rw - width) // 2)
+        y = max(0, ry + (rh - height) // 2)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _ask_choice_centered(self, title, message, buttons):
+        """
+        Show centered modal dialog over app window.
+        buttons: list of (label, value)
+        Returns selected value, or None on close.
+        """
+        result = {"value": None}
+        dialog = Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.configure(bg="white")
+        dialog.resizable(False, False)
+        self._center_window_on_root(dialog, 560, 260)
+        try:
+            dialog.attributes("-topmost", True)
+            dialog.lift()
+            dialog.focus_force()
+        except Exception:
+            pass
+
+        tk.Label(
+            dialog,
+            text=title,
+            font=("Segoe UI", 12, "bold"),
+            bg="white",
+            fg="#4B3190",
+        ).pack(pady=(16, 8))
+
+        tk.Label(
+            dialog,
+            text=message,
+            font=("Segoe UI", 10),
+            bg="white",
+            fg="#222",
+            justify="left",
+            wraplength=520,
+        ).pack(padx=18, pady=(0, 16))
+
+        row = tk.Frame(dialog, bg="white")
+        row.pack(pady=(0, 16))
+
+        def choose(v):
+            result["value"] = v
+            dialog.destroy()
+
+        for lbl, val in buttons:
+            tk.Button(
+                row,
+                text=lbl,
+                command=lambda x=val: choose(x),
+                font=("Segoe UI", 10, "bold"),
+                bg="#4b3190" if val is True else ("#e5e7eb" if val is None else "#1d4ed8"),
+                fg="white" if val is not None else "#111827",
+                activebackground="#6a4bb1",
+                activeforeground="white",
+                relief="flat",
+                cursor="hand2",
+                padx=12,
+                pady=6,
+            ).pack(side="left", padx=6)
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: choose(None))
+        dialog.wait_window()
+        return result["value"]
 
     def _show_documentation(self):
         """Phase 12: Shows documentation directly in the app."""
@@ -1119,10 +1330,166 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ToolTip(tier_free, "~15 requests/min. Recommended if you see 'Quota Hiccup' errors.")
         ToolTip(tier_paid, "~60 requests/min. 3-4x faster processing for paid API keys.")
 
+        # Step-by-step PDF math processing (teacher-paced to reduce quota hiccups)
+        self.var_math_step_mode = tk.BooleanVar(value=self.config.get("math_step_mode", False))
+        chk_step = tk.Checkbutton(
+            frame_ai,
+            text="Process math PDFs one page at a time (teacher-paced)",
+            variable=self.var_math_step_mode,
+            command=self._quick_save_inputs,
+            bg="white",
+            font=("Segoe UI", 9),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_step.pack(anchor="w", pady=(4, 0))
+        ToolTip(
+            chk_step,
+            "Adds a Next-page pause between pages during math PDF conversion. This helps reduce quota hiccups and gives you control over pacing.",
+        )
+
+        self.var_math_has_visuals = tk.BooleanVar(value=self.config.get("math_has_visuals", True))
+        chk_visuals = tk.Checkbutton(
+            frame_ai,
+            text="Math pages contain graphs/diagrams/images",
+            variable=self.var_math_has_visuals,
+            command=self._quick_save_inputs,
+            bg="white",
+            font=("Segoe UI", 9),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_visuals.pack(anchor="w", pady=(2, 0))
+        ToolTip(
+            chk_visuals,
+            "Turn this off for mostly equation/text packets (for example Algebra worksheets) to skip visual probing and speed processing.",
+        )
+
+        self.var_math_manual_visual_selection = tk.BooleanVar(
+            value=self.config.get("math_manual_visual_selection", True)
+        )
+        chk_manual_visuals = tk.Checkbutton(
+            frame_ai,
+            text="Manual box selection only (skip AI pre-selection)",
+            variable=self.var_math_manual_visual_selection,
+            command=self._quick_save_inputs,
+            bg="white",
+            font=("Segoe UI", 9),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_manual_visuals.pack(anchor="w", pady=(2, 0))
+        ToolTip(
+            chk_manual_visuals,
+            "Recommended when AI over-selects. You draw/select only the real visuals to crop.",
+        )
+
+        self.var_math_auto_responsive = tk.BooleanVar(value=self.config.get("math_auto_responsive", True))
+        chk_responsive = tk.Checkbutton(
+            frame_ai,
+            text="Auto-make pages responsive for mobile",
+            variable=self.var_math_auto_responsive,
+            command=self._quick_save_inputs,
+            bg="white",
+            font=("Segoe UI", 9),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_responsive.pack(anchor="w", pady=(2, 0))
+
+        self.var_math_final_ada_check = tk.BooleanVar(value=self.config.get("math_final_ada_check", True))
+        chk_final_ada = tk.Checkbutton(
+            frame_ai,
+            text="Run final ADA check before upload",
+            variable=self.var_math_final_ada_check,
+            command=self._quick_save_inputs,
+            bg="white",
+            font=("Segoe UI", 9),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_final_ada.pack(anchor="w", pady=(2, 0))
+
+        # --- SECTION 3: OUTPUT STYLE PREFERENCES ---
+        tk.Label(
+            content,
+            text="3. Output Style Preferences",
+            font=("Segoe UI", 14, "bold"),
+            bg="white",
+            fg="#4B3190",
+        ).pack(anchor="w", pady=(10, 5))
+        frame_style = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_style.pack(fill="x", pady=(0, 20))
+
+        tk.Label(
+            frame_style,
+            text="Image Spacing:",
+            bg="white",
+            fg="#4B3190",
+            font=("bold"),
+        ).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
+
+        spacing_options = ["Compact (8px)", "Standard (15px)", "Wide (24px)"]
+        margin_px = self.config.get("style_image_margin_px", 15)
+        if margin_px <= 10:
+            default_spacing = "Compact (8px)"
+        elif margin_px >= 20:
+            default_spacing = "Wide (24px)"
+        else:
+            default_spacing = "Standard (15px)"
+        self.var_image_spacing = tk.StringVar(value=default_spacing)
+        spacing_menu = ttk.OptionMenu(
+            frame_style,
+            self.var_image_spacing,
+            self.var_image_spacing.get(),
+            *spacing_options,
+            command=lambda _v: self._quick_save_inputs(),
+        )
+        spacing_menu.grid(row=0, column=1, sticky="w", pady=(0, 8))
+
+        tk.Label(
+            frame_style,
+            text="Heading Color Style:",
+            bg="white",
+            fg="#4B3190",
+            font=("bold"),
+        ).grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(4, 6))
+
+        self.var_style_profile_mode = tk.StringVar(value=self.config.get("style_profile_mode", "default"))
+        profile_menu = ttk.OptionMenu(
+            frame_style,
+            self.var_style_profile_mode,
+            self.var_style_profile_mode.get(),
+            "default",
+            "school",
+            command=lambda _v: self._quick_save_inputs(),
+        )
+        profile_menu.grid(row=1, column=1, sticky="w", pady=(4, 6))
+
+        tk.Label(
+            frame_style,
+            text="School website (optional):",
+            bg="white",
+            fg="#4B3190",
+            font=("bold"),
+        ).grid(row=2, column=0, sticky="w", padx=(0, 10), pady=(2, 6))
+        self.ent_school_url = tk.Entry(frame_style, width=42)
+        self.ent_school_url.insert(0, self.config.get("style_school_url", ""))
+        self.ent_school_url.grid(row=2, column=1, sticky="w", pady=(2, 6))
+        self.ent_school_url.bind("<FocusOut>", lambda _e: self._quick_save_inputs())
+
+        tk.Label(
+            frame_style,
+            text="Choose 'default' to leave colors as-is, or 'school' to auto-match your school site.",
+            bg="white",
+            fg="gray",
+            font=("Segoe UI", 8),
+        ).grid(row=3, column=1, sticky="w")
+
         # --- SECTION 3: POPPLER (MATH PDF) ---
         tk.Label(
             content,
-            text="3. Poppler Bin Path (For Math PDF)",
+            text="4. Poppler Bin Path (For Math PDF)",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#D97706",
@@ -1168,7 +1535,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # --- SECTION 4: LOAD PROJECT ---
         tk.Label(
             content,
-            text="4. Load Your Course Project",
+            text="5. Load Your Course Project",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#4B3190",
@@ -1216,7 +1583,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # --- SECTION 5: CANVAS MIRROR (LIVE SYNC) ---
         tk.Label(
             content,
-            text="5. Canvas Mirror (Live Sync)",
+            text="6. Canvas Mirror (Live Sync)",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#4B3190",
@@ -1234,9 +1601,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         self.btn_mirror_toggle = tk.Button(
             frame_mirror,
-            text="🔴 MIRROR MODE: OFF",
+            text="🟢 MIRROR MODE: ON" if self.mirror_active else "🔴 MIRROR MODE: OFF",
             command=self._toggle_mirror,
-            bg="#f3f4f6",
+            bg="#D1FAE5" if self.mirror_active else "#f3f4f6",
             font=("Segoe UI", 10, "bold"),
             width=25,
             cursor="hand2",
@@ -1244,7 +1611,11 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.btn_mirror_toggle.pack(side="left")
 
         self.lbl_mirror_status = tk.Label(
-            frame_mirror, text="Idle", bg="white", fg="gray", font=("italic")
+            frame_mirror,
+            text="Watching for changes..." if self.mirror_active else "Idle",
+            bg="white",
+            fg="green" if self.mirror_active else "gray",
+            font=("italic"),
         )
         self.lbl_mirror_status.pack(side="left", padx=15)
 
@@ -1293,9 +1664,18 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 canvas_url=self.ent_url.get().strip(),
                 canvas_token=self.ent_token.get().strip(),
                 canvas_course_id=self.ent_course.get().strip(),
+                gemini_tier=getattr(self, 'var_gemini_tier', None) and self.var_gemini_tier.get() or "free",
+                math_step_mode=getattr(self, 'var_math_step_mode', None) and self.var_math_step_mode.get() or False,
+                math_has_visuals=getattr(self, 'var_math_has_visuals', None) and self.var_math_has_visuals.get() or False,
+                math_manual_visual_selection=getattr(self, 'var_math_manual_visual_selection', None) and self.var_math_manual_visual_selection.get() or False,
+                math_auto_responsive=getattr(self, 'var_math_auto_responsive', None) and self.var_math_auto_responsive.get() or False,
+                math_final_ada_check=getattr(self, 'var_math_final_ada_check', None) and self.var_math_final_ada_check.get() or False,
+                style_profile_mode=getattr(self, 'var_style_profile_mode', None) and self.var_style_profile_mode.get() or "default",
+                style_school_url=getattr(self, 'ent_school_url', None) and self.ent_school_url.get().strip() or "",
                 poppler_path=self.ent_poppler_setup.get().strip(),
                 trust_ai_alt=self.trust_ai_var.get(),
                 target_dir=self.target_dir,
+                **self._collect_style_preferences_from_ui(),
             )
             lbl_global_status.config(text="✅ All Settings Saved!", fg="green")
             messagebox.showinfo("Success", "Configuration updated.")
@@ -1803,14 +2183,14 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ).pack(anchor="w", pady=(0, 5))
         tk.Label(
             frame_math,
-            text="Review all detected graphs, icons, and diagrams in a single grid.",
+            text="QA grid: review cropped visuals, spot misses, and manually fix/delete edge cases.",
             font=("Segoe UI", 9),
             bg="white",
             fg="gray",
         ).pack(anchor="w")
         self.btn_manifest = ttk.Button(
             frame_math,
-            text="✨ Open Visual Element Manifest (Confirmation Grid)",
+            text="✨ Open Visual QA Grid",
             command=self._show_visual_manifest,
             style="Action.TButton",
         )
@@ -1978,6 +2358,110 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 )
 
         self._run_task_in_thread(task, "Course Packaging")
+
+    def _export_partial_converted_files(self, conversion_results):
+        """Export only newly converted HTML files (+ graph assets) into a test zip."""
+        if not conversion_results:
+            messagebox.showinfo(
+                "Nothing to Export",
+                "No converted files were found for partial export.",
+            )
+            return
+
+        target_root = self.target_dir or self.lbl_dir.get().strip()
+        if not target_root or not os.path.isdir(target_root):
+            messagebox.showerror(
+                "No Project Loaded",
+                "Please load a project folder before creating a partial export.",
+            )
+            return
+
+        default_name = os.path.basename(target_root.rstrip("\\/")) + "_partial_math_export.zip"
+        output_path = filedialog.asksaveasfilename(
+            defaultextension=".zip",
+            initialfile=default_name,
+            filetypes=[("Zip Archive", "*.zip")],
+        )
+        if not output_path:
+            return
+
+        def task():
+            self.gui_handler.log("--- Creating Partial Math Export... ---")
+            added = set()
+            added_count = 0
+
+            try:
+                with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+                    for _, dest in conversion_results:
+                        if not dest or not os.path.isfile(dest):
+                            continue
+
+                        dest_abs = os.path.abspath(dest)
+                        try:
+                            rel_dest = os.path.relpath(dest_abs, target_root)
+                        except Exception:
+                            continue
+
+                        # Safety: do not export files outside the project root.
+                        if rel_dest.startswith(".."):
+                            continue
+
+                        rel_dest_norm = rel_dest.replace("\\", "/")
+                        if rel_dest_norm not in added:
+                            zf.write(dest_abs, rel_dest_norm)
+                            added.add(rel_dest_norm)
+                            added_count += 1
+
+                        # Include matching graph folder (if present)
+                        graph_dir = os.path.splitext(dest_abs)[0] + "_graphs"
+                        if os.path.isdir(graph_dir):
+                            for root_dir, _, files in os.walk(graph_dir):
+                                for fn in files:
+                                    f_abs = os.path.join(root_dir, fn)
+                                    try:
+                                        rel_f = os.path.relpath(f_abs, target_root)
+                                    except Exception:
+                                        continue
+                                    if rel_f.startswith(".."):
+                                        continue
+                                    rel_f_norm = rel_f.replace("\\", "/")
+                                    if rel_f_norm in added:
+                                        continue
+                                    zf.write(f_abs, rel_f_norm)
+                                    added.add(rel_f_norm)
+                                    added_count += 1
+
+                if added_count == 0:
+                    self.gui_handler.log("[WARN] Partial export created no files.")
+                    self.root.after(
+                        0,
+                        lambda: messagebox.showwarning(
+                            "Partial Export",
+                            "No converted files were available to include.",
+                        ),
+                    )
+                    return
+
+                self.gui_handler.log(f"✅ Partial export ready: {output_path} ({added_count} files)")
+                self.root.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        "Partial Export Complete",
+                        f"Created test package:\n{output_path}\n\n"
+                        "Share this zip with testers to review converted pages and visuals.",
+                    ),
+                )
+            except Exception as e:
+                self.gui_handler.log(f"[ERROR] Partial export failed: {e}")
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        "Partial Export Error",
+                        f"Could not create partial export:\n{e}",
+                    ),
+                )
+
+        self._run_task_in_thread(task, "Partial Math Export")
 
     # [FIX] Maximum log lines to prevent unbounded memory growth
     MAX_LOG_LINES = 5000
@@ -2388,17 +2872,27 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         except Exception as e:
             tk.Label(zoom_win, text=f"Zoom Error: {e}").pack()
 
-    def _show_visual_manifest(self):
-        """Displays a GRID of all detected graphs/images in the project."""
+    def _show_visual_manifest(self, non_modal=False, auto_refresh=False):
+        """Displays a QA grid of detected graphs/images for verification and edge-case cleanup."""
         if not self.target_dir or not os.path.exists(self.target_dir):
             messagebox.showwarning("Load Project", "Please load a project first.")
+            return
+
+        if self.visual_manifest_win and self.visual_manifest_win.winfo_exists():
+            try:
+                self.visual_manifest_win.lift()
+                self.visual_manifest_win.focus_force()
+            except Exception:
+                pass
             return
 
         manifest_win = Toplevel(self.root)
         manifest_win.title("🖼️ Visual Element Manifest")
         manifest_win.geometry("1000x750")
         manifest_win.transient(self.root)
-        manifest_win.grab_set()
+        if not non_modal:
+            manifest_win.grab_set()
+        self.visual_manifest_win = manifest_win
 
         mode = self.config.get("theme", "light")
         colors = THEMES[mode]
@@ -2416,7 +2910,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ).pack(anchor="w")
         tk.Label(
             header,
-            text="Mosh: 'Review all your cropped graphs and diagrams here. One click to edit, one click to confirm!'",
+            text="Mosh: 'AI writes alt text first. Use this grid to quickly verify crops, find misses, and fix edge cases.'",
             font=("Segoe UI", 10, "italic"),
             fg=colors["fg"],
             bg=colors["bg"],
@@ -2532,24 +3026,156 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         card, text=f"Error Loading\n{img_name}", bg="white", fg="red"
                     ).pack()
 
-        manifest_win.after(100, refresh_grid)
+        def on_close_manifest():
+            try:
+                self.visual_manifest_win = None
+            except Exception:
+                pass
+            manifest_win.destroy()
+
+        manifest_win.protocol("WM_DELETE_WINDOW", on_close_manifest)
+
+        def _tick_refresh():
+            if not manifest_win.winfo_exists():
+                return
+            refresh_grid()
+            if auto_refresh:
+                manifest_win.after(2000, _tick_refresh)
+
+        manifest_win.after(100, _tick_refresh)
 
     def _edit_manifest_item(self, img_path, win):
-        """Allows editing an image's alt text from the manifest."""
-        # Find the HTML file that references this image to update it
-        # This is the tricky part - we need to scan the project
-        # For now, let's just open the dialog and see if we can update the image file itself
-        # (Though alt text lives in HTML)
+        """Manifest edit action with real persistence into HTML alt text."""
+        img_name = os.path.basename(img_path)
+        self.gui_handler.log(f"   [Manifest-QA] Edit requested: {img_name}")
 
-        # [NEW] Enhanced Manifest: Find HTML source
-        self.gui_handler.log(
-            f"   [Manifest] Opening review for: {os.path.basename(img_path)}"
+        source_html = self._find_source_html_for_image(img_path)
+
+        open_full_review = messagebox.askyesno(
+            "Manifest Action",
+            "Open full page visual review for this image?\n\n"
+            "Yes = open full page visual editor\n"
+            "No = quick alt/decorative update from this grid"
         )
-        self._show_image_dialog(
-            "Reviewing from Manifest", img_path, context="Manifest View"
+
+        if open_full_review:
+            if source_html and os.path.exists(source_html):
+                graphs_dir = str(Path(source_html).with_suffix("")) + "_graphs"
+                if os.path.isdir(graphs_dir):
+                    self.gui_handler.log(f"   [Manifest-QA] Opening full visual review: {os.path.basename(source_html)}")
+                    self._show_visual_review(source_html, graphs_dir, non_modal=True)
+                    return
+            messagebox.showwarning(
+                "Source Not Found",
+                "Could not find the source HTML/graphs folder for this image. Using quick edit instead.",
+            )
+
+        user_text = self._show_image_dialog(
+            "Quick update from Visual QA Grid",
+            img_path,
+            context="Manifest Quick Edit",
         )
-        # Note: In a full implementation, we'd need to map image -> HTML to update alt text.
-        # For this version, it's a visual auditor.
+
+        if user_text is None:
+            return
+
+        # Handle common manifest actions.
+        if user_text == "__DECORATIVE__":
+            changed = self._apply_alt_to_referencing_html(img_path, alt_text="", decorative=True)
+            self.gui_handler.log(f"   [Manifest-QA] Marked decorative in {changed} file(s): {img_name}")
+            return
+
+        if user_text.startswith("__") and user_text.endswith("__"):
+            messagebox.showinfo(
+                "Action Not Supported Here",
+                "OCR/Table/Math shortcuts are available during guided conversion review.\n"
+                "In this grid, use quick alt edits or open full page visual review.",
+            )
+            return
+
+        changed = self._apply_alt_to_referencing_html(img_path, alt_text=user_text.strip(), decorative=False)
+        self.gui_handler.log(f"   [Manifest-QA] Updated alt text in {changed} file(s): {img_name}")
+
+    def _find_source_html_for_image(self, img_path):
+        """Best-effort mapping from image path to owning HTML file."""
+        try:
+            p = Path(img_path)
+            parent = p.parent
+
+            # Primary convention: <stem>_graphs/<image> -> <stem>.html
+            folder_name = parent.name
+            if folder_name.endswith("_graphs"):
+                stem = folder_name[:-7]
+                candidate = parent.parent / f"{stem}.html"
+                if candidate.exists():
+                    return str(candidate)
+
+            # Fallback: scan for HTML that references this image filename.
+            img_name = p.name
+            if self.target_dir and os.path.isdir(self.target_dir):
+                for root_dir, _, files in os.walk(self.target_dir):
+                    if "_ORIGINALS_DO_NOT_UPLOAD_" in root_dir:
+                        continue
+                    for fn in files:
+                        if not fn.lower().endswith(".html"):
+                            continue
+                        hp = os.path.join(root_dir, fn)
+                        try:
+                            with open(hp, "r", encoding="utf-8") as f:
+                                if img_name in f.read():
+                                    return hp
+                        except Exception:
+                            continue
+        except Exception:
+            pass
+        return None
+
+    def _apply_alt_to_referencing_html(self, img_path, alt_text, decorative=False):
+        """Persist alt/decorative update to all HTML files that reference the given image."""
+        changed_files = 0
+        img_name = os.path.basename(img_path)
+
+        if not self.target_dir or not os.path.isdir(self.target_dir):
+            return changed_files
+
+        from bs4 import BeautifulSoup
+
+        for root_dir, _, files in os.walk(self.target_dir):
+            if "_ORIGINALS_DO_NOT_UPLOAD_" in root_dir:
+                continue
+            for fn in files:
+                if not fn.lower().endswith(".html"):
+                    continue
+
+                hp = os.path.join(root_dir, fn)
+                try:
+                    with open(hp, "r", encoding="utf-8") as f:
+                        html_raw = f.read()
+                    if img_name not in html_raw:
+                        continue
+
+                    soup = BeautifulSoup(html_raw, "html.parser")
+                    touched = False
+                    for it in soup.find_all("img"):
+                        src = it.get("src", "") or ""
+                        if img_name in src:
+                            if decorative:
+                                it["alt"] = ""
+                                it["role"] = "presentation"
+                            else:
+                                it["alt"] = alt_text if alt_text else "Visual Element"
+                                if it.get("role") == "presentation":
+                                    del it["role"]
+                            touched = True
+
+                    if touched:
+                        with open(hp, "w", encoding="utf-8") as f:
+                            f.write(str(soup))
+                        changed_files += 1
+                except Exception as e:
+                    self.gui_handler.log(f"   [Manifest-QA] Save warning ({fn}): {e}")
+
+        return changed_files
 
     def _delete_manifest_item(self, img_path, callback):
         """Deletes a visual element from the project."""
@@ -2562,6 +3188,119 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 callback()
             except Exception as e:
                 messagebox.showerror("Error", f"Could not delete image: {e}")
+
+    def _show_latex_review(self, payload):
+        """Review/edit converted page HTML/LaTeX before continuing to next page."""
+        import threading
+
+        if not isinstance(payload, dict):
+            return {"action": "continue", "content": ""}
+
+        file_name = payload.get("file_name", "PDF")
+        page_num = int(payload.get("page_num", 1))
+        total_pages = int(payload.get("total_pages", 1))
+        image_path = payload.get("image_path")
+        content = payload.get("content", "")
+
+        result = {"action": "continue", "content": content}
+        event = threading.Event()
+
+        dialog = Toplevel(self.root)
+        dialog.title(f"LaTeX Review — {file_name} (Page {page_num}/{total_pages})")
+        dialog.geometry("1320x820")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.configure(bg="#1a1a2e")
+        dialog.lift()
+        dialog.focus_force()
+
+        hdr = tk.Frame(dialog, bg="#1a1a2e")
+        hdr.pack(fill="x", padx=16, pady=(12, 8))
+        tk.Label(
+            hdr,
+            text=f"LaTeX/HTML Review — {file_name}",
+            font=("Segoe UI", 16, "bold"),
+            bg="#1a1a2e",
+            fg="white",
+        ).pack(anchor="w")
+        tk.Label(
+            hdr,
+            text=f"Page {page_num} of {total_pages}. Edit the converted content before processing next page.",
+            font=("Segoe UI", 10),
+            bg="#1a1a2e",
+            fg="#9ad1ff",
+        ).pack(anchor="w", pady=(3, 0))
+
+        body = tk.Frame(dialog, bg="#1a1a2e")
+        body.pack(fill="both", expand=True, padx=16, pady=8)
+
+        left = tk.Frame(body, bg="#2a2a3e", bd=1, relief="solid")
+        left.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        right = tk.Frame(body, bg="#2a2a3e", bd=1, relief="solid")
+        right.pack(side="left", fill="both", expand=True, padx=(8, 0))
+
+        tk.Label(left, text="Original Page", bg="#2a2a3e", fg="white", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=8)
+        page_canvas = tk.Canvas(left, bg="#111827", highlightthickness=0)
+        page_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        tk.Label(right, text="Converted HTML / LaTeX (Editable)", bg="#2a2a3e", fg="white", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=8)
+        txt = scrolledtext.ScrolledText(
+            right,
+            wrap="word",
+            font=("Consolas", 10),
+            bg="#0f172a",
+            fg="#e5e7eb",
+            insertbackground="white",
+        )
+        txt.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        txt.insert("1.0", content)
+
+        # Render preview image (best-effort)
+        img_refs = []
+        try:
+            if image_path and os.path.exists(image_path):
+                pil = Image.open(image_path)
+                max_w, max_h = 620, 740
+                pil.thumbnail((max_w, max_h), Image.LANCZOS)
+                tki = ImageTk.PhotoImage(pil)
+                img_refs.append(tki)
+                page_canvas.create_image(10, 10, anchor="nw", image=tki)
+                page_canvas.image = tki
+        except Exception:
+            page_canvas.create_text(20, 20, anchor="nw", text="[Could not load page preview]", fill="#fca5a5", font=("Segoe UI", 10))
+
+        btns = tk.Frame(dialog, bg="#1a1a2e")
+        btns.pack(fill="x", padx=16, pady=(0, 14))
+
+        def _continue():
+            result["action"] = "continue"
+            result["content"] = txt.get("1.0", "end-1c")
+            dialog.destroy()
+            event.set()
+
+        def _use_ai():
+            result["action"] = "continue"
+            result["content"] = content
+            dialog.destroy()
+            event.set()
+
+        def _skip_file():
+            result["action"] = "skip_file"
+            result["content"] = txt.get("1.0", "end-1c")
+            dialog.destroy()
+            event.set()
+
+        tk.Button(btns, text="Use AI Output", command=_use_ai, bg="#6b7280", fg="white", font=("Segoe UI", 10)).pack(side="left")
+        tk.Button(btns, text="Skip Rest of This File", command=_skip_file, bg="#b45309", fg="white", font=("Segoe UI", 10, "bold")).pack(side="right", padx=(10, 0))
+        tk.Button(btns, text="✅ Process Next Page", command=_continue, bg="#16a34a", fg="white", font=("Segoe UI", 11, "bold")).pack(side="right")
+
+        dialog.protocol("WM_DELETE_WINDOW", _continue)
+
+        while not event.is_set():
+            self.root.update()
+            event.wait(timeout=0.05)
+
+        return result
 
     def _show_bbox_review(self, page_data):
         """
@@ -2581,6 +3320,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                   or None to use AI boxes as-is
         """
         import threading
+        import copy
         
         self.gui_handler.log(f"   [BBOX REVIEW] Opening pre-crop review for {len(page_data)} pages...")
         
@@ -2594,12 +3334,20 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         corrections = {}
         for data in page_data:
             # Initialize with AI-detected boxes
-            corrections[data['page_index']] = list(data['boxes'])
+            page_boxes = []
+            for box in data['boxes']:
+                box_copy = dict(box)
+                box_copy.setdefault('include', True)
+                page_boxes.append(box_copy)
+            corrections[data['page_index']] = page_boxes
+
+            # Per-page undo history (snapshots of boxes)
+            history = {data['page_index']: [] for data in page_data}
         
         def build_dialog():
             dialog = Toplevel(self.root)
             dialog.title("Review Detected Images (Step 1 of 2)")
-            dialog.geometry("1100x750")
+            dialog.geometry("1280x820")
             dialog.transient(self.root)
             dialog.grab_set()
             dialog.configure(bg="#1a1a2e")
@@ -2623,12 +3371,36 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             page_label_var = tk.StringVar(value=f"Page 1 of {len(page_data)}")
             tk.Label(hdr, textvariable=page_label_var, font=("Segoe UI", 12), 
                      bg="#1a1a2e", fg="#4fc3f7").pack(side="left", padx=20)
+
+            mode_status_var = tk.StringVar(value="Mode: Select")
+            tk.Label(
+                hdr,
+                textvariable=mode_status_var,
+                font=("Segoe UI", 10, "bold"),
+                bg="#1a1a2e",
+                fg="#fbbf24",
+            ).pack(side="right")
             
             # Instructions row
             instr_frame = tk.Frame(dialog, bg="#1a1a2e")
             instr_frame.pack(fill="x", padx=20, pady=(0, 5))
-            tk.Label(instr_frame, text="Green boxes show images the AI found. Remove any you don't want, or draw new ones for images it missed.",
-                     font=("Segoe UI", 10), bg="#1a1a2e", fg="#90EE90").pack(side="left")
+            tk.Label(
+                instr_frame,
+                text=(
+                    "Green = graph, Orange = icon/diagram. "
+                    "Left-click to select a box, then choose Include or Exclude. "
+                    "Excluded boxes are red and will NOT be exported. "
+                    "Use '+ Add Box Mode' then left-drag (or right-drag) to add a missing box. "
+                    "Use Trim buttons to subtract overflow notes from a selected box. "
+                    "If equations continue with arrows into another column, include that continuation "
+                    "region too (expand the box or add a second box)."
+                ),
+                font=("Segoe UI", 10),
+                bg="#1a1a2e",
+                fg="#90EE90",
+                wraplength=1040,
+                justify="left",
+            ).pack(side="left")
             
             # Main content area
             main = tk.Frame(dialog, bg="#1a1a2e")
@@ -2641,27 +3413,61 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             canvas = tk.Canvas(canvas_frame, bg="#333", highlightthickness=0)
             canvas.pack(fill="both", expand=True, padx=5, pady=5)
             
-            # Side panel for box info
-            side = tk.Frame(main, bg="#2a2a3e", width=250)
+            # Side panel for box info (scrollable so controls are never cut off)
+            side = tk.Frame(main, bg="#2a2a3e", width=320)
             side.pack(side="right", fill="y")
             side.pack_propagate(False)
+
+            side_canvas = tk.Canvas(side, bg="#2a2a3e", highlightthickness=0, bd=0)
+            side_scroll = ttk.Scrollbar(side, orient="vertical", command=side_canvas.yview)
+            side_canvas.configure(yscrollcommand=side_scroll.set)
+            side_canvas.pack(side="left", fill="both", expand=True)
+            side_scroll.pack(side="right", fill="y")
+
+            side_content = tk.Frame(side_canvas, bg="#2a2a3e")
+            side_window = side_canvas.create_window((0, 0), window=side_content, anchor="nw")
+            side_content.bind(
+                "<Configure>",
+                lambda e: side_canvas.configure(scrollregion=side_canvas.bbox("all")),
+            )
+            side_canvas.bind(
+                "<Configure>",
+                lambda e: side_canvas.itemconfig(side_window, width=e.width),
+            )
+
+            def _on_side_mousewheel(evt):
+                side_canvas.yview_scroll(int(-1 * (evt.delta / 120)), "units")
+
+            side_canvas.bind("<Enter>", lambda e: side_canvas.bind_all("<MouseWheel>", _on_side_mousewheel))
+            side_canvas.bind("<Leave>", lambda e: side_canvas.unbind_all("<MouseWheel>"))
             
-            tk.Label(side, text="Selected Box", font=("Segoe UI", 12, "bold"),
+            tk.Label(side_content, text="Selected Box", font=("Segoe UI", 12, "bold"),
                      bg="#2a2a3e", fg="white").pack(pady=10)
             
             box_info_var = tk.StringVar(value="Click a box to select")
-            tk.Label(side, textvariable=box_info_var, font=("Segoe UI", 10),
-                     bg="#2a2a3e", fg="#ccc", wraplength=230).pack(pady=5)
+            tk.Label(side_content, textvariable=box_info_var, font=("Segoe UI", 10),
+                     bg="#2a2a3e", fg="#ccc", wraplength=285).pack(pady=5)
             
             # Story/description entry
-            tk.Label(side, text="Image Description:", font=("Segoe UI", 10, "bold"),
+            tk.Label(side_content, text="Image Description:", font=("Segoe UI", 10, "bold"),
                      bg="#2a2a3e", fg="#aaa").pack(anchor="w", padx=10, pady=(20, 5))
-            tk.Label(side, text="(What should a screen reader say?)", font=("Segoe UI", 8),
+            tk.Label(side_content, text="(What should a screen reader say?)", font=("Segoe UI", 8),
                      bg="#2a2a3e", fg="#888").pack(anchor="w", padx=10, pady=(0, 5))
-            story_entry = tk.Text(side, height=8, width=28, font=("Segoe UI", 10),
+            story_entry = tk.Text(side_content, height=7, width=34, font=("Segoe UI", 10),
                                   bg="#1a1a2e", fg="white", insertbackground="white",
                                   wrap="word")
             story_entry.pack(padx=10, fill="x")
+
+            btn_refresh_alt = [None]
+
+            def set_refresh_button_state(needs_refresh=False):
+                btn = btn_refresh_alt[0]
+                if not btn:
+                    return
+                if needs_refresh:
+                    btn.config(text="🤖 Refresh Alt (AI) *", bg="#fef08a", fg="#854d0e")
+                else:
+                    btn.config(text="🤖 Refresh Alt (AI)", bg="#e3f2fd", fg="#1565c0")
             
             def update_story():
                 if selected_box[0] is not None:
@@ -2669,31 +3475,235 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     new_story = story_entry.get("1.0", "end-1c").strip()
                     if page_idx in corrections and selected_box[0] < len(corrections[page_idx]):
                         corrections[page_idx][selected_box[0]]['story'] = new_story
+                        corrections[page_idx][selected_box[0]]['_needs_alt_refresh'] = False
+                        set_refresh_button_state(False)
+
+            def refresh_alt_ai_selected():
+                """Regenerate alt text from the currently selected (possibly adjusted) box."""
+                if selected_box[0] is None:
+                    box_info_var.set("Select a box first, then click Refresh Alt (AI).")
+                    return
+
+                api_key_local = self.config.get("api_key", "").strip()
+                if not api_key_local:
+                    box_info_var.set("No API key configured.")
+                    return
+
+                page_idx = page_data[current_page[0]]['page_index']
+                if page_idx not in corrections or selected_box[0] >= len(corrections[page_idx]):
+                    box_info_var.set("Selected box is no longer available.")
+                    return
+
+                box = corrections[page_idx][selected_box[0]]
+                x1, y1, x2, y2 = box['abs_coords']
+                img_path = page_data[current_page[0]].get('image_path')
+                if not img_path or not os.path.exists(img_path):
+                    box_info_var.set("Page image unavailable for AI description.")
+                    return
+
+                box_info_var.set("Generating AI alt text for selected box...")
+
+                def worker():
+                    try:
+                        import google.genai as genai_bbox
+                        client = genai_bbox.Client(api_key=api_key_local)
+
+                        with Image.open(img_path) as src:
+                            crop = src.crop((int(x1), int(y1), int(x2), int(y2)))
+                            response = client.models.generate_content(
+                                model="gemini-2.0-flash",
+                                contents=[
+                                    crop,
+                                    "Describe this cropped visual for a blind student in 1-2 sentences. "
+                                    "Include math-relevant details (labels, axes, data points, shapes, relationships). "
+                                    "Do not start with 'This image shows'."
+                                ],
+                            )
+
+                        desc = (response.text or "").strip() or "Visual element"
+
+                        def apply_desc():
+                            # Re-validate selected box still exists
+                            if page_idx in corrections and selected_box[0] < len(corrections[page_idx]):
+                                corrections[page_idx][selected_box[0]]['story'] = desc
+                                corrections[page_idx][selected_box[0]]['_needs_alt_refresh'] = False
+                            story_entry.delete("1.0", "end")
+                            story_entry.insert("1.0", desc)
+                            box_info_var.set("AI alt text refreshed for selected box.")
+                            set_refresh_button_state(False)
+
+                        self.root.after(0, apply_desc)
+                    except Exception as e_ai:
+                        self.root.after(0, lambda: box_info_var.set(f"AI refresh failed: {e_ai}"))
+
+                threading.Thread(target=worker, daemon=True).start()
             
-            tk.Button(side, text="Update Description", command=update_story,
+            tk.Button(side_content, text="Update Description", command=update_story,
                       bg="#4b3190", fg="white", font=("Segoe UI", 9, "bold")).pack(pady=10)
+            btn_refresh_alt[0] = tk.Button(side_content, text="🤖 Refresh Alt (AI)", command=refresh_alt_ai_selected,
+                                           bg="#e3f2fd", fg="#1565c0", font=("Segoe UI", 9, "bold"))
+            btn_refresh_alt[0].pack(pady=(0, 8))
+
+            def push_history(page_idx):
+                if page_idx not in corrections:
+                    return
+                snap = copy.deepcopy(corrections[page_idx])
+                history.setdefault(page_idx, []).append(snap)
+                # Keep history bounded
+                if len(history[page_idx]) > 25:
+                    history[page_idx].pop(0)
+
+            def undo_last_change():
+                page_idx = page_data[current_page[0]]['page_index']
+                if page_idx in history and history[page_idx]:
+                    corrections[page_idx] = history[page_idx].pop()
+                    selected_box[0] = None
+                    render_page()
+
+            def include_selected():
+                if selected_box[0] is not None:
+                    page_idx = page_data[current_page[0]]['page_index']
+                    if page_idx in corrections and selected_box[0] < len(corrections[page_idx]):
+                        push_history(page_idx)
+                        corrections[page_idx][selected_box[0]]['include'] = True
+                        render_page(reset_selection=False)
+
+            def exclude_selected():
+                if selected_box[0] is not None:
+                    page_idx = page_data[current_page[0]]['page_index']
+                    if page_idx in corrections and selected_box[0] < len(corrections[page_idx]):
+                        push_history(page_idx)
+                        corrections[page_idx][selected_box[0]]['include'] = False
+                        render_page(reset_selection=False)
+
+            status_btns = tk.Frame(side_content, bg="#2a2a3e")
+            status_btns.pack(pady=4)
+            tk.Button(status_btns, text="✅ Include", command=include_selected,
+                      bg="#16a34a", fg="white", font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
+            tk.Button(status_btns, text="🚫 Exclude", command=exclude_selected,
+                      bg="#dc2626", fg="white", font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
+            tk.Button(status_btns, text="↩ Undo", command=undo_last_change,
+                      bg="#334155", fg="white", font=("Segoe UI", 9, "bold")).pack(side="left", padx=4)
             
             def delete_selected():
                 if selected_box[0] is not None:
                     page_idx = page_data[current_page[0]]['page_index']
                     if page_idx in corrections and selected_box[0] < len(corrections[page_idx]):
+                        push_history(page_idx)
                         del corrections[page_idx][selected_box[0]]
                         selected_box[0] = None
                         render_page()
+
+            def adjust_selected_box(dx1=0, dy1=0, dx2=0, dy2=0):
+                """Adjust currently selected box edges in image pixel space."""
+                if selected_box[0] is None:
+                    return
+                page_idx = page_data[current_page[0]]['page_index']
+                if page_idx not in corrections or selected_box[0] >= len(corrections[page_idx]):
+                    return
+
+                push_history(page_idx)
+
+                data = page_data[current_page[0]]
+                page_w, page_h = data.get('width', 0), data.get('height', 0)
+                box = corrections[page_idx][selected_box[0]]
+                x1, y1, x2, y2 = box['abs_coords']
+
+                nx1 = max(0, min(page_w, x1 + dx1))
+                ny1 = max(0, min(page_h, y1 + dy1))
+                nx2 = max(0, min(page_w, x2 + dx2))
+                ny2 = max(0, min(page_h, y2 + dy2))
+
+                # Keep minimum crop size to avoid accidental collapse.
+                min_size = 20
+                if (nx2 - nx1) < min_size:
+                    return
+                if (ny2 - ny1) < min_size:
+                    return
+
+                box['abs_coords'] = (int(nx1), int(ny1), int(nx2), int(ny2))
+                box['_needs_alt_refresh'] = True
+                box_info_var.set("Box resized. Click 🤖 Refresh Alt (AI) to update description.")
+                set_refresh_button_state(True)
+                render_page(reset_selection=False)
             
-            tk.Button(side, text="🗑 Delete Selected", command=delete_selected,
+            tk.Button(side_content, text="🗑 Delete Selected", command=delete_selected,
                       bg="#dc2626", fg="white", font=("Segoe UI", 9, "bold")).pack(pady=5)
+
+            btn_add_box = tk.Button(
+                side_content,
+                text="➕ Add Box Mode: OFF",
+                bg="#1f2937",
+                fg="white",
+                font=("Segoe UI", 9, "bold"),
+            )
+            btn_add_box.pack(pady=(0, 8))
+
+            # Box adjustment controls (subtract/add overflow)
+            tk.Label(side_content, text="Adjust Box (pixels)", font=("Segoe UI", 10, "bold"),
+                     bg="#2a2a3e", fg="#aaa").pack(anchor="w", padx=10, pady=(14, 4))
+
+            step_var = tk.IntVar(value=20)
+            step_row = tk.Frame(side_content, bg="#2a2a3e")
+            step_row.pack(anchor="w", padx=10, pady=(0, 6))
+            tk.Label(step_row, text="Step:", bg="#2a2a3e", fg="#bbb", font=("Segoe UI", 9)).pack(side="left")
+            tk.Spinbox(step_row, from_=5, to=100, increment=5, width=5, textvariable=step_var,
+                       font=("Segoe UI", 9), bg="#1a1a2e", fg="white", insertbackground="white").pack(side="left", padx=(6, 0))
+
+            trim_grid = tk.Frame(side_content, bg="#2a2a3e")
+            trim_grid.pack(padx=10, pady=(0, 4), fill="x")
+
+            tk.Button(trim_grid, text="Trim Top", command=lambda: adjust_selected_box(dy1=step_var.get()),
+                      bg="#7f1d1d", fg="white", font=("Segoe UI", 8, "bold")).grid(row=0, column=1, padx=3, pady=3, sticky="ew")
+            tk.Button(trim_grid, text="Trim Left", command=lambda: adjust_selected_box(dx1=step_var.get()),
+                      bg="#7f1d1d", fg="white", font=("Segoe UI", 8, "bold")).grid(row=1, column=0, padx=3, pady=3, sticky="ew")
+            tk.Button(trim_grid, text="Trim Right", command=lambda: adjust_selected_box(dx2=-step_var.get()),
+                      bg="#7f1d1d", fg="white", font=("Segoe UI", 8, "bold")).grid(row=1, column=2, padx=3, pady=3, sticky="ew")
+            tk.Button(trim_grid, text="Trim Bottom", command=lambda: adjust_selected_box(dy2=-step_var.get()),
+                      bg="#7f1d1d", fg="white", font=("Segoe UI", 8, "bold")).grid(row=2, column=1, padx=3, pady=3, sticky="ew")
+
+            tk.Button(trim_grid, text="Expand Top", command=lambda: adjust_selected_box(dy1=-step_var.get()),
+                      bg="#0f766e", fg="white", font=("Segoe UI", 8)).grid(row=3, column=1, padx=3, pady=(8, 3), sticky="ew")
+            tk.Button(trim_grid, text="Expand Left", command=lambda: adjust_selected_box(dx1=-step_var.get()),
+                      bg="#0f766e", fg="white", font=("Segoe UI", 8)).grid(row=4, column=0, padx=3, pady=3, sticky="ew")
+            tk.Button(trim_grid, text="Expand Right", command=lambda: adjust_selected_box(dx2=step_var.get()),
+                      bg="#0f766e", fg="white", font=("Segoe UI", 8)).grid(row=4, column=2, padx=3, pady=3, sticky="ew")
+            tk.Button(trim_grid, text="Expand Bottom", command=lambda: adjust_selected_box(dy2=step_var.get()),
+                      bg="#0f766e", fg="white", font=("Segoe UI", 8)).grid(row=5, column=1, padx=3, pady=3, sticky="ew")
+
+            for c in range(3):
+                trim_grid.grid_columnconfigure(c, weight=1)
             
             # Variables for drawing new box
             draw_start = [None]
             temp_rect = [None]
+            add_mode = [False]
+
+            def set_add_mode(enabled):
+                add_mode[0] = bool(enabled)
+                if add_mode[0]:
+                    btn_add_box.config(text="➕ Add Box Mode: ON", bg="#0f766e")
+                    mode_status_var.set("Mode: Add Box (ON)")
+                    box_info_var.set("Add Box mode ON: drag on page to draw new box.")
+                    canvas.config(cursor="crosshair")
+                else:
+                    btn_add_box.config(text="➕ Add Box Mode: OFF", bg="#1f2937")
+                    mode_status_var.set("Mode: Select")
+                    canvas.config(cursor="")
+
+            def toggle_add_mode():
+                set_add_mode(not add_mode[0])
+
+            btn_add_box.config(command=toggle_add_mode)
             
-            def render_page():
+            def render_page(reset_selection=True):
                 canvas.delete("all")
                 tk_images.clear()
-                selected_box[0] = None
-                story_entry.delete("1.0", "end")
-                box_info_var.set("Click a box to select")
+                if reset_selection:
+                    selected_box[0] = None
+                    story_entry.delete("1.0", "end")
+                    box_info_var.set("Click a box to select")
+                    set_refresh_button_state(False)
                 
                 data = page_data[current_page[0]]
                 page_label_var.set(f"Page {current_page[0] + 1} of {len(page_data)}")
@@ -2731,41 +3741,72 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         dx2 = cx + int(x2 * scale)
                         dy2 = cy + int(y2 * scale)
                         
+                        is_selected = (selected_box[0] == i)
+                        is_included = box.get('include', True)
                         color = "#00ff00" if box.get('type', 'graph') == 'graph' else "#ffaa00"
-                        canvas.create_rectangle(dx1, dy1, dx2, dy2, outline=color, width=2, tags=f"box_{i}")
+                        if not is_included:
+                            color = "#ff4d4f"
+                        outline_color = "#00e5ff" if is_selected else color
+                        line_width = 4 if is_selected else 2
+                        dash_style = None if is_included else (6, 3)
+                        canvas.create_rectangle(
+                            dx1, dy1, dx2, dy2,
+                            outline=outline_color,
+                            width=line_width,
+                            dash=dash_style,
+                            tags=f"box_{i}"
+                        )
                         canvas.create_text(dx1 + 5, dy1 + 5, text=str(i+1), anchor="nw",
-                                           fill=color, font=("Segoe UI", 10, "bold"), tags=f"box_{i}")
+                                           fill=outline_color, font=("Segoe UI", 10, "bold"), tags=f"box_{i}")
                     
                     pil_img.close()
                 except Exception as e:
                     self.gui_handler.log(f"   [BBOX REVIEW] Error loading page: {e}")
             
             def on_canvas_click(evt):
+                if add_mode[0]:
+                    on_right_click_start(evt)
+                    return
                 # Check if click is on a box
                 page_idx = page_data[current_page[0]]['page_index']
                 boxes = corrections.get(page_idx, [])
                 scale = getattr(canvas, 'scale_factor', 1.0)
                 cx = getattr(canvas, 'offset_x', 0)
                 cy = getattr(canvas, 'offset_y', 0)
+                hit_pad = 8
                 
                 # Convert click to image coordinates
                 img_x = (evt.x - cx) / scale
                 img_y = (evt.y - cy) / scale
-                
+
+                # If multiple boxes overlap (or one is inside another),
+                # choose the smallest matching box for precise selection.
+                hit_candidates = []
                 for i, box in enumerate(boxes):
                     x1, y1, x2, y2 = box['abs_coords']
-                    if x1 <= img_x <= x2 and y1 <= img_y <= y2:
-                        selected_box[0] = i
-                        story_entry.delete("1.0", "end")
-                        story_entry.insert("1.0", box.get('story', ''))
-                        box_info_var.set(f"Box {i+1}: {box.get('type', 'graph').title()}\n"
-                                         f"Position: ({int(x1)}, {int(y1)}) - ({int(x2)}, {int(y2)})")
-                        render_page()  # Redraw to highlight selected
-                        return
-                
-                selected_box[0] = None
-                box_info_var.set("Click a box to select")
-                render_page()
+                    if (x1 - hit_pad) <= img_x <= (x2 + hit_pad) and (y1 - hit_pad) <= img_y <= (y2 + hit_pad):
+                        area = max(1, (x2 - x1) * (y2 - y1))
+                        hit_candidates.append((area, i, box))
+
+                if hit_candidates:
+                    _, i, box = min(hit_candidates, key=lambda t: t[0])
+                    x1, y1, x2, y2 = box['abs_coords']
+                    selected_box[0] = i
+                    story_entry.delete("1.0", "end")
+                    story_entry.insert("1.0", box.get('story', ''))
+                    status = "Included" if box.get('include', True) else "Excluded"
+                    box_info_var.set(f"Box {i+1}: {box.get('type', 'graph').title()}\n"
+                                     f"Status: {status}\n"
+                                     f"Position: ({int(x1)}, {int(y1)}) - ({int(x2)}, {int(y2)})")
+                    set_refresh_button_state(bool(box.get('_needs_alt_refresh', False)))
+                    if box.get('_needs_alt_refresh', False):
+                        box_info_var.set(box_info_var.get() + "\n⚠ Region changed. Refresh alt text recommended.")
+                    render_page(reset_selection=False)  # Redraw to highlight selected
+                    return
+
+                # Keep previous selection on miss-click to avoid accidental resets.
+                if selected_box[0] is not None:
+                    box_info_var.set("No box hit. Current selection preserved.")
             
             def on_right_click_start(evt):
                 # Start drawing a new box
@@ -2798,10 +3839,12 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     # Only add if box is reasonably sized
                     if abs(img_x2 - img_x1) > 20 and abs(img_y2 - img_y1) > 20:
                         page_idx = page_data[current_page[0]]['page_index']
+                        push_history(page_idx)
                         new_box = {
                             'abs_coords': (img_x1, img_y1, img_x2, img_y2),
                             'type': 'graph',
                             'story': 'User-added visual element',
+                            '_needs_alt_refresh': True,
                             'index': len(corrections.get(page_idx, []))
                         }
                         if page_idx not in corrections:
@@ -2813,8 +3856,20 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     if temp_rect[0]:
                         canvas.delete(temp_rect[0])
                         temp_rect[0] = None
+                    if add_mode[0]:
+                        set_add_mode(False)
+
+            def on_left_drag(evt):
+                if add_mode[0]:
+                    on_right_drag(evt)
+
+            def on_left_release(evt):
+                if add_mode[0]:
+                    on_right_release(evt)
             
             canvas.bind("<Button-1>", on_canvas_click)
+            canvas.bind("<B1-Motion>", on_left_drag)
+            canvas.bind("<ButtonRelease-1>", on_left_release)
             canvas.bind("<Button-3>", on_right_click_start)
             canvas.bind("<B3-Motion>", on_right_drag)
             canvas.bind("<ButtonRelease-3>", on_right_release)
@@ -2822,42 +3877,71 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             # Navigation buttons
             nav = tk.Frame(dialog, bg="#1a1a2e")
             nav.pack(fill="x", padx=20, pady=15)
+
+            nav_hint_var = tk.StringVar(value="")
+            tk.Label(
+                nav,
+                textvariable=nav_hint_var,
+                bg="#1a1a2e",
+                fg="#9ca3af",
+                font=("Segoe UI", 9, "italic"),
+            ).pack(side="left", padx=(0, 12))
+
+            btn_prev = tk.Button(nav, text="◀ Previous",
+                                 bg="#4b3190", fg="white", font=("Segoe UI", 10, "bold"))
+            btn_next = tk.Button(nav, text="Next ▶",
+                                 bg="#4b3190", fg="white", font=("Segoe UI", 10, "bold"))
+
+            def update_nav_state():
+                total = len(page_data)
+                idx = current_page[0]
+                btn_prev.config(state=("normal" if idx > 0 else "disabled"))
+                btn_next.config(state=("normal" if idx < total - 1 else "disabled"))
+                if total <= 1:
+                    nav_hint_var.set("Primary action: click 'Process Next Page' when finished.")
+                else:
+                    nav_hint_var.set("Primary action: click 'Save & Continue' when all pages look correct.")
             
             def prev_page():
                 if current_page[0] > 0:
                     current_page[0] -= 1
                     render_page()
+                update_nav_state()
             
             def next_page():
                 if current_page[0] < len(page_data) - 1:
                     current_page[0] += 1
                     render_page()
-            
-            tk.Button(nav, text="◀ Previous", command=prev_page,
-                      bg="#4b3190", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left")
-            
-            tk.Button(nav, text="Next ▶", command=next_page,
-                      bg="#4b3190", fg="white", font=("Segoe UI", 10, "bold")).pack(side="left", padx=10)
+                update_nav_state()
+
+            btn_prev.config(command=prev_page)
+            btn_next.config(command=next_page)
+            btn_prev.pack(side="left")
+            btn_next.pack(side="left", padx=10)
             
             def approve_all():
                 # Return the corrections
                 result["corrections"] = corrections
+                side_canvas.unbind_all("<MouseWheel>")
                 dialog.destroy()
                 event.set()
             
             def use_ai_boxes():
                 # Return None to use AI boxes as-is
                 result["corrections"] = None
+                side_canvas.unbind_all("<MouseWheel>")
                 dialog.destroy()
                 event.set()
             
             def on_close():
                 result["corrections"] = None
+                side_canvas.unbind_all("<MouseWheel>")
                 dialog.destroy()
                 event.set()
             
-            tk.Button(nav, text="✅ Done - Continue", command=approve_all,
-                      bg="#16a34a", fg="white", font=("Segoe UI", 11, "bold")).pack(side="right")
+            done_btn_text = "➡ Process Next Page" if len(page_data) == 1 else "➡ Save & Continue"
+            tk.Button(nav, text=done_btn_text, command=approve_all,
+                      bg="#2563eb", fg="white", font=("Segoe UI", 11, "bold")).pack(side="right")
             
             tk.Button(nav, text="Skip Review (Trust AI)", command=use_ai_boxes,
                       bg="#6b7280", fg="white", font=("Segoe UI", 10)).pack(side="right", padx=10)
@@ -2866,6 +3950,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             
             # Initial render
             render_page()
+            update_nav_state()
         
         # Build dialog directly (not with after() to avoid deadlock)
         build_dialog()
@@ -2878,24 +3963,33 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.gui_handler.log(f"   [BBOX REVIEW] Dialog closed, returning corrections")
         return result["corrections"]
 
-    def _show_visual_review(self, html_path, graphs_dir):
+    def _show_visual_review(self, html_path, graphs_dir, non_modal=False, on_done=None):
         """
         Interactive visual review dialog. Shows full page context with crop overlay.
         Supports: click-to-drag crop redefinition, nudge, alt text, delete, add missing.
-        BLOCKS until user approves.
+        By default blocks until user approves.
+        If non_modal=True, returns immediately and invokes on_done(approved: bool) when closed.
         """
         import json
         import threading
         
         self.gui_handler.log(f"   [DEBUG] _show_visual_review called for {html_path}")
 
-        meta_path = os.path.join(graphs_dir, "crop_meta.json")
-        if not os.path.exists(meta_path):
-            self.gui_handler.log(f"   [DEBUG] No crop_meta.json found at {meta_path} - auto-approving")
+        if not graphs_dir or not os.path.isdir(graphs_dir):
+            self.gui_handler.log(f"   [DEBUG] Invalid graphs_dir: {graphs_dir} - auto-approving")
             return True
 
-        with open(meta_path, "r", encoding="utf-8") as f:
-            meta = json.load(f)
+        meta_path = os.path.join(graphs_dir, "crop_meta.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except Exception as e:
+                self.gui_handler.log(f"   [DEBUG] Failed to read crop_meta.json ({e}) - starting with empty metadata")
+                meta = {}
+        else:
+            self.gui_handler.log(f"   [DEBUG] No crop_meta.json found at {meta_path} - opening manual review with full pages only")
+            meta = {}
         
         self.gui_handler.log(f"   [DEBUG] Loaded meta with {len(meta)} images")
 
@@ -2923,7 +4017,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             dialog.title(f"Visual Review: {os.path.basename(html_path)}")
             dialog.geometry("1200x800")
             dialog.transient(self.root)
-            dialog.grab_set()
+            if not non_modal:
+                dialog.grab_set()
             dialog.configure(bg="#1a1a2e")
             
             # [FIX] Bring dialog to front and focus it
@@ -3026,13 +4121,34 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 except Exception as err:
                     self.gui_handler.log(f"   [CROP] Error: {err}")
 
-            def nudge(gn, d, info, pcv, lbl, dim_lbl=None):
+            def nudge(gn, d, info, pcv, lbl, dim_lbl=None, mode="expand"):
                 box = info["box_abs"]
                 pw, ph = info["page_width"], info["page_height"]
-                if d == "up":    box[1] = max(0, box[1] - 50)
-                elif d == "down":  box[3] = min(ph, box[3] + 50)
-                elif d == "left":  box[0] = max(0, box[0] - 50)
-                elif d == "right": box[2] = min(pw, box[2] + 50)
+                step = 50
+                # expand grows outward, trim shrinks inward
+                if mode == "expand":
+                    if d == "up":
+                        box[1] = max(0, box[1] - step)
+                    elif d == "down":
+                        box[3] = min(ph, box[3] + step)
+                    elif d == "left":
+                        box[0] = max(0, box[0] - step)
+                    elif d == "right":
+                        box[2] = min(pw, box[2] + step)
+                else:  # trim
+                    if d == "up":
+                        box[1] = min(ph, box[1] + step)
+                    elif d == "down":
+                        box[3] = max(0, box[3] - step)
+                    elif d == "left":
+                        box[0] = min(pw, box[0] + step)
+                    elif d == "right":
+                        box[2] = max(0, box[2] - step)
+
+                # Keep crop valid and non-trivial
+                min_size = 30
+                if (box[2] - box[0]) < min_size or (box[3] - box[1]) < min_size:
+                    return
                 info["box_abs"] = box
                 with meta_lock:
                     meta[gn] = info
@@ -3402,18 +4518,26 @@ h1 {{ color: #4b3190; }}
                 tk.Button(ai_row, text="\U0001f916 AI Describe", command=lambda g=gn, w=ae: ai_describe(g, w), font=("Segoe UI", 8, "bold"), bg="#e3f2fd", fg="#1565c0", activebackground="#bbdefb", activeforeground="#0d47a1", relief="flat", borderwidth=0, cursor="hand2", padx=8).pack(side="left", padx=(0, 5))
                 tk.Button(ai_row, text="\U0001f4c4 Long Description", command=lambda g=gn, w=ae: threading.Thread(target=lambda: generate_long_description(g, w), daemon=True).start(), font=("Segoe UI", 8), bg="#e8f5e9", fg="#2e7d32", activebackground="#c8e6c9", activeforeground="#1b5e20", relief="flat", borderwidth=0, cursor="hand2", padx=8).pack(side="left")
 
-                # Nudge + Reset row
+                # Nudge/Trim + Reset row
                 nf = tk.LabelFrame(right, text="Adjust Crop", bg="white", font=("Segoe UI", 8))
                 nf.pack(fill="x", pady=3)
                 bs = {"font": ("Segoe UI", 9), "bg": "#e8f0fe", "cursor": "hand2", "width": 12, "activebackground": "#d0e0fd", "activeforeground": "#333", "relief": "flat", "borderwidth": 0}
                 r1 = tk.Frame(nf, bg="white")
                 r1.pack()
-                tk.Button(r1, text="⬆ Top +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "up", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
-                tk.Button(r1, text="⬇ Bottom +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "down", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r1, text="⬆ Expand Top", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "up", i, p, l, d, "expand"), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r1, text="⬇ Expand Bottom", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "down", i, p, l, d, "expand"), **bs).pack(side="left", padx=2, pady=1)
                 r2 = tk.Frame(nf, bg="white")
                 r2.pack()
-                tk.Button(r2, text="⬅ Left +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "left", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
-                tk.Button(r2, text="➡ Right +50", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "right", i, p, l, d), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r2, text="⬅ Expand Left", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "left", i, p, l, d, "expand"), **bs).pack(side="left", padx=2, pady=1)
+                tk.Button(r2, text="➡ Expand Right", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "right", i, p, l, d, "expand"), **bs).pack(side="left", padx=2, pady=1)
+                rtrim = tk.Frame(nf, bg="white")
+                rtrim.pack()
+                tk.Button(rtrim, text="⬆ Trim Top", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "up", i, p, l, d, "trim"), font=("Segoe UI", 9), bg="#fee2e2", fg="#b91c1c", activebackground="#fecaca", activeforeground="#7f1d1d", relief="flat", borderwidth=0, cursor="hand2", width=12).pack(side="left", padx=2, pady=1)
+                tk.Button(rtrim, text="⬇ Trim Bottom", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "down", i, p, l, d, "trim"), font=("Segoe UI", 9), bg="#fee2e2", fg="#b91c1c", activebackground="#fecaca", activeforeground="#7f1d1d", relief="flat", borderwidth=0, cursor="hand2", width=12).pack(side="left", padx=2, pady=1)
+                rtrim2 = tk.Frame(nf, bg="white")
+                rtrim2.pack()
+                tk.Button(rtrim2, text="⬅ Trim Left", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "left", i, p, l, d, "trim"), font=("Segoe UI", 9), bg="#fee2e2", fg="#b91c1c", activebackground="#fecaca", activeforeground="#7f1d1d", relief="flat", borderwidth=0, cursor="hand2", width=12).pack(side="left", padx=2, pady=1)
+                tk.Button(rtrim2, text="➡ Trim Right", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: nudge(g, "right", i, p, l, d, "trim"), font=("Segoe UI", 9), bg="#fee2e2", fg="#b91c1c", activebackground="#fecaca", activeforeground="#7f1d1d", relief="flat", borderwidth=0, cursor="hand2", width=12).pack(side="left", padx=2, pady=1)
                 r3 = tk.Frame(nf, bg="white")
                 r3.pack()
                 tk.Button(r3, text="\u21a9 Reset to Original", command=lambda g=gn, i=info, p=pcv, l=lbl_c, d=dim_lbl: reset_crop(g, i, p, l, d), font=("Segoe UI", 9), bg="#fff3e0", fg="#e65100", activebackground="#ffe0b2", activeforeground="#bf360c", relief="flat", borderwidth=0, cursor="hand2", width=26).pack(padx=2, pady=1)
@@ -3592,7 +4716,7 @@ h1 {{ color: #4b3190; }}
                                 rs = f"{bstem}_graphs/{gn}"
                                 at = info.get("story", "Visual Element") or "Visual Element"
                                 nd = soup.new_tag("div", attrs={"class": "mosh-visual", "style": "text-align: center;"})
-                                ni = soup.new_tag("img", src=rs, alt=at, style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; margin: 20px auto;")
+                                ni = soup.new_tag("img", src=rs, alt=at, style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; margin: 15px auto;")
                                 nd.append(ni)
                                 cdiv.append(nd)
 
@@ -3647,7 +4771,13 @@ h1 {{ color: #4b3190; }}
                 tk_images.clear()
                 full_pages_cache.clear()
                 dialog.destroy()
-                event.set()
+                if callable(on_done):
+                    try:
+                        on_done(True)
+                    except Exception as cb_err:
+                        self.gui_handler.log(f"   [Review] on_done callback error: {cb_err}")
+                if not non_modal:
+                    event.set()
 
             def on_cancel():
                 result["approved"] = False
@@ -3656,7 +4786,13 @@ h1 {{ color: #4b3190; }}
                 tk_images.clear()
                 full_pages_cache.clear()
                 dialog.destroy()
-                event.set()
+                if callable(on_done):
+                    try:
+                        on_done(False)
+                    except Exception as cb_err:
+                        self.gui_handler.log(f"   [Review] on_done callback error: {cb_err}")
+                if not non_modal:
+                    event.set()
 
             dialog.protocol("WM_DELETE_WINDOW", on_cancel)
 
@@ -3676,13 +4812,17 @@ h1 {{ color: #4b3190; }}
             self.gui_handler.log(traceback.format_exc())
             return True  # Don't block on error
         
+        if non_modal:
+            self.gui_handler.log("   [DEBUG] Visual review opened in non-modal mode")
+            return True
+
         # [FIX] Use non-blocking wait loop instead of event.wait() to prevent freezing
         # This allows the main thread to continue processing UI events while waiting
         self.gui_handler.log("   [DEBUG] Entering wait loop for dialog...")
         while not event.is_set():
             self.root.update()
             time.sleep(0.05)
-        
+
         self.gui_handler.log(f"   [DEBUG] Wait loop exited, result={result}")
         return result["approved"]
 
@@ -4835,7 +5975,8 @@ YOUR WORKFLOW:
         self, html_path, original_source_path, api, auto_confirm_links=False
     ):
         """Helper to upload a single HTML file as a Canvas Page with images."""
-        fname = os.path.basename(original_source_path)
+        fname = os.path.basename(original_source_path) if original_source_path else os.path.basename(html_path)
+        html_fname = os.path.basename(html_path)
         self.gui_handler.log(f"   [Sync] Uploading to Canvas: {fname}...")
 
         try:
@@ -4886,7 +6027,14 @@ YOUR WORKFLOW:
                             )
 
             # 3. Create or Update Page (Upsert Strategy)
-            page_title = os.path.splitext(fname)[0]
+            # [FIX] Always produce a true Canvas WikiPage title (never an .html file name).
+            # If caller passed an .html as source, derive title from html_path stem safely.
+            source_for_title = fname
+            if source_for_title.lower().endswith((".html", ".htm")):
+                source_for_title = html_fname
+            page_title = os.path.splitext(source_for_title)[0].strip()
+            if not page_title:
+                page_title = os.path.splitext(html_fname)[0].strip() or "Converted Page"
 
             # Check if page exists to avoid duplicates
             success_get, res_get = api.get_page(page_title)
@@ -4930,11 +6078,26 @@ YOUR WORKFLOW:
                     # HTML URL: "https://.../pages/slug" -> we need "slug"
                     import urllib.parse
                     slug = canvas_page_url.split('/')[-1]
-                    mod_success, mods_replaced = api.replace_module_file_with_page(
-                        fname, slug, page_title
-                    )
-                    if mod_success and mods_replaced > 0:
-                        self.gui_handler.log(f"   [Sync] Updated {mods_replaced} Canvas Module items to point directly to the new Page!")
+
+                    # [FIX] Some flows pass .html as source; others pass original .docx/.pdf.
+                    # Try both original source name and generated html filename.
+                    candidate_file_names = []
+                    for nm in [fname, html_fname]:
+                        if nm and nm not in candidate_file_names:
+                            candidate_file_names.append(nm)
+
+                    total_replaced = 0
+                    mod_success_any = False
+                    for candidate_name in candidate_file_names:
+                        mod_success, mods_replaced = api.replace_module_file_with_page(
+                            candidate_name, slug, page_title
+                        )
+                        if mod_success:
+                            mod_success_any = True
+                            total_replaced += int(mods_replaced or 0)
+
+                    if mod_success_any and total_replaced > 0:
+                        self.gui_handler.log(f"   [Sync] Updated {total_replaced} Canvas Module items to point directly to the new Page!")
 
                 return True
             else:
@@ -5778,29 +6941,43 @@ YOUR WORKFLOW:
                 rtype, msg, arg1, arg2, arg3 = req
 
                 result = None
-                if rtype == "prompt":
-                    result = (
-                        simpledialog.askstring("Input Needed", msg, parent=self.root)
-                        or ""
-                    )
-                elif rtype == "confirm":
-                    result = messagebox.askyesno("Confirm", msg, parent=self.root)
-                elif rtype == "image":
-                    # args were image_path, context, suggestion
-                    result = self._show_image_dialog(msg, arg1, arg2, arg3)
-                elif rtype == "link":
-                    # args were help_url, context
-                    result = self._show_link_dialog(msg, arg1, arg2)
-                elif rtype == "visual_review":
-                    # arg1=html_path, arg2=graphs_dir
-                    self.gui_handler.log(f"   [DEBUG] _process_inputs received visual_review request: {arg1}")
-                    result = self._show_visual_review(arg1, arg2)
-                    self.gui_handler.log(f"   [DEBUG] _show_visual_review returned: {result}")
-                elif rtype == "bbox_review":
-                    # msg=page_data (list of dicts with page images and AI boxes)
-                    self.gui_handler.log(f"   [DEBUG] _process_inputs received bbox_review request for {len(msg)} pages")
-                    result = self._show_bbox_review(msg)
-                    self.gui_handler.log(f"   [DEBUG] _show_bbox_review returned corrections for {len(result) if result else 0} pages")
+                try:
+                    if rtype == "prompt":
+                        result = (
+                            simpledialog.askstring("Input Needed", msg, parent=self.root)
+                            or ""
+                        )
+                    elif rtype == "confirm":
+                        result = messagebox.askyesno("Confirm", msg, parent=self.root)
+                    elif rtype == "image":
+                        # args were image_path, context, suggestion
+                        result = self._show_image_dialog(msg, arg1, arg2, arg3)
+                    elif rtype == "link":
+                        # args were help_url, context
+                        result = self._show_link_dialog(msg, arg1, arg2)
+                    elif rtype == "visual_review":
+                        # msg=html_path, arg1=graphs_dir
+                        self.gui_handler.log(f"   [DEBUG] _process_inputs received visual_review request: {msg}")
+                        result = self._show_visual_review(msg, arg1)
+                        self.gui_handler.log(f"   [DEBUG] _show_visual_review returned: {result}")
+                    elif rtype == "bbox_review":
+                        # msg=page_data (list of dicts with page images and AI boxes)
+                        self.gui_handler.log(f"   [DEBUG] _process_inputs received bbox_review request for {len(msg)} pages")
+                        result = self._show_bbox_review(msg)
+                        self.gui_handler.log(f"   [DEBUG] _show_bbox_review returned corrections for {len(result) if result else 0} pages")
+                    elif rtype == "latex_review":
+                        result = self._show_latex_review(msg)
+                except Exception as e:
+                    self.gui_handler.log(f"   [ERROR] Input handler failed for {rtype}: {e}")
+                    # Safe defaults so worker threads never stall waiting for input.
+                    if rtype in ("confirm", "visual_review"):
+                        result = True
+                    elif rtype == "bbox_review":
+                        result = None
+                    elif rtype == "latex_review":
+                        result = {"action": "continue", "content": msg.get("content", "") if isinstance(msg, dict) else ""}
+                    else:
+                        result = ""
 
                 self.gui_handler.input_response_queue.put(result)
         except queue.Empty:
@@ -6056,10 +7233,65 @@ YOUR WORKFLOW:
 
         self.gui_handler.log("DEBUG: Poppler OK. Requesting confirmation...")
 
-        if not messagebox.askyesno(
+        per_file_mode_choice = self._ask_choice_centered(
+            "Math Visual Detection Mode",
+            "How should I handle image/graph detection for this BULK run?\n\n"
+            "Yes = Ask per PDF file (recommended for mixed teacher content)\n"
+            "No = Use one choice for all files\n"
+            "Cancel = stop now",
+            [("Yes (Per file)", True), ("No (One choice)", False), ("Cancel", None)]
+        )
+        if per_file_mode_choice is None:
+            self.gui_handler.log("DEBUG: User cancelled at visual detection mode prompt.")
+            return
+
+        per_file_visual_mode = bool(per_file_mode_choice)
+        visuals_choice = True
+        manual_visual_selection_mode = bool(self.config.get("math_manual_visual_selection", True))
+        if not per_file_visual_mode:
+            visuals_choice = self._ask_choice_centered(
+                "Math Visual Detection",
+                "For this BULK run, detect graphs/diagrams/images in math PDFs?\n\n"
+                "Yes = detect visuals (slower, more API calls)\n"
+                "No = formulas/text only (faster, fewer API calls)",
+                [("Yes", True), ("No", False)]
+            )
+            if visuals_choice is None:
+                self.gui_handler.log("DEBUG: User cancelled at visual detection choice.")
+                return
+
+        if visuals_choice:
+            log_mode = "Manual Only" if manual_visual_selection_mode else "AI Assist"
+            self.gui_handler.log(f"   [VISUAL MODE] {log_mode}")
+
+        fast_start_mode = self._ask_choice_centered(
+            "Fast Start",
+            "Start converting immediately and skip the detailed licensing scan?\n\n"
+            "Yes = fastest start (recommended when you are in a hurry)\n"
+            "No = run full licensing scan first",
+            [("Yes", True), ("No", False)]
+        )
+        if fast_start_mode is None:
+            self.gui_handler.log("DEBUG: User cancelled at fast-start choice.")
+            return
+
+        step_mode_for_run = self._ask_choice_centered(
+            "Teacher-Paced Mode",
+            "Process one page at a time during this bulk run?\n\n"
+            "Yes = pause between pages for teacher interaction (best for quota stability)\n"
+            "No = run continuously",
+            [("Yes", True), ("No", False)]
+        )
+        if step_mode_for_run is None:
+            self.gui_handler.log("DEBUG: User cancelled at teacher-paced choice.")
+            return
+
+        confirm_run = self._ask_choice_centered(
             "Confirm",
             "This will convert ALL math in your project using AI.\n\nIt may take a while. Continue?",
-        ):
+            [("Continue", True), ("Cancel", False)]
+        )
+        if not confirm_run:
             self.gui_handler.log("DEBUG: User cancelled or closed confirmation dialog.")
             return
 
@@ -6103,36 +7335,11 @@ YOUR WORKFLOW:
                 if current % 5 == 0 or current == 1 or current == total:
                     log(f"   ... Processing file {current} of {total} ...")
 
-            # [NEW] Callback for immediate processing
-            def on_file_complete(source, dest):
-                # 1. Auto-Fixer (Silent)
-                success, fixes = interactive_fixer.run_auto_fixer(
-                    dest, self.gui_handler
-                )
-
-                # 2. AI Responsive Design pass
-                try:
-                     import jeanie_ai
-                     with open(dest, "r", encoding="utf-8") as f:
-                         content = f.read()
-                     new_html, msg = jeanie_ai.improve_html_design(content, api_key)
-                     if new_html and "Error" not in msg:
-                         with open(dest, "w", encoding="utf-8") as f:
-                             f.write(new_html)
-                         log("   [DESIGN] AI improved layout for mobile!")
-                except Exception as e:
-                     log(f"   [DESIGN] Skipping Design improvements: {e}")
-
-                # 2.5 [NEW] Interactive Visual Review (blocks until user approves)
-                dest_stem = Path(dest).stem
-                graphs_dir = str(Path(dest).parent / f"{dest_stem}_graphs")
-                if os.path.isdir(graphs_dir):
-                    log(f"   🖼️ Opening Visual Review for {os.path.basename(dest)}...")
-                    approved = self.gui_handler.prompt_visual_review(dest, graphs_dir)
-                    if not approved:
-                        log(f"   ⏩ User cancelled upload for {os.path.basename(dest)}")
-                        return
-                    log(f"   ✅ Visual review approved!")
+            # [NEW] Finalizer after review completes (can run async)
+            def finalize_file(source, dest, approved=True):
+                if not approved:
+                    log(f"   ⏩ User skipped finalization for {os.path.basename(dest)}")
+                    return
 
                 # 3. Update Links
                 converter_utils.update_doc_links_to_html(
@@ -6153,11 +7360,184 @@ YOUR WORKFLOW:
                 # 6. Auto-Upload to Canvas (if API connected)
                 api = self._get_canvas_api()
                 if api:
-                    # Silent upload with auto-confirm
                     log(f"   ☁️ Uploading to Canvas: {os.path.basename(dest)}...")
-                    self._upload_page_to_canvas(
-                        dest, source, api, auto_confirm_links=True
+                    self._upload_page_to_canvas(dest, source, api, auto_confirm_links=True)
+
+            def quick_compliance_patch(html_path):
+                """Fallback compliance patch when full auto-fixer fails."""
+                try:
+                    import re as _re
+                    from bs4 import BeautifulSoup
+
+                    with open(html_path, "r", encoding="utf-8") as f:
+                        raw = f.read()
+
+                    changed = False
+                    cleaned = _re.sub(r'\[GRAPH_BBOX:[^\]]+\]', '', raw)
+                    if cleaned != raw:
+                        raw = cleaned
+                        changed = True
+
+                    soup = BeautifulSoup(raw, "html.parser")
+
+                    head = soup.find("head")
+                    if not head and soup.html:
+                        head = soup.new_tag("head")
+                        soup.html.insert(0, head)
+                        changed = True
+                    if head:
+                        mv = head.find("meta", attrs={"name": "viewport"})
+                        if not mv:
+                            head.append(
+                                soup.new_tag(
+                                    "meta",
+                                    attrs={
+                                        "name": "viewport",
+                                        "content": "width=device-width, initial-scale=1",
+                                    },
+                                )
+                            )
+                            changed = True
+
+                    def _norm_hex(v):
+                        v = (v or "").strip().lower()
+                        if not v.startswith("#"):
+                            return None
+                        if len(v) == 4:
+                            return "#" + "".join([c * 2 for c in v[1:]])
+                        if len(v) == 7:
+                            return v
+                        return None
+
+                    for tag in soup.find_all(style=True):
+                        s = tag.get("style", "")
+                        if not s:
+                            continue
+                        m_fg = _re.search(r'(^|;)\s*color\s*:\s*(#[0-9a-fA-F]{3,6})', s)
+                        m_bg = _re.search(r'(^|;)\s*background(?:-color)?\s*:\s*(#[0-9a-fA-F]{3,6})', s)
+                        if m_fg and m_bg:
+                            fg = _norm_hex(m_fg.group(2))
+                            bg = _norm_hex(m_bg.group(2))
+                            if fg and bg and fg == bg:
+                                s2 = _re.sub(r'(^|;)\s*color\s*:\s*#[0-9a-fA-F]{3,6}', r'\1 color:#111111', s)
+                                if s2 != s:
+                                    tag["style"] = s2
+                                    changed = True
+
+                    for img in soup.find_all("img"):
+                        st = (img.get("style", "") or "")
+                        if "max-width" not in st:
+                            suffix = "; " if st and not st.strip().endswith(";") else ""
+                            img["style"] = f"{st}{suffix}max-width:100%; height:auto;"
+                            changed = True
+
+                    if changed:
+                        with open(html_path, "w", encoding="utf-8") as f:
+                            f.write(str(soup))
+                        return True
+                except Exception as e_q:
+                    log(f"   [COMPLIANCE] Quick patch skipped: {e_q}")
+                return False
+
+            # [NEW] Callback for immediate processing
+            def on_file_complete(source, dest):
+                # 1. Auto-Fixer (Silent)
+                auto_ok, _ = interactive_fixer.run_auto_fixer(dest, self.gui_handler)
+                if not auto_ok:
+                    if quick_compliance_patch(dest):
+                        log("   [COMPLIANCE] Applied fallback quick patch (viewport/reflow/token cleanup).")
+
+                # 1b. Interactive image-conversion review pass.
+                # If images look like equations/tables, prompt teacher and auto-convert when possible.
+                try:
+                    with open(dest, "r", encoding="utf-8") as f:
+                        html_now = f.read()
+                    has_math_like_images = (
+                        ("data-math-check=\"true\"" in html_now)
+                        or ("data-math-check='true'" in html_now)
                     )
+                    has_table_like_images = (
+                        ("data-table-check=\"true\"" in html_now)
+                        or ("data-table-check='true'" in html_now)
+                    )
+                    if has_math_like_images or has_table_like_images:
+                        log("   [IMG-CONVERT] Found potential equation/table images. Opening guided conversion prompts...")
+                        interactive_fixer.scan_and_fix_file(dest, self.gui_handler, self.target_dir)
+                except Exception as e_math_scan:
+                    log(f"   [IMG-CONVERT] Guided review skipped: {e_math_scan}")
+
+                # 2. Final ADA check (optional)
+                if self.config.get("math_final_ada_check", True):
+                    try:
+                        audit_res = run_audit.audit_file(dest)
+                        score = run_audit.calculate_accessibility_score(audit_res)
+                        summary = run_audit.get_issue_summary(audit_res)
+                        log(f"   [ADA] Final score: {score}%")
+                        if summary:
+                            log(f"   [ADA] {summary}")
+                    except Exception as e:
+                        log(f"   [ADA] Final check skipped: {e}")
+
+                # 3. AI Responsive Design pass (optional)
+                if self.config.get("math_auto_responsive", True):
+                    try:
+                         import jeanie_ai
+                         with open(dest, "r", encoding="utf-8") as f:
+                             content = f.read()
+                         new_html, msg = jeanie_ai.improve_html_design(content, api_key)
+                         if new_html and "Error" not in msg:
+                             with open(dest, "w", encoding="utf-8") as f:
+                                 f.write(new_html)
+                             log("   [DESIGN] AI improved layout for mobile!")
+                    except Exception as e:
+                         log(f"   [DESIGN] Skipping Design improvements: {e}")
+
+                # 4. Open full visual editor only for non-step runs.
+                # In teacher-paced mode we already reviewed visuals per page,
+                # so we should finalize/upload immediately.
+                dest_stem = Path(dest).stem
+                graphs_dir = str(Path(dest).parent / f"{dest_stem}_graphs")
+                should_open_visual_review = False
+                if os.path.isdir(graphs_dir):
+                    # PDFs already get per-page bbox review in teacher-paced mode.
+                    # DOCX files do not, so still open full visual review for DOCX.
+                    if (not step_mode_for_run) or str(source).lower().endswith(".docx"):
+                        should_open_visual_review = True
+
+                if should_open_visual_review:
+                    if step_mode_for_run:
+                        # Teacher-paced reliability mode: never block upload on optional QA windows.
+                        # We upload first, then open visual review as post-upload editing surface.
+                        finalize_file(source, dest, approved=True)
+                        log(f"   🖼️ Opening full Visual Review editor for {os.path.basename(dest)} (post-upload QA)...")
+                        self.root.after(
+                            0,
+                            lambda d=dest, g=graphs_dir: self._show_visual_review(
+                                d,
+                                g,
+                                non_modal=True,
+                                on_done=None,
+                            ),
+                        )
+                        return
+
+                    log(f"   🖼️ Opening full Visual Review editor for {os.path.basename(dest)} (non-blocking)...")
+                    self.root.after(
+                        0,
+                        lambda s=source, d=dest, g=graphs_dir: self._show_visual_review(
+                            d,
+                            g,
+                            non_modal=True,
+                            on_done=lambda approved, src=s, dst=d: threading.Thread(
+                                target=lambda: finalize_file(src, dst, approved),
+                                daemon=True,
+                            ).start(),
+                        ),
+                    )
+                    return
+
+                # No visuals to review; finalize now.
+                finalize_file(source, dest, approved=True)
 
             log("\n=== BULK MATH REMEDIATION (CANVAS EXPORT) ===")
 
@@ -6169,6 +7549,48 @@ YOUR WORKFLOW:
                 """Called by math_converter to let user review AI-detected bounding boxes."""
                 return self.gui_handler.prompt_bbox_review(page_data)
 
+            per_file_state = {"apply_all": False, "all_value": None}
+
+            def detect_visuals_callback(file_path):
+                """Choose visual detection per file during bulk runs."""
+                if not per_file_visual_mode:
+                    return visuals_choice
+
+                if per_file_state["apply_all"]:
+                    return per_file_state["all_value"]
+
+                fname = os.path.basename(file_path)
+                choice = self.gui_handler.confirm(
+                    f"File: {fname}\n\n"
+                    f"Should I detect graphs/diagrams/images in this file?\n\n"
+                    f"Yes = detect visuals\n"
+                    f"No = formulas/text only"
+                )
+
+                use_for_rest = self.gui_handler.confirm(
+                    f"Use this same choice for the remaining files in this run?"
+                )
+                if use_for_rest:
+                    per_file_state["apply_all"] = True
+                    per_file_state["all_value"] = choice
+                return choice
+
+            page_gate_notice_shown = {"value": False}
+
+            def page_gate_callback(file_name, page_num, total_pages):
+                if not step_mode_for_run:
+                    return True
+                # New behavior: avoid confusing Yes/No inter-page prompts.
+                # Visual review opens automatically at file completion (non-blocking),
+                # allowing teacher edits while later files continue processing.
+                if not page_gate_notice_shown["value"] and page_num == 1:
+                    log(
+                        "   [PACE] Teacher-paced flow active; "
+                        "review opens automatically after each processed page."
+                    )
+                    page_gate_notice_shown["value"] = True
+                return True
+
             success, result = math_converter.process_canvas_export(
                 api_key,
                 self.target_dir,
@@ -6177,6 +7599,12 @@ YOUR WORKFLOW:
                 progress_callback=update_progress,
                 on_file_converted=on_file_complete,
                 visual_review_callback=visual_review_callback,
+                step_mode=step_mode_for_run,
+                page_gate_callback=page_gate_callback,
+                detect_visuals=visuals_choice,
+                detect_visuals_callback=detect_visuals_callback,
+                fast_license_mode=fast_start_mode,
+                manual_visual_selection=manual_visual_selection_mode,
             )
 
             if success:
@@ -6200,6 +7628,17 @@ YOUR WORKFLOW:
                 self.root.after(
                     0, lambda: messagebox.showinfo("Mission Complete", msg_done)
                 )
+
+                if result:
+                    def ask_partial_export(res=list(result)):
+                        if messagebox.askyesno(
+                            "Create Partial Test Export?",
+                            "Would you like to export ONLY the converted files as a zip for testers?\n\n"
+                            "This is useful for quick QA without full course import."
+                        ):
+                            self._export_partial_converted_files(res)
+
+                    self.root.after(0, ask_partial_export)
             else:
                 log(f"❌ Error: {result}")
                 self.root.after(
@@ -6227,6 +7666,131 @@ YOUR WORKFLOW:
         """Convert individual math files using Gemini."""
         try:
             self.gui_handler.log(f"[DEBUG] Math button clicked for type: {file_type}")
+
+            def prompt_pdf_visual_mode(pdf_path):
+                """
+                Ask teacher whether to detect visuals for this file.
+                Returns: True (detect), False (skip), or None (cancel).
+                """
+                default_choice = bool(self.config.get("math_has_visuals", True))
+
+                # Try to render first page preview.
+                preview_img = None
+                try:
+                    from pdf2image import convert_from_path
+
+                    imgs = convert_from_path(
+                        pdf_path,
+                        dpi=110,
+                        first_page=1,
+                        last_page=1,
+                        poppler_path=self.config.get("poppler_path", "") or None,
+                        fmt="png",
+                    )
+                    if imgs:
+                        preview_img = imgs[0]
+                except Exception:
+                    preview_img = None
+
+                # Fallback if preview rendering fails.
+                if preview_img is None:
+                    msg = (
+                        "This file may or may not contain visuals (graphs/diagrams/images).\n\n"
+                        "Yes = detect visuals (slower, more API calls)\n"
+                        "No = formulas/text only (faster, fewer API calls)"
+                    )
+                    return messagebox.askyesnocancel("Math Visual Detection", msg)
+
+                result = {"choice": None}
+                win = Toplevel(self.root)
+                win.title("Math Visual Detection")
+                win.geometry("900x780")
+                win.transient(self.root)
+                win.grab_set()
+                win.configure(bg="white")
+
+                tk.Label(
+                    win,
+                    text="First page preview",
+                    font=("Segoe UI", 12, "bold"),
+                    bg="white",
+                    fg="#4B3190",
+                ).pack(pady=(10, 4))
+
+                prompt_txt = (
+                    "Should I look for graphs/diagrams/images in this file?\n"
+                    "• Yes = best for geometry/graphing worksheets\n"
+                    "• No = best for algebra/fractions text-only worksheets"
+                )
+                tk.Label(
+                    win,
+                    text=prompt_txt,
+                    font=("Segoe UI", 10),
+                    justify="left",
+                    bg="white",
+                    fg="#333",
+                ).pack(pady=(0, 10))
+
+                # Resize preview for dialog
+                max_w, max_h = 840, 560
+                p = preview_img.copy()
+                p.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(p)
+
+                img_lbl = tk.Label(win, image=photo, bg="#f8f8f8", bd=1, relief="solid")
+                img_lbl.image = photo
+                img_lbl.pack(padx=12, pady=8)
+
+                remember_var = tk.BooleanVar(value=False)
+                tk.Checkbutton(
+                    win,
+                    text="Remember my choice as default in Setup",
+                    variable=remember_var,
+                    bg="white",
+                    font=("Segoe UI", 9),
+                    activebackground="white",
+                    selectcolor="white",
+                ).pack(pady=(6, 6))
+
+                btns = tk.Frame(win, bg="white")
+                btns.pack(pady=(4, 12))
+
+                def choose(val):
+                    result["choice"] = val
+                    if remember_var.get() and isinstance(val, bool):
+                        self._update_config(math_has_visuals=val)
+                    win.destroy()
+
+                tk.Button(
+                    btns,
+                    text="✅ Yes, detect visuals",
+                    command=lambda: choose(True),
+                    bg="#16a34a",
+                    fg="white",
+                    font=("Segoe UI", 10, "bold"),
+                    cursor="hand2",
+                ).pack(side="left", padx=8)
+                tk.Button(
+                    btns,
+                    text="⚡ No, formulas/text only",
+                    command=lambda: choose(False),
+                    bg="#1d4ed8",
+                    fg="white",
+                    font=("Segoe UI", 10, "bold"),
+                    cursor="hand2",
+                ).pack(side="left", padx=8)
+                tk.Button(
+                    btns,
+                    text="Cancel",
+                    command=lambda: choose(None),
+                    bg="#e5e7eb",
+                    fg="#111827",
+                    font=("Segoe UI", 10),
+                    cursor="hand2",
+                ).pack(side="left", padx=8)
+
+                win.wait_window()
+                return result["choice"]
 
             # Check if busy
             if self.is_running:
@@ -6288,6 +7852,15 @@ YOUR WORKFLOW:
                 self.gui_handler.log("[DEBUG] No file selected (cancelled).")
                 return
 
+            detect_visuals_for_file = self.config.get("math_has_visuals", True)
+            manual_visual_selection_for_file = bool(self.config.get("math_manual_visual_selection", True))
+            if file_type == "pdf":
+                choice = prompt_pdf_visual_mode(file_path)
+                if choice is None:
+                    self.gui_handler.log("[DEBUG] User cancelled visual detection prompt.")
+                    return
+                detect_visuals_for_file = choice
+
             def task():
                 import math_converter
 
@@ -6312,6 +7885,18 @@ YOUR WORKFLOW:
                     # Set API tier for rate limiting
                     math_converter.set_api_tier(self.config.get("gemini_tier", "free"))
 
+                    def page_gate_callback(page_num, total_pages):
+                        if not self.config.get("math_step_mode", False):
+                            return True
+                        # Page 1 starts immediately; gate subsequent pages.
+                        if page_num <= 1:
+                            return True
+                        return self.gui_handler.confirm(
+                            f"Ready for page {page_num}/{total_pages}?\n\n"
+                            f"Click Yes to process next page.\n"
+                            f"Click No to stop and save completed pages."
+                        )
+
                     success, result = math_converter.convert_pdf_to_latex(
                         api_key,
                         file_path,
@@ -6319,6 +7904,10 @@ YOUR WORKFLOW:
                         poppler_path=self.config.get("poppler_path", ""),
                         progress_callback=update_progress,
                         visual_review_callback=visual_review_callback,
+                        step_mode=self.config.get("math_step_mode", False),
+                        page_gate_callback=page_gate_callback,
+                        detect_visuals=detect_visuals_for_file,
+                        manual_visual_selection=manual_visual_selection_for_file,
                     )
                 elif file_type == "docx":
                     math_converter.set_api_tier(self.config.get("gemini_tier", "free"))
@@ -6661,6 +8250,36 @@ YOUR WORKFLOW:
         threading.Thread(target=worker, daemon=True).start()
 
     # --- CANVAS MIRROR (LIVE SYNC) LOGIC ---
+    def _restore_mirror_mode_startup(self):
+        """Restore mirror mode from saved config on app launch."""
+        if not self.mirror_should_start or self.mirror_active:
+            return
+
+        api = self._get_canvas_api()
+        if not api or not self.target_dir or not os.path.exists(self.target_dir):
+            # If prerequisites are missing, persist OFF to avoid confusing stale state.
+            self.config["mirror_active"] = False
+            self._save_config_simple()
+            return
+
+        # Start without requiring user click.
+        self.mirror_active = True
+        self.config["mirror_active"] = True
+        self._save_config_simple()
+
+        if hasattr(self, "btn_mirror_toggle") and self.btn_mirror_toggle.winfo_exists():
+            self.btn_mirror_toggle.config(text="🟢 MIRROR MODE: ON", bg="#D1FAE5")
+        if hasattr(self, "lbl_mirror_status") and self.lbl_mirror_status.winfo_exists():
+            self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
+
+        self.file_hashes = {}
+        for f in Path(self.target_dir).rglob("*.html"):
+            self.file_hashes[str(f)] = os.path.getmtime(f)
+
+        self.gui_handler.log("🚀 [Mirror] Restored from saved settings. Watching project for saves...")
+        self.mirror_thread = threading.Thread(target=self._mirror_watcher, daemon=True)
+        self.mirror_thread.start()
+
     def _toggle_mirror(self):
         """Starts or stops the live directory watcher for Canvas sync."""
         if not self.mirror_active:
@@ -6683,8 +8302,10 @@ YOUR WORKFLOW:
             self.mirror_active = True
             self.config["mirror_active"] = True
             self._save_config_simple()
-            self.btn_mirror_toggle.config(text="🟢 MIRROR MODE: ON", bg="#D1FAE5")
-            self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
+            if hasattr(self, "btn_mirror_toggle") and self.btn_mirror_toggle.winfo_exists():
+                self.btn_mirror_toggle.config(text="🟢 MIRROR MODE: ON", bg="#D1FAE5")
+            if hasattr(self, "lbl_mirror_status") and self.lbl_mirror_status.winfo_exists():
+                self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
             self.gui_handler.log("🚀 [Mirror] ACTIVE. Watching project for saves...")
 
             # Reset hashes so we don't trigger on everything immediately
@@ -6701,8 +8322,10 @@ YOUR WORKFLOW:
             self.mirror_active = False
             self.config["mirror_active"] = False
             self._save_config_simple()
-            self.btn_mirror_toggle.config(text="🔴 MIRROR MODE: OFF", bg="#f3f4f6")
-            self.lbl_mirror_status.config(text="Idle", fg="gray")
+            if hasattr(self, "btn_mirror_toggle") and self.btn_mirror_toggle.winfo_exists():
+                self.btn_mirror_toggle.config(text="🔴 MIRROR MODE: OFF", bg="#f3f4f6")
+            if hasattr(self, "lbl_mirror_status") and self.lbl_mirror_status.winfo_exists():
+                self.lbl_mirror_status.config(text="Idle", fg="gray")
             self.gui_handler.log("🛑 [Mirror] Deactivated.")
 
     def _mirror_watcher(self):

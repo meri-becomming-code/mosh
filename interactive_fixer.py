@@ -533,9 +533,13 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         elif alt.lower() == img_filename.lower():
             issue = "Filename used as alt text"
         
-        # [NEW] Math Equation Check (Flagged by run_fixer)
+           # [NEW] Math Equation Check (Flagged by run_fixer)
         if img.has_attr('data-math-check'):
              issue = "Potential Math Equation (Needs Verification/LaTeX)"
+
+           # [NEW] Table Image Check (Flagged by run_fixer)
+           elif img.has_attr('data-table-check'):
+               issue = "Potential Data Table (Convert image to real HTML table)"
         
         # [SMART SILENCE] Only flag "Review suggested" if we DON'T have a memory for this image.
         # If we have a memory, even if it contains the word "image", we trust the user's previous choice.
@@ -556,6 +560,34 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             # context and prompt (resolve_image_path already called above)
             context = get_context(img)
             initial_val = get_image_suggestion(src, context) # [FIX] Use consistent naming
+
+            # [AUTO] If this looks like a table image and AI is available,
+            # auto-classify and convert to semantic HTML table when confirmed.
+            try:
+                table_hint_text = f"{src} {alt} {context}".lower()
+                looks_like_table = img.has_attr('data-table-check') or any(
+                    t in table_hint_text for t in ['table', 'rows', 'columns', 'spreadsheet', 'tabular']
+                )
+                if looks_like_table and io_handler.api_key and img_full_path and os.path.exists(img_full_path):
+                    io_handler.log("    [JEANIE] Checking if this image is a data table (Auto)...")
+                    is_table, detect_msg = jeanie_ai.detect_table_in_image(img_full_path, io_handler.api_key)
+                    if is_table:
+                        io_handler.log("    [JEANIE] Data table detected. Converting to accessible HTML table...")
+                        table_html, ocr_msg = jeanie_ai.generate_table_from_image(img_full_path, io_handler.api_key)
+                        if table_html and "<table" in table_html.lower():
+                            table_soup = BeautifulSoup(table_html, 'html.parser')
+                            wrapper = soup.new_tag("div", attrs={"class": "table-ocr-result", "style": "margin: 20px 0; overflow-x: auto;"})
+                            wrapper.append(table_soup)
+                            img.replace_with(wrapper)
+                            io_handler.log("    -> Success! Image auto-replaced with accessible HTML table.")
+                            modified = True
+                            continue
+                        else:
+                            io_handler.log(f"    [Error] Table OCR failed: {ocr_msg}")
+                    else:
+                        io_handler.log(f"    [JEANIE] Not classified as table ({detect_msg}). Continuing with normal review.")
+            except Exception as e_table_auto:
+                io_handler.log(f"    [JEANIE] Table auto-detect skipped: {e_table_auto}")
             
             # Final check of memory before prompting (in case it was just added in this session)
             if mem_key in io_handler.memory:
@@ -602,8 +634,10 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                     modified = True
                     continue
 
-            if img.has_attr('data-math-check'):
+              if img.has_attr('data-math-check'):
                  prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX. If no, enter Alt Text: "
+              elif img.has_attr('data-table-check'):
+                  prompt_text = "    > Verify: Is this a Data Table? Use 'Convert to Table (AI)' or enter Alt Text: "
             else:
                  prompt_text = "    > Enter Alt Text (Press Enter to accept suggestion): " + prompt_suffix
             
@@ -707,6 +741,8 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                         img['alt'] = f"Equation: {choice}"
                         io_handler.memory[mem_key] = f"Equation: {choice}"
                     del img['data-math-check']
+                if img.has_attr('data-table-check'):
+                    del img['data-table-check']
                 pass
                 
                 modified = True
@@ -930,7 +966,9 @@ def run_auto_fixer(filepath, io_handler=None):
         io_handler.log(f"  [ERROR] Permission denied writing to {os.path.basename(filepath)}: {e}")
         return False, []
     except Exception as e:
+        import traceback
         io_handler.log(f"  [ERROR] Auto-fix failed for {os.path.basename(filepath)}: {e}")
+        io_handler.log(f"  [ERROR] Auto-fix traceback: {traceback.format_exc()}")
         return False, []
 
 def main_interactive_mode(io_handler=None):

@@ -17,6 +17,57 @@ from bs4 import BeautifulSoup
 # --- Constants ---
 ARCHIVE_FOLDER_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
 
+DEFAULT_STYLE_PREFERENCES = {
+    "image_margin_px": 15,
+    "h1_color": "#4b3190",
+    "h2_color": "#2c3e50",
+    "h3_color": "#444444",
+    "h4_color": "#374151",
+    "h5_color": "#4b5563",
+    "h6_color": "#6b7280",
+}
+
+_style_preferences = DEFAULT_STYLE_PREFERENCES.copy()
+
+
+def _normalize_hex_color(value, fallback):
+    s = str(value or "").strip()
+    if re.fullmatch(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})", s):
+        return s
+    return fallback
+
+
+def set_style_preferences(preferences=None):
+    """Sets module-wide output style preferences used by all converters."""
+    global _style_preferences
+    prefs = dict(DEFAULT_STYLE_PREFERENCES)
+    incoming = preferences or {}
+
+    try:
+        margin = int(incoming.get("image_margin_px", prefs["image_margin_px"]))
+    except Exception:
+        margin = prefs["image_margin_px"]
+    prefs["image_margin_px"] = max(0, min(80, margin))
+
+    for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+        key = f"{tag}_color"
+        prefs[key] = _normalize_hex_color(incoming.get(key), prefs[key])
+
+    _style_preferences = prefs
+
+
+def _build_user_style_overrides():
+    m = _style_preferences["image_margin_px"]
+    return f"""
+        h1 {{ color: {_style_preferences['h1_color']} !important; border-bottom-color: {_style_preferences['h1_color']} !important; }}
+        h2 {{ color: {_style_preferences['h2_color']} !important; }}
+        h3 {{ color: {_style_preferences['h3_color']} !important; }}
+        h4 {{ color: {_style_preferences['h4_color']} !important; }}
+        h5 {{ color: {_style_preferences['h5_color']} !important; }}
+        h6 {{ color: {_style_preferences['h6_color']} !important; }}
+        img {{ margin-top: {m}px !important; margin-bottom: {m}px !important; }}
+    """
+
 
 def sanitize_filename(base_name):
     """
@@ -112,12 +163,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .content-table {{ width: 100%; border-collapse: collapse; }}
         
         img {{ 
-            max-width: 50%; 
+            max-width: 500px; 
             height: auto; 
             border-radius: 4px; 
             border: 1px solid #eee; 
             display: block;
-            margin: 10px 0;
+            margin: 15px 0;
         }}
         
         @media (max-width: 768px) {{
@@ -222,8 +273,10 @@ def _save_html(content, title, source_file, output_path, style_overrides=""):
     # [FIX] Safe Path Length
     output_path = ensure_short_path(output_path)
 
+    combined_styles = f"{style_overrides}\n{_build_user_style_overrides()}"
+
     html = HTML_TEMPLATE.format(
-        title=title, content=content, style_overrides=style_overrides
+        title=title, content=content, style_overrides=combined_styles
     )
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -393,7 +446,7 @@ def convert_docx_to_html(docx_path, io_handler=None, log_func=None):
             import io
 
             width_attr = "auto"
-            style_attr = "max-width: 50%; height: auto;"  # Safe fixed default
+            style_attr = "max-width: 500px; height: auto;"  # Safe fixed default
 
             try:
                 with PILImage.open(io.BytesIO(image_bytes)) as pil_img:
@@ -1004,7 +1057,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         dist_from_center = abs(shape_center_x - (slide_width / 2))
 
                         if dist_from_center < center_threshold:
-                            float_style = "display: block; margin: 20px auto;"
+                            float_style = "display: block; margin: 15px auto;"
                         elif shape_center_x < slide_width / 2:
                             float_style = "float: left; margin: 0 20px 15px 0;"
                         else:
@@ -1284,7 +1337,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None, force_ocr=False):
                         dist_from_center = abs(shape_center_x - (page_width / 2))
 
                         if dist_from_center < center_threshold:
-                            float_style = "display: block; margin: 20px auto;"
+                            float_style = "display: block; margin: 15px auto;"
                         elif shape_center_x < page_width / 2:
                             float_style = "float: left; margin: 0 20px 15px 0;"
                         else:
@@ -1495,7 +1548,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None, force_ocr=False):
                                     )
 
                             html_parts.append(
-                                f'\u003cimg src="{rel_path}" alt="{alt_text}" class="content-image" style="display: block; margin: 20px auto; max-width: 800px;"\u003e'
+                                f'\u003cimg src="{rel_path}" alt="{alt_text}" class="content-image" style="display: block; margin: 15px auto; max-width: 500px; height: auto;"\u003e'
                             )
             except Exception as e:
                 print(f"Fallback PDF image extraction failed: {e}")

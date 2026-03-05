@@ -1,7 +1,7 @@
 import os
 import re
 import colorsys
-from bs4 import BeautifulSoup, Comment
+from bs4 import BeautifulSoup, Comment, NavigableString
 
 # --- Configuration: "Deep Obsidian" Code Theme ---
 COLOR_BG_DARK = "#121212"
@@ -214,6 +214,18 @@ def remediate_html_file(filepath):
             new_meta = soup.new_tag('meta', attrs={'name': 'viewport', 'content': 'width=device-width, initial-scale=1'})
             head.append(new_meta)
             fixes.append("Added mobile viewport meta tag")
+
+        # Enforce slide image sizing policy (desktop/tablet 50%, phone 100%).
+        css_rule = (
+            ".slide-container img { max-width: 50% !important; height: auto !important; }\n"
+            "@media (max-width: 768px) { .slide-container img { max-width: 100% !important; } }"
+        )
+        existing_css = "\n".join((st.get_text() or "") for st in head.find_all('style'))
+        if '.slide-container img' not in existing_css:
+            st = soup.new_tag('style')
+            st.string = css_rule
+            head.append(st)
+            fixes.append("Added slide image responsive CSS policy")
 
     # [NEW] Structural Integrity: Ensure the body contains exactly one main-content div,
     # and all other content is moved inside it.
@@ -495,17 +507,57 @@ def remediate_html_file(filepath):
                 fixes.append(f"Fixed heading gap: Demoted '{h.get_text()[:30]}' to H{new_level}")
             last_level = int(h.name[1])
 
-    # --- Part 7: Images (Visual Markers & Responsiveness) ---
+    # --- Part 7: Slide Containers + Images (Visual Markers & Responsiveness) ---
+    # 7a. Enforce PPT slide container safety so content wraps and grows correctly.
+    for div in soup.find_all('div', class_='slide-container'):
+        style = div.get('style', '') or ''
+        style_low = style.lower()
+
+        # Ensure containers can grow with floated images/content.
+        if 'overflow' not in style_low:
+            style = style.rstrip(';') + '; overflow: auto;'
+            style_low = style.lower()
+            fixes.append("Enforced slide-container overflow:auto")
+        elif 'overflow: auto' not in style_low:
+            style = re.sub(r'overflow\s*:\s*[^;]+;?', 'overflow: auto;', style, flags=re.IGNORECASE)
+            style_low = style.lower()
+            fixes.append("Normalized slide-container overflow:auto")
+
+        if 'display:' not in style_low:
+            style = style.rstrip(';') + '; display: flow-root;'
+            fixes.append("Enforced slide-container display:flow-root")
+
+        if 'clear:' not in style_low:
+            style = style.rstrip(';') + '; clear: both;'
+            fixes.append("Enforced slide-container clear:both")
+
+        div['style'] = style.strip()
+
     image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg']
     for img in soup.find_all('img'):
         needs_fix = False
         reason = ""
         alt_val = img.get('alt', '').strip()
+        in_slide_container = bool(img.find_parent('div', class_='slide-container'))
         
-        # 7a. Responsive Fix (Safe)
+        # 7b. Responsive Fix (Safe)
         # Ensure image never exceeds container width, but do NOT force it to expand (width: 100%).
         style = img.get('style', '')
-        if 'max-width' not in style.lower():
+        style_low = style.lower()
+
+        if in_slide_container and 'max-width' in style_low:
+            # Keep slide visuals at 50% desktop; mobile CSS should promote to 100%.
+            style = re.sub(r'max-width\s*:\s*[^;]+;?', 'max-width: 50%;', style, flags=re.IGNORECASE)
+            img['style'] = style.strip()
+            fixes.append(f"Normalized slide image max-width to 50%: {os.path.basename(img.get('src', 'unknown'))}")
+        elif in_slide_container and 'max-width' not in style_low:
+            new_style_part = "max-width: 50%; height: auto;"
+            if style:
+                img['style'] = style.rstrip(';') + "; " + new_style_part
+            else:
+                img['style'] = new_style_part
+            fixes.append(f"Enforced slide image max-width 50%: {os.path.basename(img.get('src', 'unknown'))}")
+        elif 'max-width' not in style_low:
             # Add safe responsiveness (Enforcing 50% max-width per user request)
             new_style_part = "max-width: 50%; height: auto;"
             if style:
@@ -513,7 +565,7 @@ def remediate_html_file(filepath):
             else:
                 img['style'] = new_style_part
             fixes.append(f"Made image responsive: {os.path.basename(img.get('src', 'unknown'))}")
-        # 7b. Alt Text Logic
+        # 7c. Alt Text Logic
         if 'alt' not in img.attrs:
             needs_fix = True
             reason = "Missing Alt Text"
@@ -532,7 +584,7 @@ def remediate_html_file(filepath):
             # Note: Placeholders and markers removed per user request. Fixes are tracked in 'fixes' list only.
             fixes.append(f"Flagged image for review: {reason}")
             
-        # 7c. POTENTIAL EQUATION DETECTION (Math Check)
+        # 7d. POTENTIAL EQUATION DETECTION (Math Check)
         # Heuristic: Small images with high contrast, or alt text containing math terms but no LaTeX
         src = img.get('src', '').lower()
         # [FIX] Idempotency: skip if already flagged or math'd
@@ -540,6 +592,16 @@ def remediate_html_file(filepath):
              # Mark for interactive review to suggest LaTeX
              img['data-math-check'] = "true"
              fixes.append(f"Flagged potential math equation for accessibility verification: {os.path.basename(src)}")
+
+        # 7e. POTENTIAL TABLE IMAGE DETECTION
+        # Heuristic: filename/alt hints that image is actually tabular data.
+        table_terms = ['table', 'rows', 'columns', 'spreadsheet', 'data table', 'tabular']
+        if (
+            not img.has_attr('data-table-check')
+            and any(term in alt_val.lower() or term in src for term in table_terms)
+        ):
+            img['data-table-check'] = "true"
+            fixes.append(f"Flagged potential table image for HTML table conversion: {os.path.basename(src)}")
 
     # --- Part 8: Typography & Accessibility (Small Fonts / AUTO-CONTRAST) ---
     import run_audit # Use get_style_property for robust lookup
@@ -583,6 +645,31 @@ def remediate_html_file(filepath):
                      fixes.append(f"Auto-corrected low contrast ({ratio:.1f}:1 -> 4.5:1)")
 
     # --- Part 9: Links & Iframes (Vague Text Correction) ---
+    # 9a. List structure normalization: ul/ol should only contain <li> children.
+    for lst in soup.find_all(['ul', 'ol']):
+        children = list(lst.children)
+        for child in children:
+            # Keep valid list items.
+            if getattr(child, 'name', None) == 'li':
+                continue
+
+            # Remove empty text nodes.
+            if isinstance(child, NavigableString):
+                if not str(child).strip():
+                    child.extract()
+                else:
+                    # Convert meaningful stray text node into a list item.
+                    new_li = soup.new_tag('li')
+                    new_li.string = str(child).strip()
+                    child.replace_with(new_li)
+                    fixes.append("Normalized stray list text into <li>")
+                continue
+
+            # For non-li tags inside lists, move them outside (after list).
+            if getattr(child, 'name', None) is not None:
+                lst.insert_after(child.extract())
+                fixes.append(f"Moved non-list element <{child.name}> outside list")
+
     vague_terms = ['click here', 'read more', 'learn more', 'more', 'link', 'here', 'view']
     for a in soup.find_all('a'):
         href = a.get('href', '')
