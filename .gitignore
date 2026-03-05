@@ -29,6 +29,8 @@ dist/
 *.log
 test_math.html
 test_math.docx
+test_temp_*/
+*_extracted/
 
 # System
 .DS_Store
