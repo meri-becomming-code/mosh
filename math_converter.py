@@ -44,8 +44,45 @@ def clean_gemini_response(text):
     # 3. Strip other boilerplate if body tag wasn't strict
     if '<!DOCTYPE html>' in text:
         text = re.sub(r'<!DOCTYPE html>.*', '', text, flags=re.DOTALL)
+    
+    # 4. Clean up garbage OCR fragments (isolated single letters from diagram labels)
+    # Pattern: multiple single letters separated by spaces that aren't part of words
+    # e.g., "a a C A C a b" -> remove
+    text = re.sub(r'(?<![A-Za-z])([A-Za-z]\s+){3,}[A-Za-z](?![A-Za-z])', '', text)
+    
+    # 5. Remove orphaned single letters on their own line (common from diagrams)
+    text = re.sub(r'^\s*[A-Za-z]\s*$', '', text, flags=re.MULTILINE)
 
     return text.strip()
+
+
+def remove_duplicate_headers(pages):
+    """
+    Remove duplicate page headers from subsequent pages.
+    Common patterns like 'MAT 165 Notes Chapter X' should only appear once.
+    """
+    if not pages or len(pages) < 2:
+        return pages
+    
+    # Find common header pattern from first page (first line or first significant text)
+    first_page = pages[0]
+    
+    # Common patterns to detect and remove from subsequent pages
+    header_patterns = [
+        r'^MAT\s*\d+\s*Notes.*?(?=<h[23]|Section|\n\n)',  # "MAT 165 Notes Chapter X"
+        r'^[A-Z]{2,4}\s*\d+\s*Notes.*?(?=<h[23]|Section|\n\n)',  # Other course codes
+    ]
+    
+    cleaned_pages = [pages[0]]  # Keep first page as-is
+    
+    for page in pages[1:]:
+        cleaned = page
+        for pattern in header_patterns:
+            # Remove the header if it appears at the start
+            cleaned = re.sub(pattern, '', cleaned, count=1, flags=re.IGNORECASE | re.DOTALL)
+        cleaned_pages.append(cleaned.strip())
+    
+    return cleaned_pages
 
 # --- NEW: PROBING PROMPT ---
 PROBING_PROMPT = """Analyze this image and list EVERY visual element that is NOT standard text.
@@ -67,16 +104,21 @@ RULES:
 1. Identify all mathematical content and convert to LaTeX:
    - Use \\(...\\) for inline equations
    - Use $$...$$ for display equations
+   - For systems of equations, use \\begin{cases}...\\end{cases} wrapped in $$ delimiters
+   - For crossed-out terms, use \\cancel{} (Canvas supports this via MathJax)
+   - Use \\qquad for large spacing between aligned steps
+   - Use \\text{} for text within equations (e.g., \\text{or})
 2. TRANSCRIBE any standard text exactly as it appears.
 3. VISUAL ELEMENTS (GRAPHS, DIAGRAMS, ICONS):
    - You MUST output a token for every visual element detected.
    - Format: [GRAPH_BBOX: ymin, xmin, ymax, xmax, TYPE, STORY]
    - TYPE: Set to 'icon' (< 100px), 'graph' (math-heavy), or 'diagram' (complex illustration).
-   - STORY: If the element is complex, provide a 'Long Description' for accessibility (Feature 5). 
-     If it's simple, leave STORY='none'.
+   - STORY: ALWAYS provide a meaningful description (1-2 sentences) for accessibility.
+     Describe what the visual shows - shapes, labels, values, relationships.
+     NEVER use 'none' as the story - every image needs a real description.
    - Use the 0-1000 coordinate scale.
-   - Example: [GRAPH_BBOX: 100, 100, 400, 400, graph, none]
-   - Example: [GRAPH_BBOX: 500, 500, 800, 800, diagram, This is a complex flow chart showing the water cycle where...]
+   - Example: [GRAPH_BBOX: 100, 100, 400, 400, graph, A triangle ABC with sides labeled a, b, c opposite their respective angles]
+   - Example: [GRAPH_BBOX: 500, 500, 800, 800, diagram, A unit circle showing angles in quadrants I and II with reference angle marked]
 4. TABLES (AI Reconstruction):
    - If you see a table, RECONSTRUCT it perfectly using HTML <table>.
    - Include <thead> and <tbody>.
@@ -93,8 +135,47 @@ RULES:
 8. Solutions/Answers:
    - Wrap solutions in <details><summary>View Solution</summary>...</details>
 9. Output MUST be valid HTML snippet (no <html> cards, no markdown code blocks).
+10. GARBAGE FILTER:
+    - DO NOT output isolated single letters like "a a C A C a b" - these are diagram labels, not text.
+    - If you see scattered single letters near a diagram, they belong TO the diagram, not the text.
+    - Only transcribe coherent words and sentences.
+11. REPEATED HEADERS:
+    - If the page header (e.g., "MAT 165 Notes Chapter 10") appears at the top of every page,
+      only include it ONCE at the very beginning. Skip it on subsequent pages.
 
 Goal: A perfect accessible digital version of this document."""
+
+# Simple rate limiter to track API calls and enforce delays
+_api_call_times = []
+_current_tier = "free"  # "free" or "paid"
+
+def set_api_tier(tier):
+    """Set the API tier to adjust rate limiting. Call this before processing."""
+    global _current_tier
+    _current_tier = tier.lower() if tier else "free"
+
+def _get_min_call_interval():
+    """Get minimum seconds between API calls based on tier."""
+    if _current_tier == "paid":
+        return 1.5  # ~60 RPM for paid tier
+    return 4.0  # ~15 RPM for free tier
+
+def _rate_limit_delay():
+    """Enforce minimum delay between API calls to respect rate limits."""
+    import time
+    global _api_call_times
+    min_interval = _get_min_call_interval()
+    now = time.time()
+    # Clean old entries (older than 60 seconds)
+    _api_call_times = [t for t in _api_call_times if now - t < 60]
+    
+    if _api_call_times:
+        elapsed = now - _api_call_times[-1]
+        if elapsed < min_interval:
+            sleep_time = min_interval - elapsed
+            time.sleep(sleep_time)
+    
+    _api_call_times.append(time.time())
 
 def generate_content_with_retry(client, model, contents, log_func=None):
     """
@@ -104,6 +185,9 @@ def generate_content_with_retry(client, model, contents, log_func=None):
     base_delay = 5  # Start with 5 seconds
 
     for attempt in range(max_retries):
+        # Enforce rate limiting BEFORE making the call
+        _rate_limit_delay()
+        
         # Use a context manager so the executor is always cleaned up, even on unexpected exceptions.
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
@@ -164,14 +248,64 @@ def detect_visual_elements(client, model, img, log_func=None):
         
     return response.text.strip()
 
+
+def parse_bounding_boxes(html_content, page_width, page_height):
+    """
+    Extract all GRAPH_BBOX tokens from AI response.
+    
+    Args:
+        html_content: AI response text containing [GRAPH_BBOX: ...] tokens
+        page_width: Width of source image in pixels
+        page_height: Height of source image in pixels
+    
+    Returns:
+        List of dicts: [{
+            'token': full token string,
+            'rel_coords': (ymin_rel, xmin_rel, ymax_rel, xmax_rel) in 0-1000 range,
+            'abs_coords': (xmin, ymin, xmax, ymax) in pixels (with padding),
+            'type': 'graph'|'icon'|etc,
+            'story': description text,
+            'index': index in page
+        }, ...]
+    """
+    boxes = []
+    pattern = r'\[GRAPH_BBOX:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\w+)\s*,\s*([^\]]+)\]'
+    matches = list(re.finditer(pattern, html_content))
+    
+    for i, match in enumerate(matches):
+        ymin_rel, xmin_rel, ymax_rel, xmax_rel = map(int, [match.group(j) for j in range(1, 5)])
+        img_type = match.group(5).lower()
+        story = match.group(6).strip()
+        
+        # Convert to pixels with padding
+        ymin = int((ymin_rel / 1000) * page_height)
+        xmin = int((xmin_rel / 1000) * page_width)
+        ymax = int((ymax_rel / 1000) * page_height)
+        xmax = int((xmax_rel / 1000) * page_width)
+        
+        # Add 100px padding
+        ymin_pad = max(0, ymin - 100)
+        xmin_pad = max(0, xmin - 100)
+        ymax_pad = min(page_height, ymax + 100)
+        xmax_pad = min(page_width, xmax + 100)
+        
+        boxes.append({
+            'token': match.group(0),
+            'rel_coords': (ymin_rel, xmin_rel, ymax_rel, xmax_rel),
+            'abs_coords': (xmin_pad, ymin_pad, xmax_pad, ymax_pad),
+            'type': img_type,
+            'story': story,
+            'index': i
+        })
+    
+    return boxes
+
+
 def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, page_num, log_func=None):
     """
     Parses [GRAPH_BBOX] tokens, crops images from the source page, 
     saves them alongside the HTML output, and replaces tokens with <img> tags.
     """
-    if '[GRAPH_BBOX:' not in html_content:
-        return html_content
-        
     try:
         # Save cropped images into a subfolder next to the HTML file.
         # e.g. output_dir/MyPDF_graphs/MyPDF_p1_graph1.png
@@ -258,7 +392,11 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
                     elif img_type == 'graph':
                         style = "max-width: 50%; height: auto; border: 1px solid #ccc; margin: 20px auto;"
                     
-                    img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="{rel_src}" alt="Visual Element" style="{style}">'
+                    # Use story as alt text if available, otherwise generic
+                    alt_text = story if story.lower() != 'none' and len(story) > 5 else "Visual Element"
+                    # Escape HTML in alt text
+                    alt_text = html_lib.escape(alt_text)
+                    img_tag = f'<div class="mosh-visual" style="text-align: center;"><img src="{rel_src}" alt="{alt_text}" style="{style}">'
 
                     # Feature 5: Storytelling (Long Description)
                     if story.lower() != 'none':
@@ -286,9 +424,20 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
         
     return html_content
 
-def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None):
+def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None, visual_review_callback=None):
     """
     Convert a PDF with handwritten math to Canvas LaTeX.
+    
+    Args:
+        api_key: Gemini API key
+        pdf_path: Path to PDF file
+        log_func: Logging function
+        poppler_path: Path to Poppler binaries
+        progress_callback: Progress callback (current, total)
+        visual_review_callback: Optional callback for human review of AI-detected bounding boxes.
+                                Called BEFORE cropping with: (page_images, ai_responses, parsed_boxes)
+                                Should return corrected_boxes dict: {page_idx: [(x1,y1,x2,y2,type,story), ...]}
+                                Return None to skip review and use AI boxes as-is.
     
     Returns:
         (success, html_content_or_error_message)
@@ -338,8 +487,9 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         def process_page(index, img_path):
             import time
             import random
-            # Just a tiny jitter so threads don't hit the exact same millisecond
-            time.sleep(random.uniform(0.1, 0.5))
+            # Add delay between pages to respect API rate limits
+            # Free tier: ~15 RPM, Paid: ~60 RPM. We do 2 calls/page.
+            time.sleep(random.uniform(2.0, 4.0))  # 2-4 second delay per page
             try:
                 # [FIX] Use context manager to ensure file handle is closed
                 with Image.open(img_path) as img:
@@ -365,11 +515,11 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                     log_func(f"   [Error] Page {index+1} failed: {e}")
                 return index, f"<p>[Error converting page {index+1}: {e}]</p>"
 
-        # Process up to 3 pages concurrently to leverage fast internet without blasting quota
-        # Sort images to ensure index matches sorted(glob)
+        # Process pages sequentially to avoid API quota issues
+        # (Free tier: ~15 RPM, even paid has limits. Each page = 2 API calls)
         sorted_image_paths = sorted(temp_dir.glob('*.png'))
         
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             futures = []
             for i, img_path in enumerate(sorted_image_paths):
                 futures.append(executor.submit(process_page, i, img_path))
@@ -388,6 +538,65 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
         output_dir = Path(pdf_path).parent
         pdf_stem = Path(pdf_path).stem
         
+        # [VISUAL REVIEW] Parse all AI-detected boxes BEFORE cropping
+        if visual_review_callback:
+            if log_func: log_func("   🔍 Parsing AI-detected bounding boxes for review...")
+            
+            # Collect page images and parsed boxes for review
+            page_data = []
+            for i, content in enumerate(all_content):
+                if content:
+                    with Image.open(sorted_image_paths[i]) as img:
+                        w, h = img.size
+                    boxes = parse_bounding_boxes(content, w, h)
+                    page_data.append({
+                        'page_index': i,
+                        'image_path': str(sorted_image_paths[i]),
+                        'content': content,
+                        'boxes': boxes,
+                        'width': w,
+                        'height': h
+                    })
+            
+            # Call the visual review callback - user can adjust/delete/add boxes
+            # Returns None if user wants to use AI boxes as-is
+            if page_data:
+                if log_func: log_func(f"   👁️ Requesting human review of {len(page_data)} pages with visual elements...")
+                corrected_boxes = visual_review_callback(page_data)
+                
+                # If user provided corrections, update the boxes
+                if corrected_boxes:
+                    if log_func: log_func(f"   ✅ Applied human corrections to {len(corrected_boxes)} pages")
+                    # corrected_boxes format: {page_idx: [{'abs_coords': (x1,y1,x2,y2), 'type': str, 'story': str}, ...]}
+                    for i, data in enumerate(page_data):
+                        if data['page_index'] in corrected_boxes:
+                            # Rebuild AI content with corrected boxes
+                            new_boxes = corrected_boxes[data['page_index']]
+                            # Replace original GRAPH_BBOX tokens with corrected ones
+                            # This updates all_content with the human-corrected positions
+                            updated_content = data['content']
+                            
+                            # Remove all old GRAPH_BBOX tokens
+                            old_pattern = r'\[GRAPH_BBOX:[^\]]+\]'
+                            for box in data['boxes']:
+                                updated_content = updated_content.replace(box['token'], '', 1)
+                            
+                            # Add new corrected GRAPH_BBOX tokens at the end (before any </p> or at end)
+                            for j, new_box in enumerate(new_boxes):
+                                x1, y1, x2, y2 = new_box['abs_coords']
+                                w, h = data['width'], data['height']
+                                # Convert back to relative coords (0-1000)
+                                ymin_rel = int((y1 / h) * 1000)
+                                xmin_rel = int((x1 / w) * 1000)
+                                ymax_rel = int((y2 / h) * 1000)
+                                xmax_rel = int((x2 / w) * 1000)
+                                box_type = new_box.get('type', 'graph')
+                                story = new_box.get('story', 'Visual element')
+                                new_token = f"[GRAPH_BBOX: {ymin_rel}, {xmin_rel}, {ymax_rel}, {xmax_rel}, {box_type}, {story}]"
+                                updated_content += f"\n{new_token}"
+                            
+                            all_content[data['page_index']] = updated_content
+        
         final_pages = []
         for i, content in enumerate(all_content):
             if content:
@@ -400,9 +609,12 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
             else:
                 if log_func:
                     log_func(f"   ⚠️ Page {i+1} produced no content and was skipped.")
+        
+        # [NEW] Remove duplicate page headers (e.g., "MAT 165 Notes" on every page)
+        final_pages = remove_duplicate_headers(final_pages)
                 
         # Combine everything
-        final_html_content = "\n<hr>\n".join(final_pages)
+        final_html_content = "\n<hr style=\"margin: 2% 0; border: 0; border-top: 1px solid #ccc;\">\n".join(final_pages)
         
         # Clean up temp images
         try:
@@ -624,10 +836,14 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"❌ Error: {e}")
         return False, str(e)
 
-def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None):
+def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None, visual_review_callback=None):
     """
     Process all PDFs in a Canvas export (IMSCC) structure.
     Includes licensing/attribution checking to protect teachers.
+    
+    Args:
+        visual_review_callback: Optional callback for human review of AI-detected bounding boxes.
+                                Passed through to convert_pdf_to_latex.
     
     Returns:
         (success, list_of_html_files_or_error)
@@ -738,7 +954,10 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 log_func(f"   🔄 Converting: {p.name} ...")
 
             if ext == '.pdf':
-                success, html_or_error = convert_pdf_to_latex(api_key, str(p), log_func, poppler_path=poppler_path)
+                success, html_or_error = convert_pdf_to_latex(
+                    api_key, str(p), log_func, poppler_path=poppler_path,
+                    visual_review_callback=visual_review_callback
+                )
             elif ext == '.docx':
                 success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
             else:
@@ -824,7 +1043,17 @@ def create_canvas_html(content, title="Canvas Math Content"):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{safe_title}</title>
-    <!-- MathJax for local preview -->
+    <!-- MathJax for local preview with cancel extension for crossed-out terms -->
+    <script>
+    window.MathJax = {{
+        tex: {{
+            packages: {{'[+]': ['cancel', 'cases']}}
+        }},
+        loader: {{
+            load: ['[tex]/cancel', '[tex]/cases']
+        }}
+    }};
+    </script>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
