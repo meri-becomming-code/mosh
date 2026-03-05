@@ -6253,6 +6253,9 @@ YOUR WORKFLOW:
                                  with open(output_path, "w", encoding="utf-8") as f:
                                      f.write(new_html)
                                  self.gui_handler.log("   [DESIGN] AI improved layout for mobile!")
+                                 # Re-check ADA after AI layout changes
+                                 self.gui_handler.log("   [ADA] Re-checking after responsive design changes...")
+                                 interactive_fixer.run_auto_fixer(output_path, self.gui_handler)
                         except Exception as e:
                              self.gui_handler.log(f"   [DESIGN] Skipping Design improvements: {e}")
 
@@ -7134,6 +7137,8 @@ YOUR WORKFLOW:
                          with open(output, "w", encoding="utf-8") as f:
                              f.write(new_html)
                          self.gui_handler.log("   [DESIGN] AI improved layout for mobile!")
+                         self.gui_handler.log("   [ADA] Re-checking after responsive design changes...")
+                         interactive_fixer.run_auto_fixer(output, self.gui_handler)
                 except Exception as e:
                      self.gui_handler.log(f"   [DESIGN] Skipping Design improvements: {e}")
 
@@ -7489,6 +7494,18 @@ YOUR WORKFLOW:
                              with open(dest, "w", encoding="utf-8") as f:
                                  f.write(new_html)
                              log("   [DESIGN] AI improved layout for mobile!")
+                             log("   [ADA] Re-checking after responsive design changes...")
+                             interactive_fixer.run_auto_fixer(dest, self.gui_handler)
+                             if self.config.get("math_final_ada_check", True):
+                                 try:
+                                     audit_res = run_audit.audit_file(dest)
+                                     score = run_audit.calculate_accessibility_score(audit_res)
+                                     summary = run_audit.get_issue_summary(audit_res)
+                                     log(f"   [ADA] Post-design score: {score}%")
+                                     if summary:
+                                         log(f"   [ADA] {summary}")
+                                 except Exception as e2:
+                                     log(f"   [ADA] Post-design check skipped: {e2}")
                     except Exception as e:
                          log(f"   [DESIGN] Skipping Design improvements: {e}")
 

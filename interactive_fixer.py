@@ -1089,6 +1089,8 @@ def run_ai_design_fixer(target_dir, io_handler=None, specific_file=None):
                 ensure_short_path(html_path)
                 with open(html_path, 'w', encoding='utf-8') as f:
                     f.write(new_html)
+                io_handler.log("      -> Re-checking ADA after design update...")
+                run_auto_fixer(html_path, io_handler)
                 improved_count += 1
                 io_handler.log(f"      -> Enhanced layout successfully!")
             else:
