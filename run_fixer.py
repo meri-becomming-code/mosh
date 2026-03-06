@@ -214,7 +214,7 @@ def remediate_html_file(filepath):
     if reflow_fixed:
         fixes.append("Converted fixed widths >320px to responsive max-width")
 
-    # Fix 3: Font Size Remediation (align with audit thresholds)
+    # Fix 3: Font Size Remediation (align with strict checker thresholds)
     def font_size_bump(match):
         nonlocal reflow_fixed
         val = float(match.group(1))
@@ -223,10 +223,10 @@ def remediate_html_file(filepath):
             return "font-size: 14px"
         elif unit == 'pt' and val < 9:
             return "font-size: 10.5pt" # ~14px
-        elif unit == 'em' and val < 0.75:
-            return "font-size: 0.8em"
-        elif unit == 'rem' and val < 0.75:
-            return "font-size: 0.8rem"
+        elif unit == 'em' and val < 0.9:
+            return "font-size: 0.95em"
+        elif unit == 'rem' and val < 0.9:
+            return "font-size: 0.95rem"
         return match.group(0)
 
     html_content = re.sub(r'font-size:\s*([0-9.]+)(px|pt|em|rem)', font_size_bump, html_content, flags=re.IGNORECASE)
@@ -386,38 +386,81 @@ def remediate_html_file(filepath):
     # We will just ensure that standard LaTeX is not mangled.
     # The current script doesn't mangle brackets, so we are good.
 
-    # C. PPT "text-box" code blocks often contain light syntax colors on white backgrounds.
-    # Force a dark code-panel background to satisfy contrast checks.
+    # C. PPT text-box handling
+    # Only force dark styling for code-like boxes. Normal instructional text boxes
+    # should remain light/background-neutral.
     for box in soup.find_all('div', class_='text-box'):
+        # Determine if this box is code-like.
+        box_text = box.get_text(" ", strip=True).lower()
+        has_code_tag = bool(box.find(['pre', 'code']))
+        has_monospace = False
+        for node in box.find_all(True):
+            s = (node.get('style', '') or '').lower()
+            if 'font-family' in s and any(ff in s for ff in ['consolas', 'courier', 'monospace', 'lucida console']):
+                has_monospace = True
+                break
+
+        code_tokens = ['print(', 'def ', 'import ', 'return ', 'while ', 'for ', 'if ', '==', '!=', '\\n', '{', '}', '()']
+        token_hits = sum(1 for tok in code_tokens if tok in box_text)
+        is_code_box = has_code_tag or has_monospace or token_hits >= 2
+
         box_style = box.get('style', '')
         box_style_low = box_style.lower()
 
-        # Keep existing styles, but enforce accessible code panel colors.
-        if 'background-color' not in box_style_low:
-            box_style = box_style.rstrip('; ') + f"; background-color: {COLOR_BG_DARK};"
+        if is_code_box:
+            # Code panels: dark, brighter text, larger and bolder for readability.
+            if 'background-color' not in box_style_low:
+                box_style = box_style.rstrip('; ') + f"; background-color: {COLOR_BG_DARK};"
+            else:
+                box_style = re.sub(r'background-color\s*:\s*[^;]+', f'background-color: {COLOR_BG_DARK}', box_style, flags=re.IGNORECASE)
+
+            if 'color' not in box_style_low:
+                box_style = box_style.rstrip('; ') + f"; color: {COLOR_TEXT_WHITE};"
+            else:
+                # Important: only replace foreground color, not background-color.
+                box_style = re.sub(r'(?<!-)color\s*:\s*[^;]+', f'color: {COLOR_TEXT_WHITE}', box_style, flags=re.IGNORECASE)
+
+            if 'padding' not in box_style_low:
+                box_style = box_style.rstrip('; ') + "; padding: 12px;"
+            if 'border-radius' not in box_style_low:
+                box_style = box_style.rstrip('; ') + "; border-radius: 6px;"
+            if 'overflow-x' not in box_style_low:
+                box_style = box_style.rstrip('; ') + "; overflow-x: auto;"
+            if 'font-size' not in box_style_low:
+                box_style = box_style.rstrip('; ') + "; font-size: 1.05em;"
+            if 'line-height' not in box_style_low:
+                box_style = box_style.rstrip('; ') + "; line-height: 1.6;"
+            if 'font-weight' not in box_style_low:
+                box_style = box_style.rstrip('; ') + "; font-weight: 600;"
+
+            box['style'] = box_style.strip().rstrip(';') + ';'
+            fixes.append("Applied accessible dark theme to code-like text-box")
+
+            # Ensure child text is readable on dark background.
+            for child in box.find_all(['p', 'span', 'li', 'code']):
+                child_style = child.get('style', '')
+                low = child_style.lower()
+                if 'color' not in low:
+                    child['style'] = (child_style.rstrip('; ') + f"; color: {COLOR_TEXT_WHITE}; font-weight: 600;").strip().rstrip(';') + ';'
+                else:
+                    # Brighten dim grays often exported from PPT themes.
+                    child['style'] = re.sub(r'(?<!-)color\s*:\s*(#7d7d7d|#7e7e7e|#737373)', 'color: #d4d4d4', child_style, flags=re.IGNORECASE)
         else:
-            box_style = re.sub(r'background-color\s*:\s*[^;]+', f'background-color: {COLOR_BG_DARK}', box_style, flags=re.IGNORECASE)
+            # Normal text boxes: keep light and readable.
+            # Remove accidental dark code background and white text carryover.
+            if 'background-color' in box_style_low and COLOR_BG_DARK.lower() in box_style_low:
+                box_style = re.sub(r'background-color\s*:\s*[^;]+', 'background-color: #ffffff', box_style, flags=re.IGNORECASE)
+            if re.search(r'(?<!-)color\s*:\s*(#fff|#ffffff|white)', box_style, flags=re.IGNORECASE):
+                box_style = re.sub(r'(?<!-)color\s*:\s*[^;]+', 'color: #1f2937', box_style, flags=re.IGNORECASE)
 
-        if 'color' not in box_style_low:
-            box_style = box_style.rstrip('; ') + f"; color: {COLOR_TEXT_WHITE};"
-        else:
-            box_style = re.sub(r'color\s*:\s*[^;]+', f'color: {COLOR_TEXT_WHITE}', box_style, flags=re.IGNORECASE)
+            box['style'] = box_style.strip().rstrip(';') + ';' if box_style.strip() else box_style
+            fixes.append("Preserved light styling for non-code text-box")
 
-        if 'padding' not in box_style_low:
-            box_style = box_style.rstrip('; ') + "; padding: 12px;"
-        if 'border-radius' not in box_style_low:
-            box_style = box_style.rstrip('; ') + "; border-radius: 6px;"
-        if 'overflow-x' not in box_style_low:
-            box_style = box_style.rstrip('; ') + "; overflow-x: auto;"
-
-        box['style'] = box_style.strip().rstrip(';') + ';'
-        fixes.append("Applied accessible dark theme to text-box code panel")
-
-        # Ensure child text is readable on dark background.
-        for child in box.find_all(['p', 'span', 'li']):
-            child_style = child.get('style', '')
-            if 'color' not in child_style.lower():
-                child['style'] = (child_style.rstrip('; ') + f"; color: {COLOR_TEXT_WHITE};").strip().rstrip(';') + ';'
+            # If descendants are forced white, bring them back to dark text on light bg.
+            for child in box.find_all(['p', 'span', 'li']):
+                child_style = child.get('style', '')
+                if re.search(r'(?<!-)color\s*:\s*(#fff|#ffffff|white)', child_style, flags=re.IGNORECASE):
+                    child['style'] = re.sub(r'(?<!-)color\s*:\s*[^;]+', 'color: #1f2937', child_style, flags=re.IGNORECASE)
 
     # --- Part 5: Tables (AGGRESSIVE REMEDIATION) ---
     for table in soup.find_all('table'):
@@ -543,6 +586,31 @@ def remediate_html_file(filepath):
                 fixes.append(f"Added horizontal scroll wrapper for wide table ({col_count} columns)")
 
     # --- Part 6: Heading Hierarchy & Standardization (Toolkit 1 Logic + Style Standard) ---
+
+    # Enforce MCC purple heading bars for PPT slide titles.
+    for h2 in soup.find_all('h2'):
+        in_slide = bool(h2.find_parent('div', class_='slide-container')) or ('slide-title' in (h2.get('class') or []))
+        if in_slide:
+            h2_style = h2.get('style', '')
+            low = h2_style.lower()
+
+            if 'background-color' in low:
+                h2_style = re.sub(r'background-color\s*:\s*[^;]+', 'background-color: #4b3190', h2_style, flags=re.IGNORECASE)
+            else:
+                h2_style = h2_style.rstrip('; ') + '; background-color: #4b3190;'
+
+            if re.search(r'(?<!-)color\s*:', h2_style, flags=re.IGNORECASE):
+                h2_style = re.sub(r'(?<!-)color\s*:\s*[^;]+', 'color: #ffffff', h2_style, flags=re.IGNORECASE)
+            else:
+                h2_style = h2_style.rstrip('; ') + '; color: #ffffff;'
+
+            if 'padding' not in h2_style.lower():
+                h2_style = h2_style.rstrip('; ') + '; padding: 2%;'
+            if 'border-radius' not in h2_style.lower():
+                h2_style = h2_style.rstrip('; ') + '; border-radius: 6px;'
+
+            h2['style'] = h2_style.strip().rstrip(';') + ';'
+            fixes.append("Applied MCC purple heading style to slide H2")
     
     # Standardize Header Taglines (Style 13A: Tagline Underneath)
     # Target: div[bg=#4b3190] > h2 + p[color=#e1bee7]
@@ -632,6 +700,17 @@ def remediate_html_file(filepath):
         if 'clear:' not in style_low:
             style = style.rstrip(';') + '; clear: both;'
             fixes.append("Enforced slide-container clear:both")
+
+        if 'width:' not in style_low:
+            style = style.rstrip(';') + '; width: 90%; margin-left: auto; margin-right: auto;'
+            fixes.append("Enforced slide-container width:90%")
+        elif 'width: 100%' in style_low or 'width:100%' in style_low:
+            style = re.sub(r'width\s*:\s*100%\s*;?', 'width: 90%;', style, flags=re.IGNORECASE)
+            if 'margin-left' not in style.lower():
+                style = style.rstrip(';') + '; margin-left: auto;'
+            if 'margin-right' not in style.lower():
+                style = style.rstrip(';') + '; margin-right: auto;'
+            fixes.append("Normalized slide-container width from 100% to 90%")
 
         div['style'] = style.strip()
 
@@ -749,7 +828,7 @@ def remediate_html_file(filepath):
             new_val = 12
             if unit == 'px' and val < 12: needs_elevation = True; new_val = 14
             elif unit == 'pt' and val < 9: needs_elevation = True; new_val = 10.5
-            elif unit in ['em', 'rem'] and val < 0.75: needs_elevation = True; new_val = 0.8
+            elif unit in ['em', 'rem'] and val < 0.9: needs_elevation = True; new_val = 0.95
             if needs_elevation:
                 tag['style'] = re.sub(rf'font-size:\s*[0-9.]+{unit}', f'font-size: {new_val}{unit}', tag['style'], flags=re.IGNORECASE)
                 fixes.append(f"Elevated small font size ({val}{unit} -> {new_val}{unit})")
@@ -767,9 +846,10 @@ def remediate_html_file(filepath):
                      new_fg = adjust_color_for_contrast(fg, bg)
                      
                      # Update the style string
-                     if 'color:' in tag['style'].lower():
-                         tag['style'] = re.sub(r'color:\s*#[0-9a-fA-F]{3,6}', f'color: {new_fg}', tag['style'], flags=re.IGNORECASE)
-                         tag['style'] = re.sub(r'color:\s*[a-zA-Z]+', f'color: {new_fg}', tag['style'], flags=re.IGNORECASE)
+                     if re.search(r'(?<!-)color\s*:', tag['style'], flags=re.IGNORECASE):
+                         # Important: only replace foreground color, not background-color.
+                         tag['style'] = re.sub(r'(?<!-)color:\s*#[0-9a-fA-F]{3,6}', f'color: {new_fg}', tag['style'], flags=re.IGNORECASE)
+                         tag['style'] = re.sub(r'(?<!-)color:\s*[a-zA-Z]+', f'color: {new_fg}', tag['style'], flags=re.IGNORECASE)
                      else:
                          tag['style'] = tag['style'].rstrip('; ') + f"; color: {new_fg};"
                      

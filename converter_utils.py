@@ -780,10 +780,10 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
         light1 = theme["colors"].get("light1", "#fff")
 
         style_overrides += f"""
-            .slide-container {{ border-top-color: {accent1}; border-top-width: 5px; border-left: 2px solid #ccc; border-right: 2px solid #ccc; border-bottom: 2px solid #ccc; background-color: {light1}; }}
-            .slide-title {{ color: {dark1}; border-bottom-color: {accent1}; }}
+            .slide-container {{ width: 90%; margin-left: auto; margin-right: auto; border-top-color: {accent1}; border-top-width: 5px; border-left: 2px solid #ccc; border-right: 2px solid #ccc; border-bottom: 2px solid #ccc; background-color: {light1}; }}
+            .slide-title {{ background-color: #4b3190 !important; color: #ffffff !important; padding: 2% !important; border-bottom: 0 !important; border-radius: 6px; }}
             h1 {{ color: {accent1}; border-bottom-color: {accent1}; }}
-            h2 {{ border-bottom-color: {accent1}; }}
+            h2 {{ background-color: #4b3190 !important; color: #ffffff !important; padding: 2% !important; border-bottom-color: {accent1}; border-radius: 6px; }}
         """
 
         html_parts = []
@@ -795,7 +795,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
             # [NEW] Inline style for slide container (Canvas survival)
             slide_style = (
-                f"margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
+                f"width: 90%; margin-left: auto; margin-right: auto; margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
                 f"border-top: 5px solid {accent1}; border-radius: 12px; "
                 f"background-color: {light1}; box-shadow: 0 8px 30px rgba(0,0,0,0.1); "
                 f"position: relative; display: flow-root; clear: both; overflow: auto;"
@@ -1005,7 +1005,17 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
                     if not is_empty:
                         html_parts.append('<table class="content-table" border="1">')
-                        for row in shape.table.rows:
+                        html_parts.append('<caption style="text-align: left; font-weight: bold; margin-bottom: 10px;">Data Table</caption>')
+                        html_parts.append('<thead><tr>')
+                        first_row_cells = list(shape.table.rows[0].cells) if len(shape.table.rows) > 0 else []
+                        for cell in first_row_cells:
+                            cell_text = ""
+                            if cell.text_frame:
+                                cell_text = cell.text_frame.text.strip()
+                            html_parts.append(f'<th scope="col">{html_lib.escape(cell_text)}</th>')
+                        html_parts.append('</tr></thead>')
+                        html_parts.append('<tbody>')
+                        for row in list(shape.table.rows)[1:] if len(shape.table.rows) > 1 else []:
                             html_parts.append("<tr>")
                             for cell in row.cells:
                                 # Extract text from cell
@@ -1014,6 +1024,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                     cell_text = cell.text_frame.text.strip()
                                 html_parts.append(f"<td>{html_lib.escape(cell_text)}</td>")
                             html_parts.append("</tr>")
+                        html_parts.append('</tbody>')
                         html_parts.append("</table>")
 
                 # Images (Alt Text prompts only if no Silent Memory)
@@ -1083,16 +1094,16 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         dist_from_center = abs(shape_center_x - (slide_width / 2))
 
                         if dist_from_center < center_threshold:
-                            float_style = "display: block; margin: 15px auto;"
+                            wrapper_style = "width: 90%; margin: 15px auto; text-align: center;"
                         elif shape_center_x < slide_width / 2:
-                            float_style = "float: left; margin: 0 20px 15px 0;"
+                            wrapper_style = "width: 90%; margin: 15px auto; text-align: left;"
                         else:
-                            float_style = "float: right; margin: 0 0 15px 20px;"
+                            wrapper_style = "width: 90%; margin: 15px auto; text-align: right;"
 
                         # [NEW] Enhanced Image Styles (Borders/Rotation)
                         extra_img_style = get_image_styles(shape)
                         # [FIX] Enforce 50% max-width for PPT images
-                        final_img_style = f"{float_style} {extra_img_style} max-width: 50%;".strip()
+                        final_img_style = f"display: inline-block; {extra_img_style} max-width: 50%;".strip()
 
                         # [SMART FIX] Silent Memory and prompt
                         alt_text = ""  # Default to decorative/empty if skipped
@@ -1173,7 +1184,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                 io_handler.save_memory()
 
                         html_parts.append(
-                            f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}">'
+                            f'<div class="slide-image-wrap" style="{wrapper_style}"><img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}"></div>'
                         )
                     except Exception as img_err:
                         print(f"Skipped image on slide {slide_num}: {img_err}")
@@ -1848,10 +1859,12 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
         old_clean = old.strip().lower()
         old_basename = os.path.basename(old_clean)
         old_stem = os.path.splitext(old_basename)[0]
-        new_base = os.path.basename(new)
+        new_str = str(new or "").strip()
+        new_is_url = new_str.startswith("http")
+        new_base = os.path.basename(new_str)
         
         d = {
-            "new_href": new_base.replace(" ", "%20"),
+            "new_href": new_str if new_is_url else new_base.replace(" ", "%20"),
             "new_text": os.path.splitext(new_base)[0].replace("_", " ").strip(),
         }
         lookup[old_basename] = d
@@ -1877,9 +1890,13 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
 
                         if filename_part in lookup:
                             info = lookup[filename_part]
-                            # Preserving prefix logic
-                            prefix = href.rsplit("/", 1)[0] + "/" if "/" in href else ""
-                            a["href"] = prefix + info["new_href"]
+                            # If mapped target is a live URL, use it directly.
+                            # Otherwise preserve local prefix logic.
+                            if str(info["new_href"]).startswith("http"):
+                                a["href"] = info["new_href"]
+                            else:
+                                prefix = href.rsplit("/", 1)[0] + "/" if "/" in href else ""
+                                a["href"] = prefix + info["new_href"]
                             
                             # Add descriptive title
                             a['title'] = info["new_text"]

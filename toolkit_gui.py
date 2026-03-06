@@ -6106,6 +6106,17 @@ YOUR WORKFLOW:
                                 "      Keeping current image tag (may remain broken if source is unavailable)."
                             )
 
+            # Re-run fixer after image mutations so uploaded wiki body keeps ADA table/font fixes.
+            try:
+                with open(html_path, "w", encoding="utf-8") as _wf2:
+                    _wf2.write(str(soup))
+                interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
+                with open(html_path, "r", encoding="utf-8") as _rf2:
+                    soup = BeautifulSoup(_rf2.read(), "html.parser")
+                self.gui_handler.log("   [ADA] Final remediation applied after image sync.")
+            except Exception as post_img_fix_err:
+                self.gui_handler.log(f"   [ADA] Post-image remediation skipped: {post_img_fix_err}")
+
             # 3. Create or Update Page (Upsert Strategy)
             # [FIX] Always produce a true Canvas WikiPage title (never an .html file name).
             # If caller passed an .html as source, derive title from html_path stem safely.
@@ -6160,8 +6171,14 @@ YOUR WORKFLOW:
                         should_update = True
 
                 if should_update:
-                    count = converter_utils.update_links_in_directory(
+                    count = 0
+                    # Update references from the original document name (e.g. .pptx/.docx)
+                    count += converter_utils.update_links_in_directory(
                         self.target_dir, original_source_path, canvas_page_url
+                    )
+                    # Also update references from generated HTML names/slugs used by prior runs.
+                    count += converter_utils.update_links_in_directory(
+                        self.target_dir, html_path, canvas_page_url
                     )
                     self.gui_handler.log(
                         f"   [Sync] Updated links in {count} files to point to Canvas."
@@ -6195,7 +6212,7 @@ YOUR WORKFLOW:
                     if mod_success_any and total_replaced > 0:
                         self.gui_handler.log(f"   [Sync] Updated {total_replaced} Canvas Module items to point directly to the new Page!")
 
-                return True
+                return canvas_page_url or True
             else:
                 # Handle Token Expiry
                 if "401" in str(res_page) or "Invalid access token" in str(res_page):
@@ -6370,9 +6387,12 @@ YOUR WORKFLOW:
                     # [NEW] Optional Live Sync for Batch
                     sync_api = self._get_canvas_api()
                     if sync_api and self.config.get("batch_sync_confirmed"):
-                        self._upload_page_to_canvas(
+                        live_url = self._upload_page_to_canvas(
                             output_path, fpath, sync_api, auto_confirm_links=True
                         )
+                        if live_url and isinstance(live_url, str) and live_url.startswith("http"):
+                            # Preserve wiki-page links (editable by instructors) in turbo link pass.
+                            link_map[os.path.basename(fpath)] = live_url
                 else:
                     self.gui_handler.log(f"   [FAILED] {err}")
 
