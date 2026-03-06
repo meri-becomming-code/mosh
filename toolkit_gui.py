@@ -5842,6 +5842,19 @@ YOUR WORKFLOW:
         if not file_path:
             return
 
+        # Require explicit action selection before starting any processing.
+        mode_choice = messagebox.askyesnocancel(
+            "Choose Action",
+            "What would you like to do with this file?\n\n"
+            "Yes = Full workflow (Convert + ADA + Review + optional upload)\n"
+            "No = Convert only (create local page only)\n"
+            "Cancel = Do nothing"
+        )
+        if mode_choice is None:
+            self.gui_handler.log("Action cancelled. No processing started.")
+            return
+        full_workflow = bool(mode_choice)
+
         if ext == "pdf":
             if not messagebox.askyesno(
                 "PDF Conversion (Beta)",
@@ -5872,7 +5885,20 @@ YOUR WORKFLOW:
                     file_path, self.gui_handler
                 )
 
-            # Update links to the source file (all document types)
+            if err:
+                self.gui_handler.log(f"[ERROR] Conversion failed: {err}")
+                return
+
+            if not full_workflow:
+                self.gui_handler.log(f"[SUCCESS] Converted locally: {os.path.basename(output_path)}")
+                try:
+                    open_file_or_folder(output_path)
+                except Exception as e:
+                    self.gui_handler.log(f"   [WARNING] Could not auto-open converted file: {e}")
+                self.gui_handler.log(f"--- {ext.upper()} Convert-Only Done ---")
+                return
+
+            # Update links to the source file (all document types) in full workflow mode.
             if output_path and ext in ["docx", "xlsx", "pptx", "pdf"]:
                 converter_utils.update_doc_links_to_html(
                     self.target_dir,
@@ -5880,10 +5906,6 @@ YOUR WORKFLOW:
                     os.path.basename(output_path),
                     log_func=self.gui_handler.log,
                 )
-
-            if err:
-                self.gui_handler.log(f"[ERROR] Conversion failed: {err}")
-                return
 
             # [NEW] Mandatory ADA remediation
             self.gui_handler.log(
@@ -6150,15 +6172,8 @@ YOUR WORKFLOW:
                 if bad in cleaned_html:
                     cleaned_html = cleaned_html.replace(bad, good)
 
-            # Check if page exists to avoid duplicates
-            success_get, res_get = api.get_page(page_title)
-            if success_get and "url" in res_get:
-                self.gui_handler.log(f"   [Sync] Updating existing page: {page_title}")
-                success_page, res_page = api.update_page(
-                    res_get["url"], page_title, cleaned_html, published=True
-                )
-            else:
-                success_page, res_page = api.create_page(page_title, cleaned_html, published=True)
+            # Robust upsert: update when found, fallback to create on 404.
+            success_page, res_page = api.upsert_page(page_title, cleaned_html, published=True)
 
             if success_page:
                 canvas_page_url = res_page.get("html_url")

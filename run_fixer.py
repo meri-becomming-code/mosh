@@ -346,25 +346,34 @@ def remediate_html_file(filepath):
                 parent.decompose()
             fixes.append("Moved code block out of inline/text container")
 
-        # Ensure there is a paragraph above the code block.
+        # Convert old paragraph spacers from prior versions to line breaks.
+        if pre.previous_sibling is not None and hasattr(pre.previous_sibling, 'name'):
+            prev_el = pre.previous_sibling
+            if prev_el.name == 'p' and 'code-spacing' in (prev_el.get('class') or []):
+                prev_el.replace_with(soup.new_tag('br'))
+                fixes.append("Replaced old paragraph spacer above code block with line break")
+
+        if pre.next_sibling is not None and hasattr(pre.next_sibling, 'name'):
+            next_el = pre.next_sibling
+            if next_el.name == 'p' and 'code-spacing' in (next_el.get('class') or []):
+                next_el.replace_with(soup.new_tag('br'))
+                fixes.append("Replaced old paragraph spacer below code block with line break")
+
+        # Ensure there is a line break above the code block.
         prev_node = pre.previous_sibling
         while prev_node is not None and isinstance(prev_node, NavigableString) and not str(prev_node).strip():
             prev_node = prev_node.previous_sibling
-        if not (hasattr(prev_node, 'name') and prev_node.name == 'p'):
-            p_before = soup.new_tag('p', attrs={'class': 'code-spacing'})
-            p_before.string = "\u00a0"
-            pre.insert_before(p_before)
-            fixes.append("Added paragraph above code block")
+        if not (hasattr(prev_node, 'name') and prev_node.name == 'br'):
+            pre.insert_before(soup.new_tag('br'))
+            fixes.append("Added line break above code block")
 
-        # Ensure there is a paragraph below the code block.
+        # Ensure there is a line break below the code block.
         next_node = pre.next_sibling
         while next_node is not None and isinstance(next_node, NavigableString) and not str(next_node).strip():
             next_node = next_node.next_sibling
-        if not (hasattr(next_node, 'name') and next_node.name == 'p'):
-            p_after = soup.new_tag('p', attrs={'class': 'code-spacing'})
-            p_after.string = "\u00a0"
-            pre.insert_after(p_after)
-            fixes.append("Added paragraph below code block")
+        if not (hasattr(next_node, 'name') and next_node.name == 'br'):
+            pre.insert_after(soup.new_tag('br'))
+            fixes.append("Added line break below code block")
 
         parent = pre.parent
         if parent.name != 'div' or 'overflow' not in parent.get('style', '').lower():
