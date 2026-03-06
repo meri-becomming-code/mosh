@@ -152,7 +152,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
         h2 {{ color: #2c3e50; margin-top: 40px; font-weight: 600; border-bottom: 1px solid #dee2e6; padding-bottom: 5px; }}
         h3 {{ color: #444; margin-top: 30px; font-weight: 600; }}
-        a {{ color: #0056b3; text-decoration: none; font-weight: 500; }}
+        a {{ color: #4b3190; text-decoration: none; font-weight: 600; }}
         a:hover {{ text-decoration: underline; }}
         
         /* Table Styles */

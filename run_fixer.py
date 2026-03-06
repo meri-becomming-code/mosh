@@ -10,6 +10,8 @@ COLOR_COMMENT = "#8ecafc"  # Light Blue
 COLOR_STRING = "#a6e22e"   # Green
 COLOR_NUMBER = "#fd971f"   # Orange
 COLOR_BOOLEAN = "#ae81ff"  # Purple
+MCC_PURPLE = "#4b3190"
+MCC_DEEP = "#2c1f5c"
 
 # --- WCAG 2.1 Contrast Math ---
 def hex_to_rgb(color_str):
@@ -813,9 +815,49 @@ def remediate_html_file(filepath):
         hr['style'] = (hr_style.strip().rstrip(';') + '; ' + enforced).strip('; ').strip() + ';'
         fixes.append("Applied school-color high-contrast style to <hr>")
 
-    # --- Part 8: Typography & Accessibility (Small Fonts / AUTO-CONTRAST) ---
+    # --- Part 8: Typography & Accessibility (Brand Colors / Small Fonts / AUTO-CONTRAST) ---
     import run_audit # Use get_style_property for robust lookup
+
+    # A. Brand color normalization:
+    # If a tag has a non-neutral background color, normalize it to school purple
+    # (except intentional code-dark panels).
+    allowed_bg = {
+        '#ffffff', '#fff', '#f8f9fa', '#f5f6fa', '#f9f9f9', '#eeeeee', '#ddd',
+        '#121212', MCC_PURPLE.lower(), MCC_DEEP.lower(), 'white', 'transparent', 'inherit'
+    }
+
+    for tag in soup.find_all(style=True):
+        style_original = tag.get('style', '')
+        style = style_original
+        low = style.lower()
+
+        # Skip explicit code areas.
+        if tag.name in ['pre', 'code']:
+            continue
+        if tag.find_parent('pre') or tag.find_parent('code'):
+            continue
+
+        bg_match = re.search(r'background(?:-color)?\s*:\s*([^;]+)', low)
+        if not bg_match:
+            continue
+
+        bg_val = bg_match.group(1).strip()
+        if bg_val in allowed_bg:
+            continue
+
+        # Normalize to school purple for non-neutral backgrounds.
+        style = re.sub(r'background(?:-color)?\s*:\s*[^;]+', f'background-color: {MCC_PURPLE}', style, flags=re.IGNORECASE)
+
+        # Ensure readable foreground on purple backgrounds.
+        if re.search(r'(?<!-)color\s*:', style, flags=re.IGNORECASE):
+            style = re.sub(r'(?<!-)color\s*:\s*[^;]+', 'color: #ffffff', style, flags=re.IGNORECASE)
+        else:
+            style = style.rstrip('; ') + '; color: #ffffff;'
+
+        tag['style'] = style.strip().rstrip(';') + ';'
+        fixes.append('Normalized non-neutral background to school color')
     
+    # B. Small fonts and contrast checks
     for tag in soup.find_all(style=True):
         style = tag.get('style', '').lower()
         
