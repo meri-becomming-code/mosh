@@ -717,6 +717,19 @@ def remediate_html_file(filepath):
         div['style'] = style.strip()
 
     image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg']
+
+    # Preserve existing float behavior: if a paragraph only wraps one floated image,
+    # unwrap the paragraph so surrounding content can flow naturally around the image.
+    for p in soup.find_all('p'):
+        children = [c for c in p.contents if not (isinstance(c, NavigableString) and not str(c).strip())]
+        if len(children) == 1 and getattr(children[0], 'name', None) == 'img':
+            img_only = children[0]
+            img_style = (img_only.get('style', '') or '').lower()
+            if 'float:' in img_style:
+                p.insert_before(img_only.extract())
+                p.decompose()
+                fixes.append("Preserved floated image flow by removing paragraph wrapper")
+
     for img in soup.find_all('img'):
         needs_fix = False
         reason = ""
@@ -811,7 +824,7 @@ def remediate_html_file(filepath):
         if 'background' in style_low:
             hr_style = re.sub(r'background(?:-color)?\s*:[^;]*;?', '', hr_style, flags=re.IGNORECASE)
 
-        enforced = "border: 0; border-top: 3px solid #4b3190; opacity: 1; margin: 24px 0;"
+        enforced = "border: 0; background-color: #4b3190; height: 3px; opacity: 1; margin: 24px 0;"
         hr['style'] = (hr_style.strip().rstrip(';') + '; ' + enforced).strip('; ').strip() + ';'
         fixes.append("Applied school-color high-contrast style to <hr>")
 
@@ -978,6 +991,35 @@ def remediate_html_file(filepath):
             
             iframe['title'] = title
             fixes.append(f"Added title '{title}' to iframe")
+
+        # Preserve proportional video/LTI sizing.
+        try:
+            width_attr = iframe.get('width', '').strip()
+            height_attr = iframe.get('height', '').strip()
+            w = int(float(width_attr)) if width_attr else None
+            h = int(float(height_attr)) if height_attr else None
+
+            # Infer common default when missing.
+            if not w and not h:
+                w, h = 720, 405
+            elif w and not h:
+                h = int(round(w * 9 / 16))
+            elif h and not w:
+                w = int(round(h * 16 / 9))
+
+            if w and h and h > 0:
+                ratio = f"{w} / {h}"
+                st = iframe.get('style', '')
+                st = re.sub(r'height\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
+                st = re.sub(r'width\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
+                st = re.sub(r'max-width\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
+                st = st.rstrip('; ')
+                st = (st + f"; width: 100%; max-width: {w}px; aspect-ratio: {ratio}; height: auto;").strip('; ') + ';'
+                iframe['style'] = st
+                iframe['loading'] = iframe.get('loading', 'lazy')
+                fixes.append("Normalized iframe to proportional responsive sizing")
+        except Exception:
+            pass
 
     # --- Part 10: SMART IMAGE ALIGNMENT (For Word/PDF) ---
     for img in soup.find_all('img'):

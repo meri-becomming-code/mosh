@@ -5980,9 +5980,42 @@ YOUR WORKFLOW:
         self.gui_handler.log(f"   [Sync] Uploading to Canvas: {fname}...")
 
         try:
+            def _run_required_ada_pipeline(path_for_fix):
+                """Run ADA quick-fix and verify results before upload (required)."""
+                max_passes = 3
+                last_results = None
+
+                for p in range(1, max_passes + 1):
+                    self.gui_handler.log(f"   [ADA] Required quick-fix pass {p}/{max_passes}...")
+                    ok, fixes = interactive_fixer.run_auto_fixer(path_for_fix, self.gui_handler)
+                    if not ok:
+                        return False, last_results
+
+                    try:
+                        last_results = run_audit.audit_file(path_for_fix)
+                        tech = last_results.get("technical", []) if isinstance(last_results, dict) else []
+                        blocking = [
+                            i
+                            for i in tech
+                            if any(k in i.lower() for k in ["contrast fail", "table missing caption", "header cell missing scope", "missing alt", "empty alt text"])
+                        ]
+                        if not blocking:
+                            return True, last_results
+                    except Exception:
+                        # If audit can't run, at least we executed quick-fix.
+                        return True, last_results
+
+                return False, last_results
+
             # [NEW] Mandatory Final ADA Check before Upload
             self.gui_handler.log(f"   [Sync] Running Final ADA Compliance Check...")
-            interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
+            ada_ok, ada_results = _run_required_ada_pipeline(html_path)
+            if not ada_ok:
+                summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
+                self.gui_handler.log(f"   [ADA] Required remediation did not fully clear critical issues: {summary}")
+                if not self.gui_handler.confirm("ADA quick-fix could not fully clear issues. Upload anyway?"):
+                    self.gui_handler.log("   [Sync] Upload cancelled due to unresolved ADA issues.")
+                    return False
 
             # [NEW] Mandatory final responsive pass before upload, followed by ADA re-check.
             api_key = self.config.get("api_key", "").strip()
@@ -5997,7 +6030,13 @@ YOUR WORKFLOW:
                             _wf.write(_new_html)
                         self.gui_handler.log("   [DESIGN] Final responsive formatting applied before upload.")
                         self.gui_handler.log("   [ADA] Re-checking after final responsive formatting...")
-                        interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
+                        ada_ok, ada_results = _run_required_ada_pipeline(html_path)
+                        if not ada_ok:
+                            summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
+                            self.gui_handler.log(f"   [ADA] Post-design remediation still has critical issues: {summary}")
+                            if not self.gui_handler.confirm("Post-design ADA issues remain. Upload anyway?"):
+                                self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-design ADA issues.")
+                                return False
                 except Exception as design_err:
                     self.gui_handler.log(f"   [DESIGN] Final responsive pass skipped: {design_err}")
 
@@ -6110,7 +6149,13 @@ YOUR WORKFLOW:
             try:
                 with open(html_path, "w", encoding="utf-8") as _wf2:
                     _wf2.write(str(soup))
-                interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
+                ada_ok, ada_results = _run_required_ada_pipeline(html_path)
+                if not ada_ok:
+                    summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
+                    self.gui_handler.log(f"   [ADA] Post-image remediation still has critical issues: {summary}")
+                    if not self.gui_handler.confirm("Post-image ADA issues remain. Upload anyway?"):
+                        self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-image ADA issues.")
+                        return False
                 with open(html_path, "r", encoding="utf-8") as _rf2:
                     soup = BeautifulSoup(_rf2.read(), "html.parser")
                 self.gui_handler.log("   [ADA] Final remediation applied after image sync.")

@@ -12,6 +12,7 @@ import uuid
 import xml.etree.ElementTree as ET
 import urllib.parse
 from bs4 import BeautifulSoup
+import io
 
 
 # --- Constants ---
@@ -1037,7 +1038,8 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                     try:
                         image = shape.image
                         image_bytes = image.blob
-                        ext = (image.ext or "png").lower().strip()
+                        original_ext = (image.ext or "png").lower().strip()
+                        ext = original_ext
                         if ext == "jpeg":
                             ext = "jpg"
                         if not re.fullmatch(r"[a-z0-9]+", ext):
@@ -1045,7 +1047,8 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
                         # If image format is unknown to browsers, fall back to PNG container name.
                         web_safe_exts = {"png", "jpg", "gif", "webp", "bmp", "tif", "tiff", "svg"}
-                        if ext not in web_safe_exts:
+                        force_png_convert = ext not in web_safe_exts
+                        if force_png_convert:
                             ext = "png"
                         safe_filename = sanitize_filename(filename)
                         res_dir = os.path.join(
@@ -1057,9 +1060,32 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.{ext}"
                         image_full_path = os.path.join(res_dir, image_filename)
 
-                        # 1. Save original bytes first
-                        with open(image_full_path, "wb") as img_f:
-                            img_f.write(image_bytes)
+                        # 1. Save image bytes. For non-web-safe source formats (e.g., EMF/WMF),
+                        # convert to PNG so Canvas can render reliably.
+                        if force_png_convert:
+                            converted = False
+                            try:
+                                from PIL import Image
+                                pil_img = Image.open(io.BytesIO(image_bytes))
+                                if pil_img.mode in ["P", "LA"]:
+                                    pil_img = pil_img.convert("RGBA")
+                                elif pil_img.mode not in ["RGB", "RGBA"]:
+                                    pil_img = pil_img.convert("RGB")
+                                pil_img.save(image_full_path, "PNG", optimize=True)
+                                converted = True
+                            except Exception:
+                                converted = False
+
+                            if not converted:
+                                # Last-resort fallback: keep original extension and bytes (do not corrupt by mislabeled .png).
+                                fallback_ext = original_ext if re.fullmatch(r"[a-z0-9]+", original_ext or "") else "bin"
+                                image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.{fallback_ext}"
+                                image_full_path = os.path.join(res_dir, image_filename)
+                                with open(image_full_path, "wb") as img_f:
+                                    img_f.write(image_bytes)
+                        else:
+                            with open(image_full_path, "wb") as img_f:
+                                img_f.write(image_bytes)
 
                         # 2. Optimize image, but do NOT force transparency removal for PPT assets
                         # (it can erase intentional white regions and make images appear missing).
@@ -1094,16 +1120,22 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         dist_from_center = abs(shape_center_x - (slide_width / 2))
 
                         if dist_from_center < center_threshold:
+                            image_layout = "center"
                             wrapper_style = "width: 90%; margin: 15px auto; text-align: center;"
+                            float_style = "display: inline-block; margin: 0 auto;"
                         elif shape_center_x < slide_width / 2:
-                            wrapper_style = "width: 90%; margin: 15px auto; text-align: left;"
+                            image_layout = "left"
+                            wrapper_style = ""
+                            float_style = "float: left; margin: 0 20px 15px 0;"
                         else:
-                            wrapper_style = "width: 90%; margin: 15px auto; text-align: right;"
+                            image_layout = "right"
+                            wrapper_style = ""
+                            float_style = "float: right; margin: 0 0 15px 20px;"
 
                         # [NEW] Enhanced Image Styles (Borders/Rotation)
                         extra_img_style = get_image_styles(shape)
                         # [FIX] Enforce 50% max-width for PPT images
-                        final_img_style = f"display: inline-block; {extra_img_style} max-width: 50%;".strip()
+                        final_img_style = f"{float_style} {extra_img_style} max-width: 50%; height: auto;".strip()
 
                         # [SMART FIX] Silent Memory and prompt
                         alt_text = ""  # Default to decorative/empty if skipped
@@ -1183,9 +1215,15 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                 io_handler.memory[mem_key] = alt_text
                                 io_handler.save_memory()
 
-                        html_parts.append(
-                            f'<div class="slide-image-wrap" style="{wrapper_style}"><img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}"></div>'
-                        )
+                        if image_layout == "center":
+                            html_parts.append(
+                                f'<div class="slide-image-wrap" style="{wrapper_style}"><img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}"></div>'
+                            )
+                        else:
+                            # Keep floating behavior for side-positioned images.
+                            html_parts.append(
+                                f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}">'
+                            )
                     except Exception as img_err:
                         print(f"Skipped image on slide {slide_num}: {img_err}")
 
