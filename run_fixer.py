@@ -286,10 +286,9 @@ def remediate_html_file(filepath):
             head.append(new_meta)
             fixes.append("Added mobile viewport meta tag")
 
-        # Enforce slide image sizing policy (desktop/tablet 50%, phone 100%).
+        # Enforce safe responsive image policy without upscaling.
         css_rule = (
-            ".slide-container img { max-width: 50% !important; height: auto !important; }\n"
-            "@media (max-width: 768px) { .slide-container img { max-width: 100% !important; } }"
+            ".slide-container img { max-width: 100% !important; height: auto !important; }"
         )
         existing_css = "\n".join((st.get_text() or "") for st in head.find_all('style'))
         if '.slide-container img' not in existing_css:
@@ -339,6 +338,34 @@ def remediate_html_file(filepath):
     
     # A. Code Blocks
     for pre in soup.find_all('pre'):
+        # Move code blocks out of inline/text containers so they stand alone.
+        parent = pre.parent
+        if parent and parent.name in ['p', 'span', 'strong', 'em', 'a', 'li', 'dd', 'dt']:
+            parent.insert_before(pre.extract())
+            if not parent.get_text(strip=True) and not parent.find(['img', 'iframe', 'table', 'ul', 'ol']):
+                parent.decompose()
+            fixes.append("Moved code block out of inline/text container")
+
+        # Ensure there is a paragraph above the code block.
+        prev_node = pre.previous_sibling
+        while prev_node is not None and isinstance(prev_node, NavigableString) and not str(prev_node).strip():
+            prev_node = prev_node.previous_sibling
+        if not (hasattr(prev_node, 'name') and prev_node.name == 'p'):
+            p_before = soup.new_tag('p', attrs={'class': 'code-spacing'})
+            p_before.string = "\u00a0"
+            pre.insert_before(p_before)
+            fixes.append("Added paragraph above code block")
+
+        # Ensure there is a paragraph below the code block.
+        next_node = pre.next_sibling
+        while next_node is not None and isinstance(next_node, NavigableString) and not str(next_node).strip():
+            next_node = next_node.next_sibling
+        if not (hasattr(next_node, 'name') and next_node.name == 'p'):
+            p_after = soup.new_tag('p', attrs={'class': 'code-spacing'})
+            p_after.string = "\u00a0"
+            pre.insert_after(p_after)
+            fixes.append("Added paragraph below code block")
+
         parent = pre.parent
         if parent.name != 'div' or 'overflow' not in parent.get('style', '').lower():
             new_wrapper = soup.new_tag('div', style="overflow-x: auto; margin-bottom: 20px;")
@@ -679,6 +706,37 @@ def remediate_html_file(filepath):
                 fixes.append(f"Fixed heading gap: Demoted '{h.get_text()[:30]}' to H{new_level}")
             last_level = int(h.name[1])
 
+    # 3. Make headings span full row (especially near floated images).
+    for h in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        h_style = h.get('style', '')
+        low = h_style.lower()
+
+        if 'display:' not in low:
+            h_style = h_style.rstrip('; ') + '; display: block;'
+        if 'width:' not in low:
+            h_style = h_style.rstrip('; ') + '; width: 100%;'
+        if 'clear:' not in low:
+            h_style = h_style.rstrip('; ') + '; clear: both;'
+
+        h['style'] = h_style.strip().rstrip(';') + ';'
+
+        # If immediately followed by inline content/text, add a break paragraph
+        # to force visual line separation.
+        nxt = h.next_sibling
+        while nxt is not None and isinstance(nxt, NavigableString) and not str(nxt).strip():
+            nxt = nxt.next_sibling
+
+        if isinstance(nxt, NavigableString) and str(nxt).strip():
+            spacer = soup.new_tag('p', attrs={'class': 'heading-break'})
+            spacer.string = '\u00a0'
+            h.insert_after(spacer)
+            fixes.append("Added break paragraph after heading")
+        elif hasattr(nxt, 'name') and nxt.name in ['span', 'a', 'em', 'strong', 'code']:
+            spacer = soup.new_tag('p', attrs={'class': 'heading-break'})
+            spacer.string = '\u00a0'
+            h.insert_after(spacer)
+            fixes.append("Added break paragraph after heading")
+
     # --- Part 7: Slide Containers + Images (Visual Markers & Responsiveness) ---
     # 7a. Enforce PPT slide container safety so content wraps and grows correctly.
     for div in soup.find_all('div', class_='slide-container'):
@@ -741,26 +799,37 @@ def remediate_html_file(filepath):
         style = img.get('style', '')
         style_low = style.lower()
 
-        if in_slide_container and 'max-width' in style_low:
-            # Keep slide visuals at 50% desktop; mobile CSS should promote to 100%.
-            style = re.sub(r'max-width\s*:\s*[^;]+;?', 'max-width: 50%;', style, flags=re.IGNORECASE)
-            img['style'] = style.strip()
-            fixes.append(f"Normalized slide image max-width to 50%: {os.path.basename(img.get('src', 'unknown'))}")
-        elif in_slide_container and 'max-width' not in style_low:
-            new_style_part = "max-width: 50%; height: auto;"
-            if style:
-                img['style'] = style.rstrip(';') + "; " + new_style_part
+        # Determine an original intended max pixel width if available.
+        intended_px = None
+        w_attr = (img.get('width') or '').strip()
+        if w_attr.isdigit():
+            intended_px = int(w_attr)
+        else:
+            m_w = re.search(r'(?<!max-)width\s*:\s*([0-9.]+)px', style_low)
+            if m_w:
+                intended_px = int(float(m_w.group(1)))
             else:
-                img['style'] = new_style_part
-            fixes.append(f"Enforced slide image max-width 50%: {os.path.basename(img.get('src', 'unknown'))}")
+                m_mw = re.search(r'max-width\s*:\s*([0-9.]+)px', style_low)
+                if m_mw:
+                    intended_px = int(float(m_mw.group(1)))
+
+        if intended_px and intended_px > 0:
+            # Responsive, but never larger than original intended size.
+            style = re.sub(r'(?<!max-)width\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
+            style = re.sub(r'max-width\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
+            style = re.sub(r'height\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
+            style = style.rstrip('; ')
+            style = (style + f"; width: 100%; max-width: {intended_px}px; height: auto;").strip('; ') + ';'
+            img['style'] = style
+            fixes.append(f"Preserved image max size at {intended_px}px while keeping it responsive: {os.path.basename(img.get('src', 'unknown'))}")
         elif 'max-width' not in style_low:
-            # Add safe responsiveness (Enforcing 50% max-width per user request)
-            new_style_part = "max-width: 50%; height: auto;"
+            # Unknown original size: responsive but no forced enlargement profile.
+            new_style_part = "max-width: 100%; height: auto;"
             if style:
                 img['style'] = style.rstrip(';') + "; " + new_style_part
             else:
                 img['style'] = new_style_part
-            fixes.append(f"Made image responsive: {os.path.basename(img.get('src', 'unknown'))}")
+            fixes.append(f"Made image responsive without upscaling: {os.path.basename(img.get('src', 'unknown'))}")
         # 7c. Alt Text Logic
         if 'alt' not in img.attrs:
             needs_fix = True
@@ -993,22 +1062,55 @@ def remediate_html_file(filepath):
 
         # Preserve proportional video/LTI sizing.
         try:
+            def _px_from_style(style_text, prop_name):
+                m = re.search(rf'{prop_name}\s*:\s*([0-9.]+)px', style_text, flags=re.IGNORECASE)
+                return int(float(m.group(1))) if m else None
+
+            def _ratio_from_style(style_text):
+                # Matches: aspect-ratio: 16 / 9; or aspect-ratio:16/9
+                m = re.search(r'aspect-ratio\s*:\s*([0-9.]+)\s*/\s*([0-9.]+)', style_text, flags=re.IGNORECASE)
+                if not m:
+                    return None
+                a = float(m.group(1))
+                b = float(m.group(2))
+                if a > 0 and b > 0:
+                    return (a, b)
+                return None
+
             width_attr = iframe.get('width', '').strip()
             height_attr = iframe.get('height', '').strip()
             w = int(float(width_attr)) if width_attr else None
             h = int(float(height_attr)) if height_attr else None
+            st = iframe.get('style', '') or ''
 
-            # Infer common default when missing.
-            if not w and not h:
-                w, h = 720, 405
-            elif w and not h:
+            # Use existing style dimensions when attrs are missing.
+            if not w:
+                w = _px_from_style(st, 'max-width') or _px_from_style(st, 'width')
+            if not h:
+                h = _px_from_style(st, 'height')
+
+            # Use existing aspect-ratio when present.
+            ratio_pair = _ratio_from_style(st)
+            if ratio_pair and not (w and h):
+                rw, rh = ratio_pair
+                if w and not h:
+                    h = int(round(w * (rh / rw)))
+                elif h and not w:
+                    w = int(round(h * (rw / rh)))
+
+            # Infer counterpart only when one side exists.
+            if w and not h:
                 h = int(round(w * 9 / 16))
             elif h and not w:
                 w = int(round(h * 16 / 9))
 
             if w and h and h > 0:
                 ratio = f"{w} / {h}"
-                st = iframe.get('style', '')
+                # Preserve existing dimensions if ratio already present and valid.
+                if _ratio_from_style(st):
+                    iframe['loading'] = iframe.get('loading', 'lazy')
+                    continue
+
                 st = re.sub(r'height\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
                 st = re.sub(r'width\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
                 st = re.sub(r'max-width\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
@@ -1017,6 +1119,9 @@ def remediate_html_file(filepath):
                 iframe['style'] = st
                 iframe['loading'] = iframe.get('loading', 'lazy')
                 fixes.append("Normalized iframe to proportional responsive sizing")
+            else:
+                # Not enough dimension data: do not touch sizing to avoid skewing embeds.
+                iframe['loading'] = iframe.get('loading', 'lazy')
         except Exception:
             pass
 

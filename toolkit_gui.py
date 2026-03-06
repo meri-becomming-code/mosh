@@ -6016,8 +6016,7 @@ YOUR WORKFLOW:
             if not ada_ok:
                 summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
                 self.gui_handler.log(f"   [ADA] Required remediation did not fully clear critical issues: {summary}")
-                self.gui_handler.log("   [Sync] Upload cancelled due to unresolved ADA issues.")
-                return False
+                self.gui_handler.log("   [Sync] Continuing upload after required ADA quick-fix passes (issues remain).")
 
             # [NEW] Mandatory final responsive pass before upload, followed by ADA re-check.
             api_key = self.config.get("api_key", "").strip()
@@ -6036,8 +6035,7 @@ YOUR WORKFLOW:
                         if not ada_ok:
                             summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
                             self.gui_handler.log(f"   [ADA] Post-design remediation still has critical issues: {summary}")
-                            self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-design ADA issues.")
-                            return False
+                            self.gui_handler.log("   [Sync] Continuing upload after post-design ADA quick-fix passes (issues remain).")
                 except Exception as design_err:
                     self.gui_handler.log(f"   [DESIGN] Final responsive pass skipped: {design_err}")
 
@@ -6119,8 +6117,7 @@ YOUR WORKFLOW:
                 if not ada_ok:
                     summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
                     self.gui_handler.log(f"   [ADA] Post-image remediation still has critical issues: {summary}")
-                    self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-image ADA issues.")
-                    return False
+                    self.gui_handler.log("   [Sync] Continuing upload after post-image ADA quick-fix passes (issues remain).")
                 with open(html_path, "r", encoding="utf-8") as _rf2:
                     soup = BeautifulSoup(_rf2.read(), "html.parser")
                 self.gui_handler.log("   [ADA] Final remediation applied after image sync.")
@@ -6378,7 +6375,9 @@ YOUR WORKFLOW:
                     rel_old = os.path.relpath(fpath, self.target_dir)
                     rel_new = os.path.relpath(output_path, self.target_dir)
                     manifest_map[rel_old] = rel_new
-                    link_map[os.path.basename(fpath)] = os.path.basename(output_path)
+                    # If live sync is enabled, defer link mapping until we get a live wiki URL.
+                    if not self.config.get("batch_sync_confirmed"):
+                        link_map[os.path.basename(fpath)] = os.path.basename(output_path)
 
                     # Archive
                     converter_utils.archive_source_file(fpath)
@@ -6395,6 +6394,8 @@ YOUR WORKFLOW:
                         if live_url and isinstance(live_url, str) and live_url.startswith("http"):
                             # Preserve wiki-page links (editable by instructors) in turbo link pass.
                             link_map[os.path.basename(fpath)] = live_url
+                        else:
+                            self.gui_handler.log("   [Sync] Wiki page upload did not return a live URL; links were not switched to local HTML.")
                 else:
                     self.gui_handler.log(f"   [FAILED] {err}")
 
