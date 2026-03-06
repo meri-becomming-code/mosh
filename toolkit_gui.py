@@ -5986,6 +5986,9 @@ YOUR WORKFLOW:
                 last_results = None
 
                 for p in range(1, max_passes + 1):
+                    if self.gui_handler.is_stopped():
+                        self.gui_handler.log("   [Sync] Upload cancelled by user request.")
+                        return False, last_results
                     self.gui_handler.log(f"   [ADA] Required quick-fix pass {p}/{max_passes}...")
                     ok, fixes = interactive_fixer.run_auto_fixer(path_for_fix, self.gui_handler)
                     if not ok:
@@ -6013,9 +6016,8 @@ YOUR WORKFLOW:
             if not ada_ok:
                 summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
                 self.gui_handler.log(f"   [ADA] Required remediation did not fully clear critical issues: {summary}")
-                if not self.gui_handler.confirm("ADA quick-fix could not fully clear issues. Upload anyway?"):
-                    self.gui_handler.log("   [Sync] Upload cancelled due to unresolved ADA issues.")
-                    return False
+                self.gui_handler.log("   [Sync] Upload cancelled due to unresolved ADA issues.")
+                return False
 
             # [NEW] Mandatory final responsive pass before upload, followed by ADA re-check.
             api_key = self.config.get("api_key", "").strip()
@@ -6034,9 +6036,8 @@ YOUR WORKFLOW:
                         if not ada_ok:
                             summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
                             self.gui_handler.log(f"   [ADA] Post-design remediation still has critical issues: {summary}")
-                            if not self.gui_handler.confirm("Post-design ADA issues remain. Upload anyway?"):
-                                self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-design ADA issues.")
-                                return False
+                            self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-design ADA issues.")
+                            return False
                 except Exception as design_err:
                     self.gui_handler.log(f"   [DESIGN] Final responsive pass skipped: {design_err}")
 
@@ -6057,12 +6058,8 @@ YOUR WORKFLOW:
                 with open(html_path, "r", encoding="utf-8") as _rf:
                     _post_fix_html = _rf.read()
                 if ('data-math-check' in _post_fix_html) or ('data-table-check' in _post_fix_html):
-                    self.gui_handler.log("   [Sync] Interactive review needed for flagged math/table images...")
-                    interactive_fixer.scan_and_fix_file(
-                        html_path,
-                        self.gui_handler,
-                        self.target_dir,
-                    )
+                    # Do not launch interactive prompts during upload (can trap UI in modal loops).
+                    self.gui_handler.log("   [Sync] Math/table review flags detected; skipping interactive prompts during upload.")
             except Exception as review_err:
                 self.gui_handler.log(f"   [Sync] Interactive review skipped: {review_err}")
 
@@ -6111,39 +6108,8 @@ YOUR WORKFLOW:
                         self.gui_handler.log(
                             f"      [MISSING IMAGE] Could not find local image: {clean_src}"
                         )
-
-                        # Let user decide: replace with a new local path, remove image, or keep as-is.
-                        replacement = self.gui_handler.prompt(
-                            "      Enter replacement image full path, type REMOVE to delete image, or press Enter to keep: "
-                        ).strip()
-
-                        if replacement.upper() == "REMOVE":
-                            img.decompose()
-                            self.gui_handler.log("      Removed broken image from page.")
-                        elif replacement:
-                            replacement = replacement.strip('"').strip("'")
-                            if os.path.exists(replacement):
-                                success_img, res_img = api.upload_file(
-                                    replacement, folder_path="remediated_images"
-                                )
-                                if success_img:
-                                    canvas_img_url = f"/courses/{self.config['canvas_course_id']}/files/{res_img['id']}/preview"
-                                    img["src"] = canvas_img_url
-                                    self.gui_handler.log(
-                                        f"      Uploaded replacement: {os.path.basename(replacement)}"
-                                    )
-                                else:
-                                    self.gui_handler.log(
-                                        f"      [WARNING] Replacement upload failed: {res_img}"
-                                    )
-                            else:
-                                self.gui_handler.log(
-                                    "      [WARNING] Replacement path not found; keeping current image tag."
-                                )
-                        else:
-                            self.gui_handler.log(
-                                "      Keeping current image tag (may remain broken if source is unavailable)."
-                            )
+                        img.decompose()
+                        self.gui_handler.log("      [WARNING] Missing image removed automatically.")
 
             # Re-run fixer after image mutations so uploaded wiki body keeps ADA table/font fixes.
             try:
@@ -6153,9 +6119,8 @@ YOUR WORKFLOW:
                 if not ada_ok:
                     summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
                     self.gui_handler.log(f"   [ADA] Post-image remediation still has critical issues: {summary}")
-                    if not self.gui_handler.confirm("Post-image ADA issues remain. Upload anyway?"):
-                        self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-image ADA issues.")
-                        return False
+                    self.gui_handler.log("   [Sync] Upload cancelled due to unresolved post-image ADA issues.")
+                    return False
                 with open(html_path, "r", encoding="utf-8") as _rf2:
                     soup = BeautifulSoup(_rf2.read(), "html.parser")
                 self.gui_handler.log("   [ADA] Final remediation applied after image sync.")
@@ -6203,17 +6168,9 @@ YOUR WORKFLOW:
                 self.gui_handler.log(f"   [Sync] SUCCESS! Live Page: {canvas_page_url}")
 
                 # 4. Link update: Point ALL OTHER FILES to this live Canvas Page
-                should_update = False
-                if auto_confirm_links:
-                    should_update = True
-                else:
-                    msg_live_link = (
-                        f"Page created on Canvas.\n\n"
-                        f"Would you like to update all other files in this folder\n"
-                        f"to point to the LIVE CANVAS PAGE instead of the local HTML?"
-                    )
-                    if self.gui_handler.confirm(msg_live_link):
-                        should_update = True
+                # Never block upload flow with modal confirm dialogs.
+                # For batch/live sync this should always happen silently.
+                should_update = True
 
                 if should_update:
                     count = 0
