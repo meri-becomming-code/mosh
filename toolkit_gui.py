@@ -137,11 +137,15 @@ class ToolkitGUI:
         self.visual_manifest_win = None
 
         # Mirror Mode State
-        self.mirror_should_start = bool(self.config.get("mirror_active", True))
+        self.mirror_should_start = bool(self.config.get("mirror_active", False))
         self.mirror_active = False
         self.mirror_thread = None
         self.mirror_target_file = None  # If we want to watch a SPECIFIC file
         self.file_hashes = {}  # path: mtime
+        self._mirror_inflight = set()
+        self._mirror_last_synced = {}
+        self._canvas_pages_checked = False
+        self._canvas_pages_ok = True
 
         # UI State
         self.current_view = "dashboard"
@@ -226,7 +230,7 @@ class ToolkitGUI:
             pass
         return {
             "show_instructions": True,
-            "mirror_active": True,
+            "mirror_active": False,
             "api_key": "",
             "gemini_tier": "free",  # free or paid
             "math_step_mode": False,
@@ -248,11 +252,15 @@ class ToolkitGUI:
             "style_h4_color": "#374151",
             "style_h5_color": "#4b5563",
             "style_h6_color": "#6b7280",
+            "workflow_audit_each_step": False,
         }
 
     def _update_config(self, **kwargs):
         """Safe update that only changes provided keys."""
         self.config.update(kwargs)
+        if any(k in kwargs for k in ("canvas_url", "canvas_token", "canvas_course_id")):
+            self._canvas_pages_checked = False
+            self._canvas_pages_ok = True
         # Sync specific fields that might need immediate side effects
         if "api_key" in kwargs:
             self.gui_handler.api_key = kwargs["api_key"]
@@ -1055,6 +1063,28 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             bg="white",
         ).pack(anchor="w", pady=(0, 30))
 
+        # [NEW] Setup tabs instead of simple-mode hiding
+        setup_tabs = ttk.Notebook(content)
+        setup_tabs.pack(fill="both", expand=True, pady=(0, 10))
+
+        tab_required = tk.Frame(setup_tabs, bg="white")
+        tab_ai = tk.Frame(setup_tabs, bg="white")
+        tab_math = tk.Frame(setup_tabs, bg="white")
+
+        setup_tabs.add(tab_required, text="Required")
+        setup_tabs.add(tab_ai, text="AI")
+        setup_tabs.add(tab_math, text="Math")
+
+        tk.Label(
+            tab_math,
+            text="Math Conversion Preferences",
+            font=("Segoe UI", 14, "bold"),
+            bg="white",
+            fg="#1B5E20",
+        ).pack(anchor="w", pady=(10, 5))
+        frame_math_prefs = ttk.Frame(tab_math, style="Card.TFrame", padding=20)
+        frame_math_prefs.pack(fill="x", pady=(0, 20))
+
         mode = self.config.get("theme", "light")
         colors = THEMES[mode]
 
@@ -1065,13 +1095,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         # --- SECTION 1: CANVAS ---
         tk.Label(
-            content,
+            tab_required,
             text="1. Canvas Course Connection",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#4B3190",
         ).pack(anchor="w", pady=(10, 5))
-        frame_canvas = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_canvas = ttk.Frame(tab_required, style="Card.TFrame", padding=20)
         frame_canvas.pack(fill="x", pady=(0, 20))
 
         tk.Label(
@@ -1214,14 +1244,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.lbl_canvas_status.pack(side="left", padx=5)
 
         # --- SECTION 2: MOSH MAGIC (AI) ---
-        tk.Label(
-            content,
+        lbl_ai_section = tk.Label(
+            tab_ai,
             text="2. MOSH Magic (AI Features)",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#1B5E20",
-        ).pack(anchor="w", pady=(10, 5))
-        frame_ai = ttk.Frame(content, style="Card.TFrame", padding=20)
+        )
+        lbl_ai_section.pack(anchor="w", pady=(10, 5))
+        frame_ai = ttk.Frame(tab_ai, style="Card.TFrame", padding=20)
         frame_ai.pack(fill="x", pady=(0, 20))
 
         tk.Label(
@@ -1333,7 +1364,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # Step-by-step PDF math processing (teacher-paced to reduce quota hiccups)
         self.var_math_step_mode = tk.BooleanVar(value=self.config.get("math_step_mode", False))
         chk_step = tk.Checkbutton(
-            frame_ai,
+            frame_math_prefs,
             text="Process math PDFs one page at a time (teacher-paced)",
             variable=self.var_math_step_mode,
             command=self._quick_save_inputs,
@@ -1350,7 +1381,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         self.var_math_has_visuals = tk.BooleanVar(value=self.config.get("math_has_visuals", True))
         chk_visuals = tk.Checkbutton(
-            frame_ai,
+            frame_math_prefs,
             text="Math pages contain graphs/diagrams/images",
             variable=self.var_math_has_visuals,
             command=self._quick_save_inputs,
@@ -1369,7 +1400,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             value=self.config.get("math_manual_visual_selection", True)
         )
         chk_manual_visuals = tk.Checkbutton(
-            frame_ai,
+            frame_math_prefs,
             text="Manual box selection only (skip AI pre-selection)",
             variable=self.var_math_manual_visual_selection,
             command=self._quick_save_inputs,
@@ -1386,7 +1417,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         self.var_math_auto_responsive = tk.BooleanVar(value=self.config.get("math_auto_responsive", True))
         chk_responsive = tk.Checkbutton(
-            frame_ai,
+            frame_math_prefs,
             text="Auto-make pages responsive for mobile",
             variable=self.var_math_auto_responsive,
             command=self._quick_save_inputs,
@@ -1399,7 +1430,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         self.var_math_final_ada_check = tk.BooleanVar(value=self.config.get("math_final_ada_check", True))
         chk_final_ada = tk.Checkbutton(
-            frame_ai,
+            frame_math_prefs,
             text="Run final ADA check before upload",
             variable=self.var_math_final_ada_check,
             command=self._quick_save_inputs,
@@ -1411,14 +1442,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         chk_final_ada.pack(anchor="w", pady=(2, 0))
 
         # --- SECTION 3: OUTPUT STYLE PREFERENCES ---
-        tk.Label(
-            content,
+        lbl_style_section = tk.Label(
+            tab_ai,
             text="3. Output Style Preferences",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#4B3190",
-        ).pack(anchor="w", pady=(10, 5))
-        frame_style = ttk.Frame(content, style="Card.TFrame", padding=20)
+        )
+        lbl_style_section.pack(anchor="w", pady=(10, 5))
+        frame_style = ttk.Frame(tab_ai, style="Card.TFrame", padding=20)
         frame_style.pack(fill="x", pady=(0, 20))
 
         tk.Label(
@@ -1487,14 +1519,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ).grid(row=3, column=1, sticky="w")
 
         # --- SECTION 3: POPPLER (MATH PDF) ---
-        tk.Label(
-            content,
+        lbl_poppler_section = tk.Label(
+            tab_math,
             text="4. Poppler Bin Path (For Math PDF)",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#D97706",
-        ).pack(anchor="w", pady=(10, 5))
-        frame_poppler = ttk.Frame(content, style="Card.TFrame", padding=20)
+        )
+        lbl_poppler_section.pack(anchor="w", pady=(10, 5))
+        frame_poppler = ttk.Frame(tab_math, style="Card.TFrame", padding=20)
         frame_poppler.pack(fill="x", pady=(0, 20))
 
         tk.Label(
@@ -1534,13 +1567,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         # --- SECTION 4: LOAD PROJECT ---
         tk.Label(
-            content,
+            tab_required,
             text="5. Load Your Course Project",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#4B3190",
         ).pack(anchor="w", pady=(10, 5))
-        frame_project = ttk.Frame(content, style="Card.TFrame", padding=20)
+        frame_project = ttk.Frame(tab_required, style="Card.TFrame", padding=20)
         frame_project.pack(fill="x", pady=(0, 30))
 
         btn_import_row = tk.Frame(frame_project, bg="white")
@@ -1581,14 +1614,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.lbl_setup_dir.pack(fill="x", pady=5)
 
         # --- SECTION 5: CANVAS MIRROR (LIVE SYNC) ---
-        tk.Label(
-            content,
+        lbl_mirror_section = tk.Label(
+            tab_required,
             text="6. Canvas Mirror (Live Sync)",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#4B3190",
-        ).pack(anchor="w", pady=(10, 5))
-        frame_mirror = ttk.Frame(content, style="Card.TFrame", padding=20)
+        )
+        lbl_mirror_section.pack(anchor="w", pady=(10, 5))
+        frame_mirror = ttk.Frame(tab_required, style="Card.TFrame", padding=20)
         frame_mirror.pack(fill="x", pady=(0, 20))
 
         tk.Label(
@@ -1620,14 +1654,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.lbl_mirror_status.pack(side="left", padx=15)
 
         # --- SECTION 4: POWER USER SETTINGS ---
-        tk.Label(
-            content,
-            text="4. Advanced / Power User Settings",
+        lbl_advanced_section = tk.Label(
+            tab_ai,
+            text="7. Advanced / Power User Settings",
             font=("Segoe UI", 14, "bold"),
             bg="white",
             fg="#4B3190",
-        ).pack(anchor="w", pady=(20, 5))
-        frame_advanced = ttk.Frame(content, style="Card.TFrame", padding=20)
+        )
+        lbl_advanced_section.pack(anchor="w", pady=(20, 5))
+        frame_advanced = ttk.Frame(tab_ai, style="Card.TFrame", padding=20)
         frame_advanced.pack(fill="x", pady=(0, 20))
 
         self.trust_ai_var = tk.BooleanVar(
@@ -1680,7 +1715,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             lbl_global_status.config(text="✅ All Settings Saved!", fg="green")
             messagebox.showinfo("Success", "Configuration updated.")
 
-        action_frame = tk.Frame(content, bg="white")
+        action_frame = tk.Frame(tab_required, bg="white")
         action_frame.pack(pady=20)
         tk.Button(
             action_frame,
@@ -1987,25 +2022,36 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         self.frame_actions = ttk.Frame(content, style="Card.TFrame", padding=15)
         self.frame_actions.pack(fill="x", pady=(0, 25))
 
-        # Friendly Button Names
+        self.btn_recommended = ttk.Button(
+            self.frame_actions,
+            text="🤖 Automate Full Workflow",
+            command=self._run_recommended_workflow,
+            style="Action.TButton",
+        )
+        self.btn_recommended.grid(row=0, column=0, columnspan=2, padx=5, pady=(5, 10), sticky="ew")
+        ToolTip(
+            self.btn_recommended,
+            "Automates the full recommended sequence in order.",
+        )
+
         self.btn_inter = ttk.Button(
             self.frame_actions,
-            text="📖 Guided Review\n(Descriptions & Links)",
+            text="1️⃣ Guided Review",
             command=self._run_interactive,
             style="Action.TButton",
         )
-        self.btn_inter.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        ToolTip(self.btn_inter, "Review image descriptions and fix links page-by-page")
+        self.btn_inter.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        ToolTip(self.btn_inter, "Step 1: Review images and links manually")
 
         self.btn_auto = ttk.Button(
             self.frame_actions,
-            text="✨ Auto-Fix Issues\n(Headings & Contrast)",
+            text="3️⃣ Auto-Fix (Run Last)",
             command=self._run_auto_fixer,
             style="Action.TButton",
         )
-        self.btn_auto.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.btn_auto.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         ToolTip(
-            self.btn_auto, "Automatically fix accessibility issues across all pages"
+            self.btn_auto, "Step 3: Run this last to clean up issues after other steps"
         )
         
         # [NEW] AI Responsive Design 
@@ -2016,37 +2062,59 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 command=self._run_ai_design_fixer,
                 style="Action.TButton",
             )
-            self.btn_ai_design.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+            self.btn_ai_design.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
             ToolTip(
                 self.btn_ai_design, "Use AI to restructure the HTML page layout for mobile apps"
             )
+        else:
+            self.btn_ai_design = None
 
-        # Row 2 (Audit)
-        self.btn_audit = ttk.Button(
-            self.frame_actions,
-            text="📊 Quick Report\n(Is it Compliant?)",
-            command=self._run_audit,
-            style="Action.TButton",
-        )
-        self.btn_audit.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        ToolTip(
-            self.btn_audit, "Generate a detailed accessibility report for the course"
-        )
-
-        # Row 3 (Global Fixes)
         self.btn_link_fix = ttk.Button(
             self.frame_actions,
-            text="🔗 Global Link Repair\n(Fixed broken Wiki links)",
+            text="2️⃣ Link Repair",
             command=self._run_all_links_fix,
-            style="Action.TButton",
+            style="TButton",
         )
-        self.btn_link_fix.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        self.btn_link_fix.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         ToolTip(
-            self.btn_link_fix, "Scans all wiki pages and updates links to documents that were converted to HTML"
+            self.btn_link_fix, "Step 2: repair links to converted documents"
         )
+
+        self.var_workflow_audit_each_step = tk.BooleanVar(
+            value=self.config.get("workflow_audit_each_step", False)
+        )
+        chk_audit_each = tk.Checkbutton(
+            self.frame_actions,
+            text="Run compliance snapshot before start and after each automated step",
+            variable=self.var_workflow_audit_each_step,
+            command=lambda: self._update_config(
+                workflow_audit_each_step=self.var_workflow_audit_each_step.get()
+            ),
+            bg="white",
+            font=("Segoe UI", 9),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_audit_each.grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(8, 2))
 
         self.frame_actions.columnconfigure(0, weight=1)
         self.frame_actions.columnconfigure(1, weight=1)
+
+        # Compliance section kept separate by design (run before/after if desired)
+        ttk.Label(
+            content, text="Step 3.5: Compliance Check", style="SubHeader.TLabel"
+        ).pack(anchor="w", pady=(0, 5))
+        frame_compliance = ttk.Frame(content, style="Card.TFrame", padding=15)
+        frame_compliance.pack(fill="x", pady=(0, 25))
+
+        self.btn_audit = ttk.Button(
+            frame_compliance,
+            text="📊 Am I Compliant? (Quick Report)",
+            command=self._run_audit,
+            style="Action.TButton",
+        )
+        self.btn_audit.pack(fill="x")
+        ToolTip(self.btn_audit, "Run this before and after steps to see progress.")
 
         # -- Step 4: Final Launch --
         self.step4_header = ttk.Label(
@@ -2218,6 +2286,11 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
     def _import_package(self):
         """Allows user to select .imscc or .zip and extracts it with duplicate detection."""
+        # Prevent live-sync races while importing/extracting a package.
+        if self.mirror_active:
+            self._toggle_mirror()
+            self.gui_handler.log("🛑 [Mirror] Temporarily disabled for package import.")
+
         path = filedialog.askopenfilename(
             filetypes=[("Canvas Export / Zip", "*.imscc *.zip"), ("All Files", "*.*")]
         )
@@ -2685,15 +2758,17 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             width=18,
             cursor="hand2",
         ).pack(side="left", padx=5)
-        tk.Button(
-            btn_frame_1,
-            text="📐 MATH BOARD (Review)",
-            command=on_math_board,
-            bg="#E9D5FF",
-            font=("bold"),
-            width=20,
-            cursor="hand2",
-        ).pack(side="left", padx=5)
+        allow_math_tools = self.current_view == "math"
+        if allow_math_tools:
+            tk.Button(
+                btn_frame_1,
+                text="📐 MATH BOARD (Review)",
+                command=on_math_board,
+                bg="#E9D5FF",
+                font=("bold"),
+                width=20,
+                cursor="hand2",
+            ).pack(side="left", padx=5)
         tk.Button(
             btn_frame_1,
             text="📊 Convert to Table (AI)",
@@ -5121,8 +5196,11 @@ Website: meri-becomming-code.github.io/mosh
         # [EXPANDED] Include all possible action buttons across all views
         # Use getattr for everything to avoid AttributeErrors if view hasn't loaded
         btn_list_names = [
+            "btn_recommended",
             "btn_auto",
             "btn_inter",
+            "btn_link_fix",
+            "btn_ai_design",
             "btn_audit",
             "btn_wizard",
             "btn_word",
@@ -5151,8 +5229,11 @@ Website: meri-becomming-code.github.io/mosh
     def _enable_buttons(self):
         """Restore all action buttons."""
         btn_list_names = [
+            "btn_recommended",
             "btn_auto",
             "btn_inter",
+            "btn_link_fix",
+            "btn_ai_design",
             "btn_audit",
             "btn_wizard",
             "btn_word",
@@ -5363,17 +5444,144 @@ Website: meri-becomming-code.github.io/mosh
             html_files = self._get_all_html_files()
             if not html_files:
                 self.gui_handler.log("No HTML files found.")
+                self.root.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        "Guided Review",
+                        "No HTML files were found to review.",
+                    ),
+                )
                 return
 
             self.gui_handler.log(f"Found {len(html_files)} HTML files.")
             self.gui_handler.log("Starting Interactive Scan...")
 
+            reviewed_count = 0
+
             for filepath in html_files:
                 interactive_fixer.scan_and_fix_file(
                     filepath, self.gui_handler, self.target_dir
                 )
+                reviewed_count += 1
+
+            self.gui_handler.log(
+                f"✅ Guided Review complete. Reviewed {reviewed_count} files."
+            )
+            self.root.after(
+                0,
+                lambda c=reviewed_count: messagebox.showinfo(
+                    "Guided Review Complete",
+                    f"Guided Review finished.\n\nFiles reviewed: {c}",
+                ),
+            )
 
         self._run_task_in_thread(task, "Interactive Fixer")
+
+    def _run_recommended_workflow(self):
+        """Automate the full recommended non-math flow in the intended order."""
+        if not self._check_target_dir():
+            return
+
+        if not messagebox.askyesno(
+            "Automate Full Workflow",
+            "Run full workflow now in this order?\n\n"
+            "1) Guided Review\n"
+            "2) Link Repair\n"
+            "3) AI Mobile Design (if enabled)\n"
+            "4) Auto-Fix (last)\n\n"
+            "If compliance snapshots are enabled, MOSH will run one before start and after each step.",
+        ):
+            return
+
+        def task():
+            def run_compliance_snapshot(label):
+                if not getattr(self, "var_workflow_audit_each_step", None):
+                    return
+                if not self.var_workflow_audit_each_step.get():
+                    return
+
+                html_files = self._get_all_html_files()
+                if not html_files:
+                    self.gui_handler.log(f"[Compliance] {label}: no HTML files found.")
+                    return
+
+                total_score = 0
+                files_with_issues = 0
+                for path in html_files:
+                    res = run_audit.audit_file(path)
+                    score = run_audit.calculate_accessibility_score(res)
+                    total_score += score
+                    if res and (res.get("technical") or res.get("subjective")):
+                        files_with_issues += 1
+
+                avg_score = round(total_score / len(html_files)) if html_files else 100
+                self.gui_handler.log(
+                    f"📊 [Compliance Snapshot] {label}: {avg_score}% | Files with issues: {files_with_issues}/{len(html_files)}"
+                )
+
+            self.gui_handler.log("🤖 Automate Full Workflow started.")
+
+            run_compliance_snapshot("Before workflow")
+
+            # Step 1: Guided review
+            self.gui_handler.log("   Step 1/4: Guided Review")
+            html_files = self._get_all_html_files()
+            reviewed_count = 0
+            for filepath in html_files:
+                interactive_fixer.scan_and_fix_file(
+                    filepath, self.gui_handler, self.target_dir
+                )
+                reviewed_count += 1
+            self.gui_handler.log(f"   ✅ Guided Review complete ({reviewed_count} files).")
+            run_compliance_snapshot("After Step 1 (Guided Review)")
+
+            # Step 2: Link repair
+            self.gui_handler.log("   Step 2/4: Global Link Repair")
+            doc_count, total_updated = self._perform_link_repair_logic()
+            self.gui_handler.log(
+                f"   ✅ Link Repair complete ({total_updated} repaired across {doc_count} documents)."
+            )
+            run_compliance_snapshot("After Step 2 (Link Repair)")
+
+            # Step 3: AI mobile design (optional)
+            api_key = self.config.get("api_key", "").strip()
+            if api_key:
+                self.gui_handler.log("   Step 3/4: AI Mobile Design")
+                interactive_fixer.run_ai_design_fixer(self.target_dir, self.gui_handler)
+                self.gui_handler.log("   ✅ AI Mobile Design complete.")
+            else:
+                self.gui_handler.log("   Step 3/4: AI Mobile Design skipped (no API key configured).")
+            run_compliance_snapshot("After Step 3 (AI Mobile Design)")
+
+            # Step 4: Auto-fix LAST
+            self.gui_handler.log("   Step 4/4: Auto-Fix (last)")
+            html_files = self._get_all_html_files()
+            files_with_fixes = 0
+            total_fixes = 0
+            for path in html_files:
+                success, fixes = interactive_fixer.run_auto_fixer(path, self.gui_handler)
+                if success and fixes:
+                    files_with_fixes += 1
+                    total_fixes += len(fixes)
+            self.gui_handler.log(
+                f"   ✅ Auto-Fix complete ({total_fixes} fixes across {files_with_fixes} files)."
+            )
+            run_compliance_snapshot("After Step 4 (Auto-Fix)")
+
+            self.root.after(
+                0,
+                lambda: messagebox.showinfo(
+                    "Automate Full Workflow",
+                    "Workflow complete.\n\n"
+                    "Order used:\n"
+                    "1) Guided Review\n"
+                    "2) Link Repair\n"
+                    "3) AI Mobile Design (if enabled)\n"
+                    "4) Auto-Fix (last)",
+                ),
+            )
+
+        self._run_task_in_thread(task, "Automate Full Workflow")
 
     # [REMOVED] _run_cleanup_markers per user request.
     # Markers are no longer added, so cleanup is unnecessary.
@@ -5672,7 +5880,7 @@ YOUR WORKFLOW:
         vars_map = {}
         for fpath in found_files:
             rel_path = os.path.relpath(fpath, self.target_dir)
-            var = tk.BooleanVar(value=True)
+            var = tk.BooleanVar(value=False)
             chk = tk.Checkbutton(
                 scroll_frame, text=rel_path, variable=var, anchor="w", bg="white"
             )
@@ -6002,6 +6210,19 @@ YOUR WORKFLOW:
         self.gui_handler.log(f"   [Sync] Uploading to Canvas: {fname}...")
 
         try:
+            if not self._canvas_pages_checked:
+                self._canvas_pages_checked = True
+                ok_pages, pages_msg = api.can_access_pages()
+                self._canvas_pages_ok = bool(ok_pages)
+                if not ok_pages:
+                    self.gui_handler.log(f"   [CRITICAL] Canvas page endpoint check failed: {pages_msg}")
+                    self.gui_handler.log("   [CRITICAL] Uploads paused. Verify Canvas URL, token permissions, and Course ID in Connect & Setup.")
+                    return False
+
+            if not self._canvas_pages_ok:
+                self.gui_handler.log("   [Sync] Skipped: Canvas page endpoint is unavailable with current setup.")
+                return False
+
             def _run_required_ada_pipeline(path_for_fix):
                 """Run ADA quick-fix and verify results before upload (required)."""
                 max_passes = 3
@@ -6049,8 +6270,7 @@ YOUR WORKFLOW:
                         _pre_upload_content = _rf.read()
                     _new_html, _msg = jeanie_ai.improve_html_design(_pre_upload_content, api_key)
                     if _new_html and "Error" not in _msg:
-                        with open(html_path, "w", encoding="utf-8") as _wf:
-                            _wf.write(_new_html)
+                        interactive_fixer.safe_write_text(html_path, _new_html, io_handler=self.gui_handler)
                         self.gui_handler.log("   [DESIGN] Final responsive formatting applied before upload.")
                         self.gui_handler.log("   [ADA] Re-checking after final responsive formatting...")
                         ada_ok, ada_results = _run_required_ada_pipeline(html_path)
@@ -6107,8 +6327,12 @@ YOUR WORKFLOW:
                     # [FIX] Handle URL-encoded characters in local paths (e.g. %20 for space)
                     clean_src = urllib.parse.unquote(local_src)
 
-                    # Resolve absolute path
-                    img_abs_path = os.path.join(os.path.dirname(html_path), clean_src)
+                    # Resolve absolute path (supports $IMS-CC-FILEBASE$ and encoded paths)
+                    img_abs_path = interactive_fixer.resolve_image_path(
+                        clean_src, html_path, self.target_dir, self.gui_handler
+                    )
+                    if not img_abs_path:
+                        img_abs_path = os.path.join(os.path.dirname(html_path), clean_src)
                     if os.path.exists(img_abs_path):
                         success_img, res_img = api.upload_file(
                             img_abs_path, folder_path="remediated_images"
@@ -6133,8 +6357,7 @@ YOUR WORKFLOW:
 
             # Re-run fixer after image mutations so uploaded wiki body keeps ADA table/font fixes.
             try:
-                with open(html_path, "w", encoding="utf-8") as _wf2:
-                    _wf2.write(str(soup))
+                interactive_fixer.safe_write_text(html_path, str(soup), io_handler=self.gui_handler)
                 ada_ok, ada_results = _run_required_ada_pipeline(html_path)
                 if not ada_ok:
                     summary = run_audit.get_issue_summary(ada_results) if ada_results else "Unknown issues"
@@ -6581,13 +6804,25 @@ YOUR WORKFLOW:
                     msg = "🚀 YOU ARE CLEAR FOR TAKEOFF!"
                     color = "#2E7D32"
                     push_text = "🚀 Send My Clean Course to Canvas Now"
+                    push_command = lambda: [dialog.destroy(), self._push_to_canvas()]
                 else:
                     msg = "🛠️ Almost there! Some items need attention."
                     color = "#d4a017"
-                    push_text = "🚀 Upload to Canvas Anyway"
+                    unresolved = len(checks) - ready_count
+                    push_text = f"⚠️ Upload Anyway ({unresolved} unresolved checks)"
+
+                    def guarded_push():
+                        if messagebox.askyesno(
+                            "Unresolved Pre-Flight Checks",
+                            f"There are {unresolved} unresolved checks.\n\nUpload anyway?",
+                        ):
+                            dialog.destroy()
+                            self._push_to_canvas()
+
+                    push_command = guarded_push
                 
                 final_msg.config(text=msg, fg=color)
-                btn_push.config(text=push_text, state="normal", command=lambda: [dialog.destroy(), self._push_to_canvas()])
+                btn_push.config(text=push_text, state="normal", command=push_command)
                 status_lbl.config(text="Check complete.")
             
             self.root.after(0, finish_ui)
@@ -7759,29 +7994,47 @@ YOUR WORKFLOW:
             )
 
             if success:
-                # result is list of (source, dest)
-                log(f"\n✨ SUCCESS! Converted {len(result)} files.")
+                converted_files = result
+                skipped_no_math = []
+                if isinstance(result, dict):
+                    converted_files = result.get("converted", []) or []
+                    skipped_no_math = result.get("skipped_no_math", []) or []
+
+                log(f"\n✨ SUCCESS! Converted {len(converted_files)} files.")
+                if skipped_no_math:
+                    log("\nℹ️ Unconverted because no math was detected:")
+                    for p in skipped_no_math[:12]:
+                        log(f"   - {os.path.basename(p)}")
+                    if len(skipped_no_math) > 12:
+                        log(f"   ... and {len(skipped_no_math) - 12} more")
 
                 # We already processed them one-by-one, so just open the folder
                 self.root.after(0, lambda: self.progress_var.set(100))
 
-                if result:
-                    folder = os.path.dirname(result[0][1])
+                if converted_files:
+                    folder = os.path.dirname(converted_files[0][1])
                     try:
                         open_file_or_folder(folder)
                     except:
                         pass
 
-                msg_done = (
-                    "✅ ALL FILES PROCESSED & UPLOADED.\n\n"
-                    "Your math content is now accessible on Canvas!"
-                )
+                if skipped_no_math:
+                    msg_done = (
+                        "✅ Math processing complete.\n\n"
+                        f"Converted: {len(converted_files)} file(s).\n"
+                        f"Left unconverted (no math detected): {len(skipped_no_math)} file(s)."
+                    )
+                else:
+                    msg_done = (
+                        "✅ ALL FILES PROCESSED & UPLOADED.\n\n"
+                        "Your math content is now accessible on Canvas!"
+                    )
                 self.root.after(
                     0, lambda: messagebox.showinfo("Mission Complete", msg_done)
                 )
 
-                if result:
-                    def ask_partial_export(res=list(result)):
+                if converted_files:
+                    def ask_partial_export(res=list(converted_files)):
                         if messagebox.askyesno(
                             "Create Partial Test Export?",
                             "Would you like to export ONLY the converted files as a zip for testers?\n\n"
@@ -8406,6 +8659,13 @@ YOUR WORKFLOW:
         if not self.mirror_should_start or self.mirror_active:
             return
 
+        # Safety: do not auto-start mirror on launch.
+        # Users can still enable it manually with the toggle button.
+        self.config["mirror_active"] = False
+        self._save_config_simple()
+        self.gui_handler.log("ℹ️ [Mirror] Auto-restore is disabled on startup. Use the toggle to enable when ready.")
+        return
+
         api = self._get_canvas_api()
         if not api or not self.target_dir or not os.path.exists(self.target_dir):
             # If prerequisites are missing, persist OFF to avoid confusing stale state.
@@ -8504,6 +8764,9 @@ YOUR WORKFLOW:
                             # Just track it
                             self.file_hashes[fstr] = mtime
                         elif mtime > self.file_hashes[fstr]:
+                            # Never compete with active conversion/upload tasks.
+                            if self.is_running:
+                                continue
                             # CHANGE DETECTED!
                             self.file_hashes[fstr] = mtime
                             # [FIX] Immediate status update on main thread
@@ -8522,15 +8785,32 @@ YOUR WORKFLOW:
     def _mirror_trigger_upload(self, html_path, api):
         """Helper to run the upload in a separate worker thread so GUI doesn't freeze."""
 
+        if self.is_running:
+            return
+
+        # Debounce and de-duplicate mirror syncs.
+        now = time.time()
+        last_sync = self._mirror_last_synced.get(html_path, 0)
+        if (now - last_sync) < 2.5:
+            return
+        if html_path in self._mirror_inflight:
+            return
+
+        self._mirror_inflight.add(html_path)
+
         def task():
-            self.lbl_mirror_status.config(
-                text=f"Syncing {os.path.basename(html_path)}...", fg="blue"
-            )
-            # We use a dummy 'original_source' since we are mirroring
-            self._upload_page_to_canvas(
-                html_path, html_path, api, auto_confirm_links=True
-            )
-            self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
+            try:
+                self.lbl_mirror_status.config(
+                    text=f"Syncing {os.path.basename(html_path)}...", fg="blue"
+                )
+                # We use a dummy 'original_source' since we are mirroring
+                self._upload_page_to_canvas(
+                    html_path, html_path, api, auto_confirm_links=True
+                )
+                self.lbl_mirror_status.config(text="Watching for changes...", fg="green")
+            finally:
+                self._mirror_last_synced[html_path] = time.time()
+                self._mirror_inflight.discard(html_path)
 
         # Run as a separate short-lived thread
         threading.Thread(target=task, daemon=True).start()

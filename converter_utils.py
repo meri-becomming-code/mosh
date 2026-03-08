@@ -781,10 +781,15 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
         light1 = theme["colors"].get("light1", "#fff")
 
         style_overrides += f"""
-            .slide-container {{ width: 90%; margin-left: auto; margin-right: auto; border-top-color: {accent1}; border-top-width: 5px; border-left: 2px solid #ccc; border-right: 2px solid #ccc; border-bottom: 2px solid #ccc; background-color: {light1}; }}
+            .slide-container {{ width: 100%; margin-left: auto; margin-right: auto; border-top-color: {accent1}; border-top-width: 5px; border-left: 2px solid #ccc; border-right: 2px solid #ccc; border-bottom: 2px solid #ccc; background-color: {light1}; box-sizing: border-box; overflow-x: hidden; overflow-y: auto; }}
             .slide-title {{ background-color: #4b3190 !important; color: #ffffff !important; padding: 2% !important; border-bottom: 0 !important; border-radius: 6px; }}
             h1 {{ color: {accent1}; border-bottom-color: {accent1}; }}
             h2 {{ background-color: #4b3190 !important; color: #ffffff !important; padding: 2% !important; border-bottom-color: {accent1}; border-radius: 6px; }}
+            .slide-image {{ max-width: 40% !important; height: auto !important; }}
+            @media (max-width: 768px) {{
+                .slide-container {{ padding: 20px !important; }}
+                .slide-image {{ float: none !important; display: block !important; margin: 12px auto !important; width: 10% !important; max-width: 10% !important; }}
+            }}
         """
 
         html_parts = []
@@ -796,10 +801,10 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
             # [NEW] Inline style for slide container (Canvas survival)
             slide_style = (
-                f"width: 90%; margin-left: auto; margin-right: auto; margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
+                f"width: 100%; margin-left: auto; margin-right: auto; margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
                 f"border-top: 5px solid {accent1}; border-radius: 12px; "
                 f"background-color: {light1}; box-shadow: 0 8px 30px rgba(0,0,0,0.1); "
-                f"position: relative; display: flow-root; clear: both; overflow: auto;"
+                f"position: relative; display: flow-root; clear: both; box-sizing: border-box; overflow-x: hidden; overflow-y: auto;"
             )
             html_parts.append(
                 f'<div class="slide-container" id="slide-{slide_num}" style="{slide_style}">'
@@ -1119,9 +1124,19 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         center_threshold = slide_width * 0.1
                         dist_from_center = abs(shape_center_x - (slide_width / 2))
 
-                        if dist_from_center < center_threshold:
+                        # On slides with text, prioritize side-floating so images stay beside text.
+                        if has_text_content:
+                            if shape_center_x < slide_width / 2:
+                                image_layout = "left"
+                                wrapper_style = ""
+                                float_style = "float: left; margin: 0 20px 15px 0;"
+                            else:
+                                image_layout = "right"
+                                wrapper_style = ""
+                                float_style = "float: right; margin: 0 0 15px 20px;"
+                        elif dist_from_center < center_threshold:
                             image_layout = "center"
-                            wrapper_style = "width: 90%; margin: 15px auto; text-align: center;"
+                            wrapper_style = "width: 100%; margin: 15px auto; text-align: center;"
                             float_style = "display: inline-block; margin: 0 auto;"
                         elif shape_center_x < slide_width / 2:
                             image_layout = "left"
@@ -1134,8 +1149,8 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
                         # [NEW] Enhanced Image Styles (Borders/Rotation)
                         extra_img_style = get_image_styles(shape)
-                        # [FIX] Enforce 50% max-width for PPT images
-                        final_img_style = f"{float_style} {extra_img_style} max-width: 50%; height: auto;".strip()
+                        # [FIX] Enforce 40% max-width for PPT images
+                        final_img_style = f"{float_style} {extra_img_style} max-width: 40%; height: auto;".strip()
 
                         # [SMART FIX] Silent Memory and prompt
                         alt_text = ""  # Default to decorative/empty if skipped

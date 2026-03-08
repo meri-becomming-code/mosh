@@ -25,6 +25,67 @@ try:
 except ImportError:
     convert_from_path = None
 
+
+def _text_looks_mathy(text):
+    """Heuristic check for likely math content in extracted text."""
+    if not text:
+        return False
+
+    t = text.lower()
+    signals = [
+        r"\\b(sin|cos|tan|log|ln|sqrt|integral|derivative|matrix|vector|limit)\\b",
+        r"[∑∫√πθΔ≤≥±×÷]",
+        r"\\$[^\\$]{1,80}\\$",
+        r"\\\\\([^\)]{1,80}\\\\\)",
+        r"\\\\\[[^\]]{1,120}\\\\\]",
+        r"\\b[fghxy]\s*\([^\)]*\)\s*=",
+        r"\\b\d+\s*[/^]\s*\d+\\b",
+        r"\\b\d+\s*[+\-*/=]\s*\d+\\b",
+    ]
+    for pat in signals:
+        if re.search(pat, t):
+            return True
+    return False
+
+
+def _docx_has_math(docx_path):
+    """Best-effort DOCX math detection using document.xml and equation tags."""
+    try:
+        import zipfile
+
+        with zipfile.ZipFile(docx_path, "r") as zf:
+            xml = zf.read("word/document.xml").decode("utf-8", errors="ignore")
+
+        # Native Word math tags are strongest signal.
+        if "<m:oMath" in xml or "<m:oMathPara" in xml:
+            return True
+
+        # Fallback: strip tags and run text heuristic.
+        plain = re.sub(r"<[^>]+>", " ", xml)
+        plain = re.sub(r"\s+", " ", plain)
+        return _text_looks_mathy(plain)
+    except Exception:
+        # If uncertain, do not block conversion.
+        return True
+
+
+def _pdf_has_math(pdf_path):
+    """Best-effort PDF math detection using PyMuPDF text extraction."""
+    try:
+        import fitz
+
+        doc = fitz.open(pdf_path)
+        chunks = []
+        for i, page in enumerate(doc):
+            if i >= 5:  # sample first pages for speed
+                break
+            chunks.append(page.get_text("text") or "")
+        doc.close()
+        return _text_looks_mathy("\n".join(chunks))
+    except Exception:
+        # If uncertain (image-only/parse issue), do not block conversion.
+        return True
+
 def clean_gemini_response(text):
     """
     Cleans Gemini response by removing markdown code blocks and HTML boilerplate.
@@ -1017,7 +1078,11 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                                 Passed through to convert_pdf_to_latex.
     
     Returns:
-        (success, list_of_html_files_or_error)
+        (success, dict_or_error) where dict has:
+        {
+            "converted": [(source_path, html_path), ...],
+            "skipped_no_math": [source_path, ...]
+        }
     """
     if not genai:
         return False, "Gemini library not installed"
@@ -1134,6 +1199,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
     client = genai.Client(api_key=api_key)
     
     conversion_results = [] # List of (source_path, output_path)
+    skipped_no_math = []
     total_files = len(safe_file_paths)
     
     stop_requested = False
@@ -1159,6 +1225,12 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 log_func(f"   🔄 Converting: {p.name} ...")
 
             if ext == '.pdf':
+                if not _pdf_has_math(str(p)):
+                    skipped_no_math.append(str(file_path))
+                    if log_func:
+                        log_func(f"   ⏭️ Ignored (no math detected): {p.name}")
+                    continue
+
                 detect_visuals_for_file = detect_visuals
                 if detect_visuals_callback:
                     try:
@@ -1185,6 +1257,12 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                     manual_visual_selection=manual_visual_selection,
                 )
             elif ext == '.docx':
+                if not _docx_has_math(str(p)):
+                    skipped_no_math.append(str(file_path))
+                    if log_func:
+                        log_func(f"   ⏭️ Ignored (no math detected): {p.name}")
+                    continue
+
                 success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
             else:
                 continue
@@ -1243,14 +1321,31 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
     if stop_requested and conversion_results:
         if log_func:
             log_func(f"\n✅ Partial conversion complete: {len(conversion_results)} file(s) converted before stop.")
-        return True, conversion_results
+            if skipped_no_math:
+                log_func(f"ℹ️ Left unconverted (no math detected): {len(skipped_no_math)} file(s).")
+        return True, {
+            "converted": conversion_results,
+            "skipped_no_math": skipped_no_math,
+        }
 
     if conversion_results:
         if log_func:
-            log_func(f"\n✅ Converted {len(conversion_results)} PDFs successfully!")
+            log_func(f"\n✅ Converted {len(conversion_results)} file(s) successfully!")
             log_func(f"📁 Files saved in their original folders (ready for sync)")
+            if skipped_no_math:
+                log_func(f"ℹ️ Left unconverted (no math detected): {len(skipped_no_math)} file(s).")
             log_func(f"\n⚖️  REMEMBER: Review LICENSING_REPORT.md before publishing!")
-        return True, conversion_results
+        return True, {
+            "converted": conversion_results,
+            "skipped_no_math": skipped_no_math,
+        }
+    elif skipped_no_math:
+        if log_func:
+            log_func(f"\nℹ️ No files converted. {len(skipped_no_math)} file(s) were left in place because no math was detected.")
+        return True, {
+            "converted": [],
+            "skipped_no_math": skipped_no_math,
+        }
     else:
         if log_func:
              log_func(f"\n❌ Note: No PDF files were converted. (See detailed log above)")

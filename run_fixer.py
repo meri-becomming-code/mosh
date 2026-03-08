@@ -727,6 +727,13 @@ def remediate_html_file(filepath):
         if 'clear:' not in low:
             h_style = h_style.rstrip('; ') + '; clear: both;'
 
+        # Prevent right-edge overflow when headings have width:100% + padding.
+        # border-box keeps total rendered width inside container.
+        if 'box-sizing' not in low:
+            h_style = h_style.rstrip('; ') + '; box-sizing: border-box;'
+        elif 'box-sizing:border-box' not in low.replace(' ', ''):
+            h_style = re.sub(r'box-sizing\s*:\s*[^;]+;?', 'box-sizing: border-box;', h_style, flags=re.IGNORECASE)
+
         h['style'] = h_style.strip().rstrip(';') + ';'
 
         # If immediately followed by inline content/text, add a break paragraph
@@ -796,6 +803,39 @@ def remediate_html_file(filepath):
                 p.insert_before(img_only.extract())
                 p.decompose()
                 fixes.append("Preserved floated image flow by removing paragraph wrapper")
+
+    # If a floated image lives inside a text block, ensure the block contains the float
+    # so following sections don't overlap and spacing remains predictable.
+    for img in soup.find_all('img'):
+        img_style = (img.get('style', '') or '').lower()
+        if 'float:' not in img_style:
+            continue
+
+        host = img.find_parent(['p', 'div', 'li'])
+        if not host:
+            continue
+
+        host_style = (host.get('style', '') or '')
+        host_low = host_style.lower()
+        updated = False
+
+        if 'overflow' not in host_low:
+            host_style = host_style.rstrip('; ') + '; overflow: auto;'
+            updated = True
+        elif 'overflow: auto' not in host_low.replace('  ', ' '):
+            host_style = re.sub(r'overflow\s*:\s*[^;]+;?', 'overflow: auto;', host_style, flags=re.IGNORECASE)
+            updated = True
+
+        if 'display:' not in host_low:
+            host_style = host_style.rstrip('; ') + '; display: flow-root;'
+            updated = True
+        elif 'flow-root' not in host_low:
+            # Keep existing display if already intentional; only set when no display is present.
+            pass
+
+        if updated:
+            host['style'] = host_style.strip().rstrip(';') + ';'
+            fixes.append("Contained floated image within parent block (overflow:auto)")
 
     for img in soup.find_all('img'):
         needs_fix = False

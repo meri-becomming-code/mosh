@@ -24,7 +24,9 @@ class CanvasAPI:
             if '/courses/' in cid_str:
                 self.course_id = cid_str.split('/courses/')[-1].split('/')[0]
             else:
-                self.course_id = cid_str
+                # Fallback: extract first long numeric token from mixed user input.
+                m = re.search(r"\b(\d{3,})\b", cid_str)
+                self.course_id = m.group(1) if m else cid_str
         except Exception:
             self.course_id = course_id
 
@@ -45,6 +47,23 @@ class CanvasAPI:
             return False, "Connection timed out. Canvas is taking too long to respond."
         except Exception as e:
             return False, f"Check your internet connection and school website address. ({e})"
+
+    def can_access_pages(self):
+        """Checks whether the current token can access course wiki pages endpoint."""
+        url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages?per_page=1"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=20)
+            if response.status_code == 200:
+                return True, "Pages endpoint reachable"
+            if response.status_code == 401:
+                return False, "Error 401: Invalid or expired Canvas access token."
+            if response.status_code == 403:
+                return False, "Error 403: Token lacks permission to manage Pages in this course."
+            if response.status_code == 404:
+                return False, f"Error 404: Course/Pages endpoint not found for course_id={self.course_id}."
+            return False, f"Error {response.status_code}: {response.text}"
+        except Exception as e:
+            return False, f"Pages endpoint check failed: {e}"
 
     def is_course_empty(self):
         """Checks if the target course has any existing WikiPages (Safety Check)."""

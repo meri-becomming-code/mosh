@@ -4,6 +4,7 @@
 import os
 import sys
 import json
+import time
 from bs4 import BeautifulSoup
 import urllib.request
 import urllib.parse
@@ -316,6 +317,68 @@ def ensure_short_path(filepath):
         return os.path.join(dirname, new_name)
     return filepath
 
+def _normalize_windows_path(path):
+    """Normalize and long-path-protect Windows paths for reliable writes."""
+    normalized = os.path.normpath(os.path.abspath(str(path)))
+    if os.name == "nt":
+        # Add long-path prefix only when needed and not already present/UNC-prefixed.
+        if not normalized.startswith("\\\\?\\") and len(normalized) >= 240:
+            if normalized.startswith("\\\\"):
+                normalized = "\\\\?\\UNC\\" + normalized.lstrip("\\")
+            else:
+                normalized = "\\\\?\\" + normalized
+    return normalized
+
+def safe_write_text(filepath, content, io_handler=None, retries=3):
+    """Atomically writes text with retries to avoid transient Windows file-lock errors."""
+    target_path = _normalize_windows_path(filepath)
+    parent_dir = os.path.dirname(target_path)
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        temp_path = None
+        try:
+            os.makedirs(parent_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=parent_dir,
+                prefix=".mosh_tmp_",
+                suffix=".html",
+                delete=False,
+            ) as tf:
+                tf.write(content)
+                tf.flush()
+                os.fsync(tf.fileno())
+                temp_path = tf.name
+
+            os.replace(temp_path, target_path)
+            return True
+        except OSError as e:
+            last_error = e
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+            # Retry only for transient write issues.
+            transient = getattr(e, "errno", None) in (13, 22, 32)
+            if not transient or attempt >= retries:
+                break
+            if io_handler:
+                io_handler.log(
+                    f"  [WARN] Transient write issue (attempt {attempt}/{retries}) for {os.path.basename(filepath)}: {e}"
+                )
+            time.sleep(0.12 * attempt)
+        except Exception as e:
+            last_error = e
+            break
+
+    if last_error:
+        raise last_error
+    return False
+
 def save_html(filepath, soup, io_handler):
     """Saves the modified soup to the file."""
     try:
@@ -323,8 +386,7 @@ def save_html(filepath, soup, io_handler):
         filepath = ensure_short_path(filepath)
 
         io_handler.log(f"  [DEBUG] Attempting to save file: {filepath}")
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(str(soup))
+        safe_write_text(filepath, str(soup), io_handler=io_handler)
         io_handler.log(f"  [SUCCESS] Saved file: {os.path.basename(filepath)}")
         return True
     except Exception as e:
@@ -952,11 +1014,10 @@ def run_auto_fixer(filepath, io_handler=None):
         
         # Only write if there were actual fixes
         if fixes:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(remediated)
+            safe_write_text(filepath, remediated, io_handler=io_handler)
             # Verify write succeeded
             import os as os_check
-            if os_check.path.getsize(filepath) > 0:
+            if os_check.path.getsize(_normalize_windows_path(filepath)) > 0:
                 io_handler.log(f"      [SAVED] {os.path.basename(filepath)}")
             else:
                 io_handler.log(f"      [WARNING] File may not have saved: {os.path.basename(filepath)}")
