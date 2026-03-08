@@ -234,7 +234,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <div class="main-content" style="max-width: 1200px; margin: 0 auto; padding: 40px;">
+    <div class="main-content" style="max-width: 1200px; margin: 0 auto; padding: 40px; box-sizing: border-box; overflow: auto;">
         <h1>{title}</h1>
         {content}
     </div>
@@ -788,7 +788,7 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
             .slide-image {{ max-width: 40% !important; height: auto !important; }}
             @media (max-width: 768px) {{
                 .slide-container {{ padding: 20px !important; }}
-                .slide-image {{ float: none !important; display: block !important; margin: 12px auto !important; width: 10% !important; max-width: 10% !important; }}
+                .slide-image {{ float: none !important; display: block !important; margin: 12px auto !important; width: 100% !important; max-width: 100% !important; }}
             }}
         """
 

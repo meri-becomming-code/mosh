@@ -2,6 +2,8 @@
 **"Making Online Spaces Helpful" — The Intelligent Accessibility Suite for Educators**
 
 > 🧪 **Pre-Release / Release Candidate** — Currently in institutional testing at McHenry County College. Feedback welcome! Full public launch planned for April 2026.
+>
+> 🖥️ **Platform Note:** Windows RC is available now. **macOS release is planned for early April 2026.**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Website](https://img.shields.io/badge/Website-Live-green.svg)](https://meri-becomming-code.github.io/mosh/)
@@ -32,13 +34,13 @@ MOSH is a mission-driven, professional-grade accessibility suite designed to sol
 - **Asynchronous Architecture**: Implements Python `threading` and `queue` systems to perform heavy AI analysis and file processing without freezing the Tkinter GUI.
 - **DOM Orchestration**: Uses `BeautifulSoup4` for complex HTML parsing, sanitization, and restructuring of Canvas LMS export packages.
 - **Portable Dependencies**: Features a custom "One-Click Setup" and **Portable Mode** for Poppler binaries, managing binary dependencies across disparate user environments.
-- **Cross-Platform Compatibility**: Supports Windows and macOS (via Homebrew integration) with persistent configuration management via JSON.
+- **Cross-Platform Compatibility**: Windows is supported in the current RC. macOS support is in progress (target: early April 2026) with persistent configuration management via JSON.
 - **Idempotent Logic**: Smart-hashing ensures that files aren't repeatedly processed, saving AI tokens and computational time.
 
 ---
 
 ## 🎯 Project Mission & Dedication
-MOSH was born from a personal journey. Dedicated to **Michael Joshua (MOSH) Albright**, who battles Diabetic Retinopathy, this project is a gift back to the education community. 
+MOSH was born from a personal journey. Dedicated to **Michael Joshua (MOSH) Albright**, my son, who lives with diabetic retinopathy and spent several years mostly blind, this project is a gift back to the education community.
 
 I believe that accessibility is a foundational human right. This tool is released **freely and open-source** to ensure that no teacher is left behind by the digital transition.
 

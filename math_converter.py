@@ -15,10 +15,14 @@ from pathlib import Path
 from PIL import Image
 
 try:
-    from google import genai
-    from google.genai import types
-except ImportError:
-    genai = None
+    # Preferred import path for current SDK versions.
+    import google.genai as genai
+except Exception:
+    try:
+        # Fallback path for environments that expose namespace differently.
+        from google import genai  # type: ignore
+    except Exception:
+        genai = None
 
 try:
     from pdf2image import convert_from_path

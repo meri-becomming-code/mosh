@@ -288,7 +288,9 @@ def remediate_html_file(filepath):
 
         # Enforce safe responsive image policy without upscaling.
         css_rule = (
-            ".slide-container img { max-width: 100% !important; height: auto !important; }"
+            ".main-content img { width: 100%; max-width: 40%; height: auto !important; }\n"
+            ".slide-container img { max-width: 40%; height: auto !important; }\n"
+            "@media (max-width: 768px) { .main-content img, .slide-container img { width: 100% !important; max-width: 100% !important; float: none !important; } }"
         )
         existing_css = "\n".join((st.get_text() or "") for st in head.find_all('style'))
         if '.slide-container img' not in existing_css:
@@ -754,6 +756,32 @@ def remediate_html_file(filepath):
             fixes.append("Added break paragraph after heading")
 
     # --- Part 7: Slide Containers + Images (Visual Markers & Responsiveness) ---
+    # Global guardrail: ensure div wrappers can contain floats/media on all pages.
+    # Only add when no explicit `overflow:` exists so we avoid clobbering intentional settings.
+    for div in soup.find_all('div'):
+        div_style = div.get('style', '') or ''
+        if not re.search(r'(^|;)\s*overflow\s*:', div_style, flags=re.IGNORECASE):
+            div['style'] = div_style.rstrip('; ') + '; overflow: auto;'
+            fixes.append("Added overflow:auto to div wrapper")
+
+    # Ensure top-level content wrappers do not overflow due to width:100% + padding.
+    for wrapper in soup.find_all('div', class_='main-content'):
+        w_style = wrapper.get('style', '') or ''
+        w_low = w_style.lower()
+
+        if 'box-sizing' not in w_low:
+            w_style = w_style.rstrip('; ') + '; box-sizing: border-box;'
+            fixes.append("Added box-sizing:border-box to main-content")
+        elif 'box-sizing:border-box' not in w_low.replace(' ', ''):
+            w_style = re.sub(r'box-sizing\s*:\s*[^;]+;?', 'box-sizing: border-box;', w_style, flags=re.IGNORECASE)
+            fixes.append("Normalized main-content box-sizing:border-box")
+
+        if 'overflow-x' not in w_low:
+            w_style = w_style.rstrip('; ') + '; overflow-x: hidden;'
+            fixes.append("Added overflow-x:hidden to main-content")
+
+        wrapper['style'] = w_style.strip().rstrip(';') + ';'
+
     # 7a. Enforce PPT slide container safety so content wraps and grows correctly.
     for div in soup.find_all('div', class_='slide-container'):
         style = div.get('style', '') or ''
@@ -772,10 +800,29 @@ def remediate_html_file(filepath):
         if 'display:' not in style_low:
             style = style.rstrip(';') + '; display: flow-root;'
             fixes.append("Enforced slide-container display:flow-root")
+        elif 'display: flow-root' not in style_low.replace('  ', ' '):
+            style = re.sub(r'display\s*:\s*[^;]+;?', 'display: flow-root;', style, flags=re.IGNORECASE)
+            fixes.append("Normalized slide-container display:flow-root")
 
         if 'clear:' not in style_low:
             style = style.rstrip(';') + '; clear: both;'
             fixes.append("Enforced slide-container clear:both")
+
+        # Prevent width + padding + border from exceeding available width.
+        if 'box-sizing' not in style_low:
+            style = style.rstrip(';') + '; box-sizing: border-box;'
+            fixes.append("Enforced slide-container box-sizing:border-box")
+        elif 'box-sizing:border-box' not in style_low.replace(' ', ''):
+            style = re.sub(r'box-sizing\s*:\s*[^;]+;?', 'box-sizing: border-box;', style, flags=re.IGNORECASE)
+            fixes.append("Normalized slide-container box-sizing:border-box")
+
+        # Horizontal overflow should be handled by internal wrappers/text boxes, not outer slide frame.
+        if 'overflow-x' not in style_low:
+            style = style.rstrip(';') + '; overflow-x: hidden;'
+            fixes.append("Enforced slide-container overflow-x:hidden")
+        elif 'overflow-x: hidden' not in style_low.replace('  ', ' '):
+            style = re.sub(r'overflow-x\s*:\s*[^;]+;?', 'overflow-x: hidden;', style, flags=re.IGNORECASE)
+            fixes.append("Normalized slide-container overflow-x:hidden")
 
         if 'width:' not in style_low:
             style = style.rstrip(';') + '; width: 90%; margin-left: auto; margin-right: auto;'
@@ -788,7 +835,78 @@ def remediate_html_file(filepath):
                 style = style.rstrip(';') + '; margin-right: auto;'
             fixes.append("Normalized slide-container width from 100% to 90%")
 
+        # Avoid unexpectedly narrow PPT cards introduced by legacy fixed-width conversions.
+        m_slide_max = re.search(r'max-width\s*:\s*([0-9.]+)px', style, flags=re.IGNORECASE)
+        if m_slide_max:
+            try:
+                max_px = float(m_slide_max.group(1))
+                if max_px <= 800:
+                    style = re.sub(r'max-width\s*:\s*[^;]+;?', 'max-width: 1200px;', style, flags=re.IGNORECASE)
+                    fixes.append("Expanded slide-container max-width to 1200px")
+            except Exception:
+                pass
+
         div['style'] = style.strip()
+
+        # If a slide contains both text and images, keep images beside text when possible.
+        # Heuristic: when no float exists, infer side from content order.
+        slide_imgs = div.find_all('img')
+        has_text_blocks = bool(div.find_all(['p', 'ul', 'ol', 'li', 'div'], class_='text-box')) or bool(
+            [p for p in div.find_all('p') if p.get_text(strip=True)]
+        )
+
+        if has_text_blocks and slide_imgs:
+            for img in slide_imgs:
+                img_style = img.get('style', '') or ''
+                img_style_low = img_style.lower()
+
+                if 'float:' in img_style_low:
+                    continue
+
+                # Determine nearest meaningful siblings to infer likely side.
+                prev_sig = img.find_previous_sibling()
+                next_sig = img.find_next_sibling()
+                prev_has_text = bool(prev_sig and getattr(prev_sig, 'get_text', None) and prev_sig.get_text(strip=True))
+                next_has_text = bool(next_sig and getattr(next_sig, 'get_text', None) and next_sig.get_text(strip=True))
+
+                # If text is before image, float right; if text after image, float left.
+                inferred_float = 'right' if prev_has_text or not next_has_text else 'left'
+                inferred_margin = '0 0 15px 20px' if inferred_float == 'right' else '0 20px 15px 0'
+
+                # Keep side-by-side footprint bounded while remaining responsive.
+                if 'max-width' not in img_style_low:
+                    img_style = img_style.rstrip('; ') + '; max-width: 40%;'
+                img_style = img_style.rstrip('; ') + f'; float: {inferred_float}; margin: {inferred_margin};'
+                img['style'] = img_style.strip().rstrip(';') + ';'
+                fixes.append(f"Positioned slide image beside text (float:{inferred_float})")
+
+    # 7a.1 Ensure image-hosting divs contain floats/width safely.
+    for host_div in soup.find_all('div'):
+        if not host_div.find('img'):
+            continue
+
+        h_style = host_div.get('style', '') or ''
+        h_low = h_style.lower()
+        host_updated = False
+
+        if 'overflow' not in h_low:
+            h_style = h_style.rstrip('; ') + '; overflow: auto;'
+            host_updated = True
+        elif 'overflow: auto' not in h_low.replace('  ', ' '):
+            h_style = re.sub(r'overflow\s*:\s*[^;]+;?', 'overflow: auto;', h_style, flags=re.IGNORECASE)
+            host_updated = True
+
+        if 'display:' not in h_low:
+            h_style = h_style.rstrip('; ') + '; display: flow-root;'
+            host_updated = True
+
+        if 'box-sizing' not in h_low:
+            h_style = h_style.rstrip('; ') + '; box-sizing: border-box;'
+            host_updated = True
+
+        if host_updated:
+            host_div['style'] = h_style.strip().rstrip(';') + ';'
+            fixes.append("Ensured overflow:auto on image-hosting div")
 
     image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg']
 
@@ -804,8 +922,9 @@ def remediate_html_file(filepath):
                 p.decompose()
                 fixes.append("Preserved floated image flow by removing paragraph wrapper")
 
-    # If a floated image lives inside a text block, ensure the block contains the float
-    # so following sections don't overlap and spacing remains predictable.
+    # If a floated image lives inside a text block, contain it only for slide content.
+    # For non-slide pages, we promote floated images outside wrapper blocks below so
+    # text can flow naturally without oversized parent gaps.
     for img in soup.find_all('img'):
         img_style = (img.get('style', '') or '').lower()
         if 'float:' not in img_style:
@@ -813,6 +932,10 @@ def remediate_html_file(filepath):
 
         host = img.find_parent(['p', 'div', 'li'])
         if not host:
+            continue
+
+        in_slide_host = bool(host.find_parent('div', class_='slide-container')) or ('slide-container' in (host.get('class') or []))
+        if not in_slide_host:
             continue
 
         host_style = (host.get('style', '') or '')
@@ -837,10 +960,48 @@ def remediate_html_file(filepath):
             host['style'] = host_style.strip().rstrip(';') + ';'
             fixes.append("Contained floated image within parent block (overflow:auto)")
 
+    # Promote floated images out of wrapper blocks in non-slide content.
+    # This prevents large empty vertical gaps caused by paragraph/div height expansion.
+    for img in soup.find_all('img'):
+        img_style = (img.get('style', '') or '')
+        img_style_low = img_style.lower()
+        if 'float:' not in img_style_low:
+            continue
+
+        # Leave slide layouts as-is; slide logic is handled separately.
+        if img.find_parent('div', class_='slide-container'):
+            continue
+
+        block_host = img.find_parent(['p', 'div'])
+        if not block_host:
+            continue
+
+        # If image is wrapped by inline tags (<em>/<span>/<strong>/<a>), move it to the block edge first.
+        inline_parent = img.parent if img.parent and img.parent.name in ['em', 'span', 'strong', 'a'] else None
+        if inline_parent is not None:
+            inline_parent.insert_after(img.extract())
+
+        # Move floated image to be a sibling before its block host.
+        block_host.insert_before(img.extract())
+
+        # Normalize aggressive margins that amplify blank space.
+        if 'margin:' in img_style_low:
+            side = 'right' if 'float:right' in img_style_low.replace(' ', '') else ('left' if 'float:left' in img_style_low.replace(' ', '') else 'right')
+            norm_margin = '10px 0 15px 20px' if side == 'right' else '10px 20px 15px 0'
+            img_style = re.sub(r'margin\s*:\s*[^;]+;?', f'margin: {norm_margin};', img_style, flags=re.IGNORECASE)
+        else:
+            side = 'right' if 'float:right' in img_style_low.replace(' ', '') else ('left' if 'float:left' in img_style_low.replace(' ', '') else 'right')
+            norm_margin = '10px 0 15px 20px' if side == 'right' else '10px 20px 15px 0'
+            img_style = img_style.rstrip('; ') + f'; margin: {norm_margin};'
+
+        img['style'] = img_style.strip().rstrip(';') + ';'
+        fixes.append("Promoted floated image outside wrapper block to reduce gap")
+
     for img in soup.find_all('img'):
         needs_fix = False
         reason = ""
-        alt_val = img.get('alt', '').strip()
+        alt_raw = img.get('alt', None)
+        alt_val = alt_raw.strip() if isinstance(alt_raw, str) else ""
         in_slide_container = bool(img.find_parent('div', class_='slide-container'))
         
         # 7b. Responsive Fix (Safe)
@@ -868,21 +1029,27 @@ def remediate_html_file(filepath):
             style = re.sub(r'max-width\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
             style = re.sub(r'height\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
             style = style.rstrip('; ')
-            style = (style + f"; width: 100%; max-width: {intended_px}px; height: auto;").strip('; ') + ';'
+            style = (style + f"; width: 100%; max-width: min(40%, {intended_px}px); height: auto;").strip('; ') + ';'
             img['style'] = style
             fixes.append(f"Preserved image max size at {intended_px}px while keeping it responsive: {os.path.basename(img.get('src', 'unknown'))}")
         elif 'max-width' not in style_low:
-            # Unknown original size: responsive but no forced enlargement profile.
-            new_style_part = "max-width: 100%; height: auto;"
+            # Unknown original size: keep desktop footprint modest; mobile override handled in CSS.
+            new_style_part = "width: 100%; max-width: 40%; height: auto;"
             if style:
                 img['style'] = style.rstrip(';') + "; " + new_style_part
             else:
                 img['style'] = new_style_part
-            fixes.append(f"Made image responsive without upscaling: {os.path.basename(img.get('src', 'unknown'))}")
+            fixes.append(f"Made image responsive with desktop max-width 40%: {os.path.basename(img.get('src', 'unknown'))}")
         # 7c. Alt Text Logic
         if 'alt' not in img.attrs:
+            # Hard requirement: every image must include an alt attribute.
+            # Leave empty by default and flag for follow-up description.
+            img['alt'] = ""
+            if 'role' not in img.attrs:
+                img['role'] = "presentation"
+            img['data-alt-needed'] = "true"
             needs_fix = True
-            reason = "Missing Alt Text"
+            reason = "Missing Alt Text (inserted alt=\"\")"
         elif alt_val == "":
             # Explicitly mark as decorative for screen readers (Panorama compliance)
             img['role'] = "presentation"
@@ -893,6 +1060,19 @@ def remediate_html_file(filepath):
         elif any(alt_val.lower().endswith(ext) for ext in image_extensions):
             needs_fix = True
             reason = "Filename used as Alt Text"
+
+        # Keep alt text concise for LMS/readers; push long detail to long description.
+        if img.has_attr('alt') and alt_val and len(alt_val) > 120:
+            full_alt = alt_val
+            trimmed_alt = full_alt[:117].rstrip()
+            if not trimmed_alt.endswith('...'):
+                trimmed_alt += '...'
+            img['alt'] = trimmed_alt
+            img['data-alt-truncated'] = 'true'
+            img['data-original-alt'] = full_alt
+            img['data-longdesc-needed'] = 'true'
+            fixes.append("Trimmed alt text to 120 chars and flagged for long description")
+            alt_val = trimmed_alt
 
         if needs_fix:
             # Note: Placeholders and markers removed per user request. Fixes are tracked in 'fixes' list only.
@@ -1155,19 +1335,46 @@ def remediate_html_file(filepath):
 
             if w and h and h > 0:
                 ratio = f"{w} / {h}"
-                # Preserve existing dimensions if ratio already present and valid.
-                if _ratio_from_style(st):
-                    iframe['loading'] = iframe.get('loading', 'lazy')
-                    continue
+                ratio_pct = (float(h) / float(w)) * 100.0
 
+                # Use a ratio wrapper so Canvas/browser differences don't distort iframe height.
+                parent = iframe.parent
+                has_ratio_wrapper = (
+                    parent
+                    and getattr(parent, 'name', None) == 'div'
+                    and (
+                        'responsive-iframe-wrap' in (parent.get('class') or [])
+                        or parent.get('data-ada-iframe-wrap') == 'true'
+                    )
+                )
+
+                if has_ratio_wrapper:
+                    wrapper = parent
+                else:
+                    wrapper = soup.new_tag('div')
+                    wrapper['class'] = ['responsive-iframe-wrap']
+                    wrapper['data-ada-iframe-wrap'] = 'true'
+                    iframe.insert_before(wrapper)
+                    wrapper.append(iframe.extract())
+
+                wrapper['style'] = (
+                    f"position: relative; width: 100%; max-width: {w}px; "
+                    f"padding-top: {ratio_pct:.6f}%; height: 0; overflow: hidden;"
+                )
+
+                # Keep non-size inline styles, but force size/position from wrapper.
                 st = re.sub(r'height\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
                 st = re.sub(r'width\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
                 st = re.sub(r'max-width\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
+                st = re.sub(r'aspect-ratio\s*:\s*[^;]+;?', '', st, flags=re.IGNORECASE)
                 st = st.rstrip('; ')
-                st = (st + f"; width: 100%; max-width: {w}px; aspect-ratio: {ratio}; height: auto;").strip('; ') + ';'
+                st = (
+                    st
+                    + "; position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
+                ).strip('; ') + ';'
                 iframe['style'] = st
                 iframe['loading'] = iframe.get('loading', 'lazy')
-                fixes.append("Normalized iframe to proportional responsive sizing")
+                fixes.append(f"Normalized iframe to fixed-ratio responsive sizing ({ratio})")
             else:
                 # Not enough dimension data: do not touch sizing to avoid skewing embeds.
                 iframe['loading'] = iframe.get('loading', 'lazy')
@@ -1290,6 +1497,38 @@ def remediate_html_file(filepath):
                 # Advance index by how many we removed
                 i += len(list_items) - 1
         i += 1
+
+    # 9b. Orphan <li> repair: ensure every list item is inside <ul> or <ol>.
+    # Some upstream transforms can leave stray <li> nodes under <div>/<p> containers.
+    for li in list(soup.find_all('li')):
+        parent_name = getattr(li.parent, 'name', None)
+        if parent_name in ['ul', 'ol']:
+            continue
+
+        # Create a list wrapper before the first orphan item.
+        new_list = soup.new_tag('ul')
+        li.insert_before(new_list)
+        new_list.append(li.extract())
+
+        # Move immediately-following orphan <li> siblings into the same wrapper.
+        nxt = new_list.next_sibling
+        while nxt is not None:
+            # Skip pure whitespace nodes between consecutive list items.
+            if isinstance(nxt, NavigableString) and not str(nxt).strip():
+                to_remove = nxt
+                nxt = nxt.next_sibling
+                to_remove.extract()
+                continue
+
+            if getattr(nxt, 'name', None) == 'li':
+                to_move = nxt
+                nxt = nxt.next_sibling
+                new_list.append(to_move.extract())
+                continue
+
+            break
+
+        fixes.append("Wrapped orphan <li> item(s) in <ul>")
 
     # --- Part 10: Final Polish & Special Checks ---
     emoji_fixes = fix_emoji_accessibility(soup)

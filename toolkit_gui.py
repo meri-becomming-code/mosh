@@ -17,6 +17,7 @@ from PIL import Image, ImageTk
 import sys
 import os
 import time
+import shutil
 
 # Ensure the script's directory is in the Python path for local imports
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -252,7 +253,7 @@ class ToolkitGUI:
             "style_h4_color": "#374151",
             "style_h5_color": "#4b5563",
             "style_h6_color": "#6b7280",
-            "workflow_audit_each_step": False,
+            "workflow_audit_each_step": True,
         }
 
     def _update_config(self, **kwargs):
@@ -2036,29 +2037,18 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         self.btn_inter = ttk.Button(
             self.frame_actions,
-            text="1️⃣ Guided Review",
+            text="Step 1: Guided Review",
             command=self._run_interactive,
             style="Action.TButton",
         )
         self.btn_inter.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
         ToolTip(self.btn_inter, "Step 1: Review images and links manually")
 
-        self.btn_auto = ttk.Button(
-            self.frame_actions,
-            text="3️⃣ Auto-Fix (Run Last)",
-            command=self._run_auto_fixer,
-            style="Action.TButton",
-        )
-        self.btn_auto.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        ToolTip(
-            self.btn_auto, "Step 3: Run this last to clean up issues after other steps"
-        )
-        
         # [NEW] AI Responsive Design 
         if self.config.get("api_key"):
             self.btn_ai_design = ttk.Button(
                 self.frame_actions,
-                text="📱 AI Mobile Design\n(Responsive Canvas HTML)",
+                text="Step 2: AI Mobile Design",
                 command=self._run_ai_design_fixer,
                 style="Action.TButton",
             )
@@ -2069,16 +2059,21 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         else:
             self.btn_ai_design = None
 
-        self.btn_link_fix = ttk.Button(
+        self.btn_link_fix = None
+
+        self.btn_auto = ttk.Button(
             self.frame_actions,
-            text="2️⃣ Link Repair",
-            command=self._run_all_links_fix,
-            style="TButton",
+            text="Step 3: Auto-Fix (Run Last, includes Link Repair)",
+            command=self._run_auto_fixer,
+            style="Action.TButton",
         )
-        self.btn_link_fix.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+        self.btn_auto.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         ToolTip(
-            self.btn_link_fix, "Step 2: repair links to converted documents"
+            self.btn_auto, "Step 3: Run this last to clean up issues after other steps"
         )
+
+        if self.btn_ai_design is None:
+            self.btn_auto.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
 
         self.var_workflow_audit_each_step = tk.BooleanVar(
             value=self.config.get("workflow_audit_each_step", False)
@@ -4068,11 +4063,95 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         
         self.gui_handler.log(f"   [DEBUG] Loaded meta with {len(meta)} images")
 
-        # [FIX] Pop up even if meta is empty, so long as we have full page PNGs 
-        # for manual selection (Feature 5: select things that were not selected)
+        # [FIX] If no crop metadata exists (common in DOCX flows), bootstrap review
+        # cards from existing extracted images so teachers can still review and recrop.
+        if not meta:
+            candidate_exts = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+            existing_visuals = []
+            for fn in os.listdir(graphs_dir):
+                low = fn.lower()
+                if fn.startswith("full_p"):
+                    continue
+                if fn == "crop_meta.json":
+                    continue
+                if low.endswith(candidate_exts):
+                    existing_visuals.append(fn)
+
+            for fn in sorted(existing_visuals):
+                fp = os.path.join(graphs_dir, fn)
+                try:
+                    with Image.open(fp) as im:
+                        pw, ph = im.size
+                    if pw < 10 or ph < 10:
+                        continue
+                    meta[fn] = {
+                        "full_image": fn,
+                        "box_abs": [0, 0, pw, ph],
+                        "page_width": pw,
+                        "page_height": ph,
+                        "story": "",
+                        "type": "graph",
+                        "original_box": [0, 0, pw, ph],
+                    }
+                except Exception:
+                    continue
+
+            if existing_visuals:
+                self.gui_handler.log(f"   [DEBUG] Bootstrapped visual review from {len(existing_visuals)} extracted image(s)")
+
+        # [FIX] Pop up even if AI meta is empty, so long as we have full pages OR
+        # bootstrapped extracted visuals for manual selection/re-cropping.
         fpages = [f for f in os.listdir(graphs_dir) if f.startswith("full_p") and f.endswith(".png")]
         if not meta and not fpages:
-            self.gui_handler.log(f"   [DEBUG] No meta and no full pages - auto-approving")
+            # Final fallback: parse HTML for local <img src> references and make them reviewable.
+            try:
+                from bs4 import BeautifulSoup as _BS
+
+                if html_path and os.path.exists(html_path):
+                    with open(html_path, "r", encoding="utf-8", errors="ignore") as _hf:
+                        _soup = _BS(_hf.read(), "html.parser")
+
+                    html_parent = Path(html_path).parent
+                    harvested = 0
+                    for _idx, _img in enumerate(_soup.find_all("img"), 1):
+                        src = (_img.get("src") or "").strip()
+                        if not src or src.startswith("http://") or src.startswith("https://") or src.startswith("data:"):
+                            continue
+
+                        src_local = (html_parent / src).resolve()
+                        if not src_local.exists() or not src_local.is_file():
+                            continue
+
+                        # Copy to graphs_dir so existing review/crop pipeline can work unchanged.
+                        ext = src_local.suffix.lower() or ".png"
+                        safe_name = f"html_ref_{_idx}{ext}"
+                        dst_local = Path(graphs_dir) / safe_name
+                        if not dst_local.exists():
+                            shutil.copy2(src_local, dst_local)
+
+                        with Image.open(dst_local) as _im:
+                            _pw, _ph = _im.size
+                        if _pw < 10 or _ph < 10:
+                            continue
+
+                        meta[safe_name] = {
+                            "full_image": safe_name,
+                            "box_abs": [0, 0, _pw, _ph],
+                            "page_width": _pw,
+                            "page_height": _ph,
+                            "story": "",
+                            "type": "graph",
+                            "original_box": [0, 0, _pw, _ph],
+                        }
+                        harvested += 1
+
+                    if harvested:
+                        self.gui_handler.log(f"   [DEBUG] Harvested {harvested} HTML-referenced local image(s) for visual review")
+            except Exception as e_harvest:
+                self.gui_handler.log(f"   [DEBUG] HTML image harvest skipped: {e_harvest}")
+
+        if not meta and not fpages:
+            self.gui_handler.log(f"   [DEBUG] No reviewable visuals found - auto-approving")
             return True
 
         result = {"approved": False}
@@ -4683,6 +4762,18 @@ h1 {{ color: #4b3190; }}
             add_frame.pack(fill="x", padx=10, pady=10)
 
             fpages = sorted([f for f in os.listdir(graphs_dir) if f.startswith("full_p") and f.endswith(".png")])
+            # Fallback sources for add-missing when no full pages were generated.
+            if not fpages:
+                seen = set()
+                for info in meta.values():
+                    fi = info.get("full_image")
+                    if not fi:
+                        continue
+                    if fi in seen:
+                        continue
+                    if os.path.exists(os.path.join(graphs_dir, fi)):
+                        seen.add(fi)
+                fpages = sorted(seen)
 
             if fpages:
                 tk.Label(add_frame, text="Draw a rectangle on any page below to add a new visual element.", font=("Segoe UI", 9, "italic"), bg="white", fg="#555").pack(anchor="w", padx=5, pady=3)
@@ -5199,7 +5290,6 @@ Website: meri-becomming-code.github.io/mosh
             "btn_recommended",
             "btn_auto",
             "btn_inter",
-            "btn_link_fix",
             "btn_ai_design",
             "btn_audit",
             "btn_wizard",
@@ -5232,7 +5322,6 @@ Website: meri-becomming-code.github.io/mosh
             "btn_recommended",
             "btn_auto",
             "btn_inter",
-            "btn_link_fix",
             "btn_ai_design",
             "btn_audit",
             "btn_wizard",
@@ -5486,9 +5575,8 @@ Website: meri-becomming-code.github.io/mosh
             "Automate Full Workflow",
             "Run full workflow now in this order?\n\n"
             "1) Guided Review\n"
-            "2) Link Repair\n"
-            "3) AI Mobile Design (if enabled)\n"
-            "4) Auto-Fix (last)\n\n"
+            "2) AI Mobile Design (if enabled)\n"
+            "3) Auto-Fix (last; includes Link Repair)\n\n"
             "If compliance snapshots are enabled, MOSH will run one before start and after each step.",
         ):
             return
@@ -5535,26 +5623,18 @@ Website: meri-becomming-code.github.io/mosh
             self.gui_handler.log(f"   ✅ Guided Review complete ({reviewed_count} files).")
             run_compliance_snapshot("After Step 1 (Guided Review)")
 
-            # Step 2: Link repair
-            self.gui_handler.log("   Step 2/4: Global Link Repair")
-            doc_count, total_updated = self._perform_link_repair_logic()
-            self.gui_handler.log(
-                f"   ✅ Link Repair complete ({total_updated} repaired across {doc_count} documents)."
-            )
-            run_compliance_snapshot("After Step 2 (Link Repair)")
-
-            # Step 3: AI mobile design (optional)
+            # Step 2: AI mobile design (optional)
             api_key = self.config.get("api_key", "").strip()
             if api_key:
-                self.gui_handler.log("   Step 3/4: AI Mobile Design")
+                self.gui_handler.log("   Step 2/3: AI Mobile Design")
                 interactive_fixer.run_ai_design_fixer(self.target_dir, self.gui_handler)
                 self.gui_handler.log("   ✅ AI Mobile Design complete.")
             else:
-                self.gui_handler.log("   Step 3/4: AI Mobile Design skipped (no API key configured).")
-            run_compliance_snapshot("After Step 3 (AI Mobile Design)")
+                self.gui_handler.log("   Step 2/3: AI Mobile Design skipped (no API key configured).")
+            run_compliance_snapshot("After Step 2 (AI Mobile Design)")
 
-            # Step 4: Auto-fix LAST
-            self.gui_handler.log("   Step 4/4: Auto-Fix (last)")
+            # Step 3: Auto-fix LAST (includes global link repair)
+            self.gui_handler.log("   Step 3/3: Auto-Fix (last; includes Link Repair)")
             html_files = self._get_all_html_files()
             files_with_fixes = 0
             total_fixes = 0
@@ -5566,7 +5646,7 @@ Website: meri-becomming-code.github.io/mosh
             self.gui_handler.log(
                 f"   ✅ Auto-Fix complete ({total_fixes} fixes across {files_with_fixes} files)."
             )
-            run_compliance_snapshot("After Step 4 (Auto-Fix)")
+            run_compliance_snapshot("After Step 3 (Auto-Fix)")
 
             self.root.after(
                 0,
@@ -5575,9 +5655,8 @@ Website: meri-becomming-code.github.io/mosh
                     "Workflow complete.\n\n"
                     "Order used:\n"
                     "1) Guided Review\n"
-                    "2) Link Repair\n"
-                    "3) AI Mobile Design (if enabled)\n"
-                    "4) Auto-Fix (last)",
+                    "2) AI Mobile Design (if enabled)\n"
+                    "3) Auto-Fix (last; includes Link Repair)",
                 ),
             )
 
@@ -6985,6 +7064,13 @@ YOUR WORKFLOW:
             return
 
         def upload_task():
+            # Always verify and repair links before packaging/upload.
+            self.gui_handler.log("🔗 Checking and repairing links before upload...")
+            doc_count, total_repaired = self._perform_link_repair_logic()
+            self.gui_handler.log(
+                f"✅ Link check complete. Repaired {total_repaired} links across {doc_count} documents."
+            )
+
             # Run Janitor first!
             self.gui_handler.log("🧹 Mosh the Janitor is cleaning up...")
             cleaned = converter_utils.run_janitor_cleanup(
@@ -7882,9 +7968,17 @@ YOUR WORKFLOW:
                 # In teacher-paced mode we already reviewed visuals per page,
                 # so we should finalize/upload immediately.
                 dest_stem = Path(dest).stem
-                graphs_dir = str(Path(dest).parent / f"{dest_stem}_graphs")
+                graphs_candidates = [
+                    Path(dest).parent / f"{dest_stem}_graphs",
+                    Path(source).parent / f"{Path(source).stem}_graphs",
+                ]
+                graphs_dir = ""
+                for gd in graphs_candidates:
+                    if os.path.isdir(str(gd)):
+                        graphs_dir = str(gd)
+                        break
                 should_open_visual_review = False
-                if os.path.isdir(graphs_dir):
+                if graphs_dir and os.path.isdir(graphs_dir):
                     # PDFs already get per-page bbox review in teacher-paced mode.
                     # DOCX files do not, so still open full visual review for DOCX.
                     if (not step_mode_for_run) or str(source).lower().endswith(".docx"):
@@ -8340,8 +8434,16 @@ YOUR WORKFLOW:
 
                     # [NEW] Interactive Visual Review before finalizing
                     dest_stem = Path(output_path).stem
-                    graphs_dir = str(Path(output_path).parent / f"{dest_stem}_graphs")
-                    if os.path.isdir(graphs_dir):
+                    graphs_candidates = [
+                        Path(output_path).parent / f"{dest_stem}_graphs",
+                        Path(file_path).parent / f"{Path(file_path).stem}_graphs",
+                    ]
+                    graphs_dir = ""
+                    for gd in graphs_candidates:
+                        if os.path.isdir(str(gd)):
+                            graphs_dir = str(gd)
+                            break
+                    if graphs_dir and os.path.isdir(graphs_dir):
                         self.gui_handler.log(f"   🖼️ Opening Visual Review...")
                         approved = self.gui_handler.prompt_visual_review(output_path, graphs_dir)
                         if not approved:
