@@ -288,8 +288,8 @@ def remediate_html_file(filepath):
 
         # Enforce safe responsive image policy without upscaling.
         css_rule = (
-            ".main-content img { width: 100%; max-width: 40%; height: auto !important; }\n"
-            ".slide-container img { max-width: 40%; height: auto !important; }\n"
+            ".main-content img { width: auto; max-width: 100%; height: auto !important; }\n"
+            ".slide-container img { width: auto; max-width: 100%; height: auto !important; }\n"
             "@media (max-width: 768px) { .main-content img, .slide-container img { width: 100% !important; max-width: 100% !important; float: none !important; } }"
         )
         existing_css = "\n".join((st.get_text() or "") for st in head.find_all('style'))
@@ -1029,17 +1029,17 @@ def remediate_html_file(filepath):
             style = re.sub(r'max-width\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
             style = re.sub(r'height\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
             style = style.rstrip('; ')
-            style = (style + f"; width: 100%; max-width: min(40%, {intended_px}px); height: auto;").strip('; ') + ';'
+            style = (style + f"; width: auto; max-width: min(100%, {intended_px}px); height: auto;").strip('; ') + ';'
             img['style'] = style
             fixes.append(f"Preserved image max size at {intended_px}px while keeping it responsive: {os.path.basename(img.get('src', 'unknown'))}")
         elif 'max-width' not in style_low:
-            # Unknown original size: keep desktop footprint modest; mobile override handled in CSS.
-            new_style_part = "width: 100%; max-width: 40%; height: auto;"
+            # Unknown original size: preserve intrinsic sizing, only downscale to container.
+            new_style_part = "width: auto; max-width: 100%; height: auto;"
             if style:
                 img['style'] = style.rstrip(';') + "; " + new_style_part
             else:
                 img['style'] = new_style_part
-            fixes.append(f"Made image responsive with desktop max-width 40%: {os.path.basename(img.get('src', 'unknown'))}")
+            fixes.append(f"Made image responsive with intrinsic default sizing: {os.path.basename(img.get('src', 'unknown'))}")
         # 7c. Alt Text Logic
         if 'alt' not in img.attrs:
             # Hard requirement: every image must include an alt attribute.
@@ -1276,6 +1276,25 @@ def remediate_html_file(filepath):
             else:
                 a.string = f"View {context}"
                 fixes.append(f"Fixed vague link text '{text}' -> 'View {context}'")
+
+        # Ensure every link has a descriptive title attribute.
+        link_text_now = a.get_text(" ", strip=True)
+        href_now = (a.get('href') or '').strip()
+        current_title = (a.get('title') or '').strip()
+
+        # Treat empty/generic titles as missing.
+        generic_titles = {'link', 'click here', 'here', 'more', 'read more', 'learn more', 'view'}
+        needs_title = (not current_title) or (current_title.lower() in generic_titles)
+        if needs_title:
+            desc = link_text_now if link_text_now else "linked resource"
+            if href_now and any(href_now.lower().endswith(ext) for ext in doc_exts):
+                title_val = f"Download {desc}"
+            elif href_now:
+                title_val = f"Open {desc}"
+            else:
+                title_val = desc
+            a['title'] = title_val[:180]
+            fixes.append("Added descriptive title to link")
     
     for iframe in soup.find_all('iframe'):
         if not iframe.has_attr('title') or not iframe['title'].strip():

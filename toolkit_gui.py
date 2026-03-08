@@ -237,6 +237,7 @@ class ToolkitGUI:
             "math_step_mode": False,
             "math_has_visuals": True,
             "math_manual_visual_selection": True,
+            "math_strict_validation": True,
             "math_auto_responsive": True,
             "math_final_ada_check": True,
             "canvas_url": "",
@@ -332,6 +333,7 @@ class ToolkitGUI:
                 math_step_mode=getattr(self, 'var_math_step_mode', None) and self.var_math_step_mode.get() or False,
                 math_has_visuals=getattr(self, 'var_math_has_visuals', None) and self.var_math_has_visuals.get() or False,
                 math_manual_visual_selection=getattr(self, 'var_math_manual_visual_selection', None) and self.var_math_manual_visual_selection.get() or False,
+                math_strict_validation=getattr(self, 'var_math_strict_validation', None) and self.var_math_strict_validation.get() or False,
                 math_auto_responsive=getattr(self, 'var_math_auto_responsive', None) and self.var_math_auto_responsive.get() or False,
                 math_final_ada_check=getattr(self, 'var_math_final_ada_check', None) and self.var_math_final_ada_check.get() or False,
                 style_profile_mode=getattr(self, 'var_style_profile_mode', None) and self.var_style_profile_mode.get() or "default",
@@ -1416,6 +1418,25 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             "Recommended when AI over-selects. You draw/select only the real visuals to crop.",
         )
 
+        self.var_math_strict_validation = tk.BooleanVar(
+            value=self.config.get("math_strict_validation", True)
+        )
+        chk_strict_math = tk.Checkbutton(
+            frame_math_prefs,
+            text="Strict math validation (force review on low confidence/continuation arrows)",
+            variable=self.var_math_strict_validation,
+            command=self._quick_save_inputs,
+            bg="white",
+            font=("Segoe UI", 9),
+            activebackground="white",
+            selectcolor="white",
+        )
+        chk_strict_math.pack(anchor="w", pady=(2, 0))
+        ToolTip(
+            chk_strict_math,
+            "Adds a second-pass math QA check and opens teacher review when continuation arrows/column carryover or low confidence is detected.",
+        )
+
         self.var_math_auto_responsive = tk.BooleanVar(value=self.config.get("math_auto_responsive", True))
         chk_responsive = tk.Checkbutton(
             frame_math_prefs,
@@ -1704,6 +1725,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 math_step_mode=getattr(self, 'var_math_step_mode', None) and self.var_math_step_mode.get() or False,
                 math_has_visuals=getattr(self, 'var_math_has_visuals', None) and self.var_math_has_visuals.get() or False,
                 math_manual_visual_selection=getattr(self, 'var_math_manual_visual_selection', None) and self.var_math_manual_visual_selection.get() or False,
+                math_strict_validation=getattr(self, 'var_math_strict_validation', None) and self.var_math_strict_validation.get() or False,
                 math_auto_responsive=getattr(self, 'var_math_auto_responsive', None) and self.var_math_auto_responsive.get() or False,
                 math_final_ada_check=getattr(self, 'var_math_final_ada_check', None) and self.var_math_final_ada_check.get() or False,
                 style_profile_mode=getattr(self, 'var_style_profile_mode', None) and self.var_style_profile_mode.get() or "default",
@@ -3271,6 +3293,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         total_pages = int(payload.get("total_pages", 1))
         image_path = payload.get("image_path")
         content = payload.get("content", "")
+        validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
 
         result = {"action": "continue", "content": content}
         event = threading.Event()
@@ -3300,6 +3323,24 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             bg="#1a1a2e",
             fg="#9ad1ff",
         ).pack(anchor="w", pady=(3, 0))
+
+        if validation:
+            issues = validation.get("issues") or []
+            conf = validation.get("confidence", 0)
+            continuation_risk = bool(validation.get("continuation_risk", False))
+            issue_text = "; ".join(issues[:3]) if issues else "Potential math consistency risk detected."
+            if continuation_risk:
+                issue_text = "Continuation/column carryover risk detected. " + issue_text
+            warn = tk.Label(
+                hdr,
+                text=f"⚠ Strict Validation Flagged This Page (confidence: {conf}). {issue_text}",
+                font=("Segoe UI", 9, "bold"),
+                bg="#1a1a2e",
+                fg="#fbbf24",
+                wraplength=1220,
+                justify="left",
+            )
+            warn.pack(anchor="w", pady=(6, 0))
 
         body = tk.Frame(dialog, bg="#1a1a2e")
         body.pack(fill="both", expand=True, padx=16, pady=8)
@@ -4063,6 +4104,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         
         self.gui_handler.log(f"   [DEBUG] Loaded meta with {len(meta)} images")
 
+        bootstrapped_review = False
+
         # [FIX] If no crop metadata exists (common in DOCX flows), bootstrap review
         # cards from existing extracted images so teachers can still review and recrop.
         if not meta:
@@ -4093,6 +4136,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         "type": "graph",
                         "original_box": [0, 0, pw, ph],
                     }
+                    bootstrapped_review = True
                 except Exception:
                     continue
 
@@ -4146,6 +4190,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         harvested += 1
 
                     if harvested:
+                        bootstrapped_review = True
                         self.gui_handler.log(f"   [DEBUG] Harvested {harvested} HTML-referenced local image(s) for visual review")
             except Exception as e_harvest:
                 self.gui_handler.log(f"   [DEBUG] HTML image harvest skipped: {e_harvest}")
@@ -4192,13 +4237,20 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             tk.Label(hdr_top, text=f"{total_items} image(s) found", font=("Segoe UI", 11), bg="#1a1a2e", fg="#4fc3f7").pack(side="left", padx=15)
             
             # [NEW] Auto-Approve Toggle
-            auto_approve_var = tk.BooleanVar(value=self.config.get("auto_approve_visual", False))
+            # In manual math workflows (and bootstrapped review mode), do not auto-approve.
+            # Teachers must be able to inspect all detected visuals and add missing ones.
+            manual_math_mode = bool(self.config.get("math_manual_visual_selection", True))
+            allow_auto_approve = not (manual_math_mode or bootstrapped_review)
+            auto_approve_default = self.config.get("auto_approve_visual", False) if allow_auto_approve else False
+            auto_approve_var = tk.BooleanVar(value=auto_approve_default)
             def toggle_auto_approve():
                 self._update_config(auto_approve_visual=auto_approve_var.get())
             
             chk_auto = tk.Checkbutton(hdr_top, text="Auto-Approve Clear Pages", variable=auto_approve_var, command=toggle_auto_approve, bg="#1a1a2e", fg="#4fc3f7", selectcolor="#1a1a2e", font=("Segoe UI", 9, "bold"), activebackground="#1a1a2e", activeforeground="white")
             chk_auto.pack(side="right")
             ToolTip(chk_auto, "If all images have descriptions, skip this review next time.")
+            if not allow_auto_approve:
+                chk_auto.config(state="disabled")
 
             tk.Label(hdr, text="Drag on the page preview to redefine crops  |  Use +/- buttons to nudge 50px  |  Click cropped image to ZOOM", font=("Segoe UI", 9, "italic"), bg="#1a1a2e", fg="#aaa").pack(anchor="w", pady=(3, 0))
 
@@ -7986,19 +8038,27 @@ YOUR WORKFLOW:
 
                 if should_open_visual_review:
                     if step_mode_for_run:
-                        # Teacher-paced reliability mode: never block upload on optional QA windows.
-                        # We upload first, then open visual review as post-upload editing surface.
+                        # Teacher-paced mode: for DOCX + manual-visual workflows, block and
+                        # show review every time so teachers can interact with each file.
+                        # Otherwise keep non-blocking post-upload QA behavior.
                         finalize_file(source, dest, approved=True)
-                        log(f"   🖼️ Opening full Visual Review editor for {os.path.basename(dest)} (post-upload QA)...")
-                        self.root.after(
-                            0,
-                            lambda d=dest, g=graphs_dir: self._show_visual_review(
-                                d,
-                                g,
-                                non_modal=True,
-                                on_done=None,
-                            ),
-                        )
+                        is_docx = str(source).lower().endswith(".docx")
+                        if is_docx and manual_visual_selection_mode:
+                            log(f"   🖼️ Opening full Visual Review editor for {os.path.basename(dest)} (blocking/manual)...")
+                            approved_vr = self.gui_handler.prompt_visual_review(dest, graphs_dir)
+                            if not approved_vr:
+                                log("   ⏩ Visual review skipped by user.")
+                        else:
+                            log(f"   🖼️ Opening full Visual Review editor for {os.path.basename(dest)} (post-upload QA)...")
+                            self.root.after(
+                                0,
+                                lambda d=dest, g=graphs_dir: self._show_visual_review(
+                                    d,
+                                    g,
+                                    non_modal=True,
+                                    on_done=None,
+                                ),
+                            )
                         return
 
                     log(f"   🖼️ Opening full Visual Review editor for {os.path.basename(dest)} (non-blocking)...")
@@ -8028,6 +8088,10 @@ YOUR WORKFLOW:
             def visual_review_callback(page_data):
                 """Called by math_converter to let user review AI-detected bounding boxes."""
                 return self.gui_handler.prompt_bbox_review(page_data)
+
+            def latex_review_callback(review_payload):
+                """Strict math validation callback for teacher confirmation/edit."""
+                return self.gui_handler.prompt_latex_review(review_payload)
 
             per_file_state = {"apply_all": False, "all_value": None}
 
@@ -8085,6 +8149,8 @@ YOUR WORKFLOW:
                 detect_visuals_callback=detect_visuals_callback,
                 fast_license_mode=fast_start_mode,
                 manual_visual_selection=manual_visual_selection_mode,
+                strict_math_validation=bool(self.config.get("math_strict_validation", True)),
+                latex_review_callback=latex_review_callback,
             )
 
             if success:
@@ -8375,6 +8441,10 @@ YOUR WORKFLOW:
                     """Called by math_converter to let user review AI-detected bounding boxes."""
                     return self.gui_handler.prompt_bbox_review(page_data)
 
+                def latex_review_callback(review_payload):
+                    """Strict math validation callback for teacher confirmation/edit."""
+                    return self.gui_handler.prompt_latex_review(review_payload)
+
                 if file_type == "pdf":
                     # [FIX] Stop the pulse so we can show real page-by-page progress
                     self.root.after(0, self.progress_bar.stop)
@@ -8406,6 +8476,8 @@ YOUR WORKFLOW:
                         page_gate_callback=page_gate_callback,
                         detect_visuals=detect_visuals_for_file,
                         manual_visual_selection=manual_visual_selection_for_file,
+                        strict_math_validation=bool(self.config.get("math_strict_validation", True)),
+                        latex_review_callback=latex_review_callback,
                     )
                 elif file_type == "docx":
                     math_converter.set_api_tier(self.config.get("gemini_tier", "free"))

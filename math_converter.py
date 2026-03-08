@@ -8,6 +8,7 @@ import os
 import re
 import time
 import random
+import json
 import html as html_lib
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -119,6 +120,91 @@ def clean_gemini_response(text):
     text = re.sub(r'^\s*[A-Za-z]\s*$', '', text, flags=re.MULTILINE)
 
     return text.strip()
+
+
+def _extract_first_json_object(text):
+    """Best-effort extraction of first JSON object from model output."""
+    if not text:
+        return None
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*", "", t).strip()
+        t = re.sub(r"```$", "", t).strip()
+
+    start = t.find("{")
+    end = t.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    candidate = t[start : end + 1]
+    try:
+        return json.loads(candidate)
+    except Exception:
+        return None
+
+
+def validate_math_conversion_page(client, model, img, converted_content, log_func=None):
+    """Validate converted math for semantic risk and continuation-arrow issues."""
+    prompt = (
+        "You are a strict math QA validator for OCR-to-LaTeX conversion. "
+        "Compare the ORIGINAL page image with the CONVERTED HTML/LaTeX content and return ONLY JSON.\n\n"
+        "Primary checks:\n"
+        "1) Math correctness preservation (operators, signs, exponents, fractions, radicals, limits, trig notation).\n"
+        "2) Missing/extra terms.\n"
+        "3) Continuation risk: arrows or visual cues indicating expression continues in another column/region and may be broken in conversion.\n"
+        "4) Reading order risk for multi-column layouts.\n\n"
+        "Output schema (JSON only):\n"
+        "{\n"
+        "  \"valid\": true|false,\n"
+        "  \"confidence\": 0.0-1.0,\n"
+        "  \"continuation_risk\": true|false,\n"
+        "  \"needs_teacher_review\": true|false,\n"
+        "  \"issues\": [\"short issue 1\", \"short issue 2\"],\n"
+        "  \"suggestion\": \"one concise fix instruction\"\n"
+        "}\n\n"
+        "Mark needs_teacher_review=true if confidence < 0.92 OR any continuation/multi-column risk OR any non-trivial issue.\n\n"
+        "CONVERTED CONTENT:\n"
+        f"{converted_content[:16000]}"
+    )
+
+    response = generate_content_with_retry(
+        client=client,
+        model=model,
+        contents=[prompt, img],
+        log_func=log_func,
+    )
+
+    parsed = _extract_first_json_object(getattr(response, "text", "") or "")
+    if not isinstance(parsed, dict):
+        return {
+            "valid": False,
+            "confidence": 0.0,
+            "continuation_risk": True,
+            "needs_teacher_review": True,
+            "issues": ["Validation parser could not read model output"],
+            "suggestion": "Open teacher review and confirm math/ordering manually.",
+        }
+
+    parsed.setdefault("valid", False)
+    parsed.setdefault("confidence", 0.0)
+    parsed.setdefault("continuation_risk", False)
+    parsed.setdefault("needs_teacher_review", False)
+    parsed.setdefault("issues", [])
+    parsed.setdefault("suggestion", "")
+
+    # Safety guardrails even if model under-flags.
+    try:
+        conf = float(parsed.get("confidence", 0.0))
+    except Exception:
+        conf = 0.0
+    if conf < 0.92:
+        parsed["needs_teacher_review"] = True
+    if parsed.get("continuation_risk"):
+        parsed["needs_teacher_review"] = True
+    if parsed.get("issues"):
+        parsed["needs_teacher_review"] = True
+
+    return parsed
 
 
 def repair_docx_placeholder_image_sources(html_content, source_docx_path, log_func=None):
@@ -597,7 +683,7 @@ def extract_and_crop_graphs(html_content, image_path, output_dir, base_name, pag
         
     return html_content
 
-def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, manual_visual_selection=False):
+def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, progress_callback=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, manual_visual_selection=False, strict_math_validation=False, latex_review_callback=None):
     """
     Convert a PDF with handwritten math to Canvas LaTeX.
     
@@ -746,6 +832,51 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
 
             idx, content = process_page(i, img_path)
             all_content[idx] = content
+
+            # Strict validation pass: catches continuation arrows / column-order risks.
+            if strict_math_validation and content:
+                try:
+                    with Image.open(sorted_image_paths[idx]) as img_page:
+                        validation = validate_math_conversion_page(
+                            client=client,
+                            model='gemini-2.0-flash',
+                            img=img_page,
+                            converted_content=content,
+                            log_func=log_func,
+                        )
+
+                    needs_review = bool(validation.get("needs_teacher_review"))
+                    if needs_review:
+                        issues = validation.get("issues") or []
+                        if log_func:
+                            log_func(
+                                f"   ⚠️ Strict math validation flagged page {idx+1}: "
+                                + ("; ".join(issues[:3]) if issues else "manual confirmation required")
+                            )
+
+                        if latex_review_callback:
+                            review_payload = {
+                                "file_name": Path(pdf_path).name,
+                                "page_num": idx + 1,
+                                "total_pages": total_pages,
+                                "image_path": str(sorted_image_paths[idx]),
+                                "content": content,
+                                "validation": validation,
+                            }
+                            reviewed = latex_review_callback(review_payload)
+                            if isinstance(reviewed, dict):
+                                action = reviewed.get("action", "continue")
+                                reviewed_content = reviewed.get("content", content)
+                                all_content[idx] = reviewed_content
+                                content = reviewed_content
+                                if action == "skip_file":
+                                    stop_early = True
+                                    if log_func:
+                                        log_func(f"   ⏭️ Teacher skipped remaining pages for {Path(pdf_path).name} during strict validation.")
+                                    break
+                except Exception as e_validate:
+                    if log_func:
+                        log_func(f"   ⚠️ Strict validation warning on page {idx+1}: {e_validate}")
 
             # Teacher-paced mode: review each page immediately after conversion.
             # This keeps flow predictable: review -> process next page.
@@ -1072,7 +1203,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"❌ Error: {e}")
         return False, str(e)
 
-def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, detect_visuals_callback=None, fast_license_mode=False, manual_visual_selection=False):
+def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, detect_visuals_callback=None, fast_license_mode=False, manual_visual_selection=False, strict_math_validation=False, latex_review_callback=None):
     """
     Process all PDFs in a Canvas export (IMSCC) structure.
     Includes licensing/attribution checking to protect teachers.
@@ -1259,6 +1390,8 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                     page_gate_callback=gate_cb,
                     detect_visuals=detect_visuals_for_file,
                     manual_visual_selection=manual_visual_selection,
+                    strict_math_validation=strict_math_validation,
+                    latex_review_callback=latex_review_callback,
                 )
             elif ext == '.docx':
                 if not _docx_has_math(str(p)):
