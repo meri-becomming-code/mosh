@@ -4199,6 +4199,94 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             self.gui_handler.log(f"   [DEBUG] No reviewable visuals found - auto-approving")
             return True
 
+        # Normalize metadata to prevent stale out-of-bounds boxes (from older builds)
+        # from making Expand/Trim appear to do nothing.
+        def _normalize_crop_meta_entries(meta_dict):
+            if not isinstance(meta_dict, dict):
+                return
+            full_pages = sorted(
+                [f for f in os.listdir(graphs_dir) if f.startswith("full_p") and f.endswith(".png")]
+            )
+
+            for gn, info in list(meta_dict.items()):
+                if not isinstance(info, dict):
+                    continue
+
+                fi = (info.get("full_image") or "").strip()
+
+                # HARD RULE: prefer full-page source context whenever available.
+                # This keeps visual selection in "see the whole image/page" mode.
+                preferred_full = None
+                m_pg_name = re.search(r"_p(\d+)_", gn)
+                if m_pg_name and full_pages:
+                    cand = f"full_p{m_pg_name.group(1)}.png"
+                    if os.path.exists(os.path.join(graphs_dir, cand)):
+                        preferred_full = cand
+                if not preferred_full and fi:
+                    m_pg_src = re.search(r"full_p(\d+)\.png$", fi)
+                    if m_pg_src and os.path.exists(os.path.join(graphs_dir, fi)):
+                        preferred_full = fi
+                if not preferred_full and full_pages and len(full_pages) == 1:
+                    preferred_full = full_pages[0]
+                if preferred_full:
+                    fi = preferred_full
+                    info["full_image"] = preferred_full
+
+                # Try to reattach to full page if the crop points to itself and page hint exists.
+                # Example crop name: MyDoc_p3_graph1.png -> full_p3.png
+                if (not fi or fi == gn) and full_pages:
+                    m_pg = re.search(r"_p(\d+)_", gn)
+                    if m_pg:
+                        candidate = f"full_p{m_pg.group(1)}.png"
+                        if os.path.exists(os.path.join(graphs_dir, candidate)):
+                            fi = candidate
+                            info["full_image"] = candidate
+
+                src_path = os.path.join(graphs_dir, fi) if fi else ""
+                if not src_path or not os.path.exists(src_path):
+                    # Keep current info if we cannot resolve a source image.
+                    continue
+
+                try:
+                    with Image.open(src_path) as _src:
+                        pw, ph = _src.size
+                except Exception:
+                    continue
+
+                info["page_width"] = int(pw)
+                info["page_height"] = int(ph)
+
+                box = info.get("box_abs") or [0, 0, pw, ph]
+                if len(box) != 4:
+                    box = [0, 0, pw, ph]
+
+                x1, y1, x2, y2 = [int(v) for v in box]
+                x1 = max(0, min(pw, x1))
+                y1 = max(0, min(ph, y1))
+                x2 = max(0, min(pw, x2))
+                y2 = max(0, min(ph, y2))
+
+                # Ensure valid ordering and minimum size.
+                if x2 <= x1:
+                    x1, x2 = 0, pw
+                if y2 <= y1:
+                    y1, y2 = 0, ph
+
+                info["box_abs"] = [int(x1), int(y1), int(x2), int(y2)]
+                if "original_box" in info and isinstance(info.get("original_box"), list) and len(info["original_box"]) == 4:
+                    ox1, oy1, ox2, oy2 = [int(v) for v in info["original_box"]]
+                    ox1 = max(0, min(pw, ox1))
+                    oy1 = max(0, min(ph, oy1))
+                    ox2 = max(0, min(pw, ox2))
+                    oy2 = max(0, min(ph, oy2))
+                    if ox2 > ox1 and oy2 > oy1:
+                        info["original_box"] = [ox1, oy1, ox2, oy2]
+
+                meta_dict[gn] = info
+
+        _normalize_crop_meta_entries(meta)
+        self.gui_handler.log("   [VISUAL REVIEW] Full-image context mode enforced.")
+
         result = {"approved": False}
         event = threading.Event()
         full_pages_cache = {}
@@ -8109,11 +8197,13 @@ YOUR WORKFLOW:
                     if os.path.isdir(str(gd)):
                         graphs_dir = str(gd)
                         break
+                # [FIX] Always open visual review if any images are present in graphs_dir
                 should_open_visual_review = False
                 if graphs_dir and os.path.isdir(graphs_dir):
-                    # PDFs already get per-page bbox review in teacher-paced mode.
-                    # DOCX files do not, so still open full visual review for DOCX.
-                    if (not step_mode_for_run) or str(source).lower().endswith(".docx"):
+                    # If there are any image files in the graphs_dir, force visual review
+                    candidate_exts = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+                    image_files = [fn for fn in os.listdir(graphs_dir) if fn.lower().endswith(candidate_exts)]
+                    if image_files:
                         should_open_visual_review = True
 
                 if should_open_visual_review:

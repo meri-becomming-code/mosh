@@ -126,6 +126,16 @@ def fix_emoji_accessibility(soup):
     return fixes
 
 def remediate_html_file(filepath):
+        # --- List Cleanup: Remove empty or fragmentary <li> and collapse empty lists ---
+        for lst in soup.find_all(['ul', 'ol']):
+            # Remove <li> that are empty or only whitespace/nbsp
+            for li in list(lst.find_all('li')):
+                txt = li.get_text(" ", strip=True)
+                if not txt or txt == '\u00a0' or txt.lower() in {'', ' ', '&nbsp;', '\u00a0'}:
+                    li.decompose()
+            # If after cleanup, the list has no <li>, remove the list
+            if not lst.find('li'):
+                lst.decompose()
     """
     MASTER REMEDIATION LOGIC (V3):
     1. Clean Strategy (Toolkit 1): Strips bad tags/styles without forcing layout.
@@ -1136,29 +1146,59 @@ def remediate_html_file(filepath):
             missing_files = [fn for fn in sorted(all_graph_files) if fn not in referenced_basenames]
 
             if missing_files:
-                # Fill existing empty visual containers first.
+                # Try to restore images inline at their original reference points.
+                for fn in list(missing_files):
+                    # Heuristic: look for a comment or placeholder span with the filename, or a div with a matching data attribute.
+                    inserted = False
+                    # 1. Look for a comment node with the filename
+                    for comment in soup.find_all(string=lambda t: isinstance(t, Comment)):
+                        if fn in str(comment):
+                            # Insert image after the comment
+                            src = f"{html_stem}_graphs/{fn}"
+                            new_img = soup.new_tag('img')
+                            new_img['src'] = src
+                            new_img['alt'] = 'Visual Element'
+                            new_img['style'] = "width: 50%; max-width: 600px; height: auto; border: 1px solid #ccc; display: block; margin: 15px auto;"
+                            comment.insert_after(new_img)
+                            fixes.append(f"Restored missing image inline at comment: {fn}")
+                            inserted = True
+                            break
+                    if inserted:
+                        missing_files.remove(fn)
+                        continue
+                    # 2. Look for a span or div with a placeholder for this image
+                    placeholder = soup.find(lambda tag: tag.name in ['span', 'div'] and fn in (tag.get('data-img-placeholder', '') or tag.get('id', '') or ''))
+                    if placeholder:
+                        src = f"{html_stem}_graphs/{fn}"
+                        new_img = soup.new_tag('img')
+                        new_img['src'] = src
+                        new_img['alt'] = 'Visual Element'
+                        new_img['style'] = "width: 50%; max-width: 600px; height: auto; border: 1px solid #ccc; display: block; margin: 15px auto;"
+                        placeholder.insert_after(new_img)
+                        fixes.append(f"Restored missing image inline at placeholder: {fn}")
+                        inserted = True
+                        missing_files.remove(fn)
+                        continue
+                # Fill existing empty visual containers next.
                 empty_visuals = [dv for dv in soup.find_all('div', class_='mosh-visual') if not dv.find('img')]
                 for dv in empty_visuals:
                     if not missing_files:
                         break
                     fn = missing_files.pop(0)
                     src = f"{html_stem}_graphs/{fn}"
-
                     detail_div = dv.find('details')
                     alt_text = "Visual Element"
                     if detail_div:
                         detail_text = detail_div.get_text(" ", strip=True)
                         if detail_text:
                             alt_text = detail_text[:120].strip()
-
                     new_img = soup.new_tag('img')
                     new_img['src'] = src
                     new_img['alt'] = alt_text
                     new_img['style'] = "width: 50%; max-width: 600px; height: auto; border: 1px solid #ccc; display: block; margin: 15px auto;"
                     dv.insert(0, new_img)
                     fixes.append(f"Restored missing image in mosh-visual block: {fn}")
-
-                # If assets are still unreferenced, append as standalone visual blocks.
+                # If assets are still unreferenced, append as standalone visual blocks at the end.
                 if missing_files:
                     host = soup.find('div', class_='content-wrapper') or soup.find('body') or soup
                     for fn in list(missing_files):
@@ -1604,19 +1644,40 @@ def remediate_html_file(filepath):
             continue
 
         normalized = re.sub(r'\s+', ' ', raw).strip()
-        # Split at likely entry boundaries without look-behind (Python re requires fixed-width).
-        # Boundary = page number + spaces, followed by a new capitalized heading/section.
-        boundary_re = re.compile(r'\b\d{1,3}\b\s+(?=(?:Section|Chapter|[A-Z][a-z]))')
+
+        # Robust TOC splitting strategy:
+        # Treat standalone 1-3 digit numbers (not part of decimals like 2.1) as page numbers,
+        # and split entries at each page-number terminus.
+        page_token_re = re.compile(r'(?<![\d\.])\d{1,3}(?![\d\.])')
         parts = []
         start_idx = 0
-        for m in boundary_re.finditer(normalized):
+        for m in page_token_re.finditer(normalized):
             chunk = normalized[start_idx:m.end()].strip(" \t-–•")
-            if len(chunk) > 2:
+            if len(chunk) > 8 and len(chunk.split()) >= 2:
                 parts.append(chunk)
             start_idx = m.end()
-        tail = normalized[start_idx:].strip(" \t-–•")
-        if len(tail) > 2:
-            parts.append(tail)
+
+        # If numeric splitting produced nothing useful, use a heading-boundary fallback.
+        if len(parts) < 3:
+            boundary_re = re.compile(r'\s+(?=(?:Section\s+\d|Chapter\s+\d|[A-Z][a-z]))')
+            fallback = []
+            current = []
+            for tok in boundary_re.split(normalized):
+                tok = tok.strip(" \t-–•")
+                if not tok:
+                    continue
+                current.append(tok)
+                # Close an item when it ends with a likely page number.
+                if re.search(r'(?<![\d\.])\d{1,3}(?![\d\.])$', tok):
+                    item = ' '.join(current).strip()
+                    if len(item) > 8:
+                        fallback.append(item)
+                    current = []
+            if current:
+                tail_item = ' '.join(current).strip()
+                if len(tail_item) > 8:
+                    fallback.append(tail_item)
+            parts = fallback
 
         if len(parts) < 3:
             continue
@@ -1630,6 +1691,20 @@ def remediate_html_file(filepath):
 
         p.replace_with(ul)
         fixes.append("Repaired smushed table-of-contents paragraph into list")
+
+    # 9d. Remove duplicate "Table of Contents" paragraph directly under TOC summary/details.
+    for det in soup.find_all('details'):
+        summary = det.find('summary')
+        if not summary:
+            continue
+        summary_text = summary.get_text(" ", strip=True).lower()
+        if "table of contents" not in summary_text:
+            continue
+        for p in list(det.find_all('p', recursive=False)):
+            p_text = p.get_text(" ", strip=True).lower()
+            if p_text in {"table of contents", "contents", "table of content"}:
+                p.decompose()
+                fixes.append("Removed duplicate TOC heading paragraph inside details")
 
     # 9b. Orphan <li> repair: ensure every list item is inside <ul> or <ol>.
     # Some upstream transforms can leave stray <li> nodes under <div>/<p> containers.

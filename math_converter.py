@@ -1326,7 +1326,10 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             remaining_paths.append(fp)
     
     if log_func:
-        log_func(f"   📊 Status: {already_done} already converted, {len(remaining_paths)} remaining.")
+        log_func(
+            f"   📊 Status: {already_done} already converted, {len(remaining_paths)} remaining "
+            f"(based on existing .html files next to source files in this extracted folder)."
+        )
         if not remaining_paths:
             log_func("   ✨ Everything is already up to date!")
             return True, []
@@ -1347,7 +1350,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             
             html_output_path = p.parent / f"{p.stem}.html"
             if html_output_path.exists():
-                if log_func: log_func(f"   ⏩ Skipping: {p.name} (Already converted)")
+                if log_func: log_func(f"   ⏩ Skipping: {p.name} (Already converted: found {html_output_path.name})")
                 # Still trigger callback to ensure upload happens if needed
                 if on_file_converted:
                     try:
