@@ -288,8 +288,8 @@ def remediate_html_file(filepath):
 
         # Enforce safe responsive image policy without upscaling.
         css_rule = (
-            ".main-content img { width: auto; max-width: 100%; height: auto !important; }\n"
-            ".slide-container img { width: auto; max-width: 100%; height: auto !important; }\n"
+            ".main-content img { width: 50%; max-width: 50%; height: auto !important; }\n"
+            ".slide-container img { width: 50%; max-width: 50%; height: auto !important; }\n"
             "@media (max-width: 768px) { .main-content img, .slide-container img { width: 100% !important; max-width: 100% !important; float: none !important; } }"
         )
         existing_css = "\n".join((st.get_text() or "") for st in head.find_all('style'))
@@ -1029,12 +1029,12 @@ def remediate_html_file(filepath):
             style = re.sub(r'max-width\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
             style = re.sub(r'height\s*:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
             style = style.rstrip('; ')
-            style = (style + f"; width: auto; max-width: min(100%, {intended_px}px); height: auto;").strip('; ') + ';'
+            style = (style + f"; width: 50%; max-width: {intended_px}px; height: auto;").strip('; ') + ';'
             img['style'] = style
             fixes.append(f"Preserved image max size at {intended_px}px while keeping it responsive: {os.path.basename(img.get('src', 'unknown'))}")
         elif 'max-width' not in style_low:
             # Unknown original size: preserve intrinsic sizing, only downscale to container.
-            new_style_part = "width: auto; max-width: 100%; height: auto;"
+            new_style_part = "width: 50%; max-width: 50%; height: auto;"
             if style:
                 img['style'] = style.rstrip(';') + "; " + new_style_part
             else:
@@ -1108,6 +1108,70 @@ def remediate_html_file(filepath):
         ):
             img['data-table-check'] = "true"
             fixes.append(f"Flagged potential table image for HTML table conversion: {os.path.basename(src)}")
+
+    # 7f. Recover missing image tags in visual blocks (description present, image missing).
+    # This can happen after iterative edit/replace flows. Reconcile against local *_graphs assets.
+    try:
+        html_dir = os.path.dirname(filepath)
+        html_stem = os.path.splitext(os.path.basename(filepath))[0]
+        graphs_dir = os.path.join(html_dir, f"{html_stem}_graphs")
+
+        if os.path.isdir(graphs_dir):
+            all_graph_files = []
+            for fn in os.listdir(graphs_dir):
+                low = fn.lower()
+                if low.startswith("full_p"):
+                    continue
+                if low.endswith("_longdesc.html"):
+                    continue
+                if low.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".svg")):
+                    all_graph_files.append(fn)
+
+            referenced_basenames = set()
+            for im in soup.find_all('img'):
+                src = (im.get('src') or '').strip()
+                if src:
+                    referenced_basenames.add(os.path.basename(src))
+
+            missing_files = [fn for fn in sorted(all_graph_files) if fn not in referenced_basenames]
+
+            if missing_files:
+                # Fill existing empty visual containers first.
+                empty_visuals = [dv for dv in soup.find_all('div', class_='mosh-visual') if not dv.find('img')]
+                for dv in empty_visuals:
+                    if not missing_files:
+                        break
+                    fn = missing_files.pop(0)
+                    src = f"{html_stem}_graphs/{fn}"
+
+                    detail_div = dv.find('details')
+                    alt_text = "Visual Element"
+                    if detail_div:
+                        detail_text = detail_div.get_text(" ", strip=True)
+                        if detail_text:
+                            alt_text = detail_text[:120].strip()
+
+                    new_img = soup.new_tag('img')
+                    new_img['src'] = src
+                    new_img['alt'] = alt_text
+                    new_img['style'] = "width: 50%; max-width: 600px; height: auto; border: 1px solid #ccc; display: block; margin: 15px auto;"
+                    dv.insert(0, new_img)
+                    fixes.append(f"Restored missing image in mosh-visual block: {fn}")
+
+                # If assets are still unreferenced, append as standalone visual blocks.
+                if missing_files:
+                    host = soup.find('div', class_='content-wrapper') or soup.find('body') or soup
+                    for fn in list(missing_files):
+                        src = f"{html_stem}_graphs/{fn}"
+                        dv = soup.new_tag('div', attrs={'class': 'mosh-visual'})
+                        dv['style'] = "text-align: center; margin: 2% 0;"
+                        im = soup.new_tag('img', src=src, alt='Visual Element')
+                        im['style'] = "width: 50%; max-width: 600px; height: auto; border: 1px solid #ccc; display: block; margin: 15px auto;"
+                        dv.append(im)
+                        host.append(dv)
+                        fixes.append(f"Appended unreferenced graph image asset: {fn}")
+    except Exception:
+        pass
 
     # --- Part 7f: Horizontal separators ---
     # Some checkers produce false contrast flags on <hr> even when color contrast is valid.
@@ -1516,6 +1580,56 @@ def remediate_html_file(filepath):
                 # Advance index by how many we removed
                 i += len(list_items) - 1
         i += 1
+
+    # 9c. TOC de-smush repair: split long table-of-contents-like paragraphs into list items.
+    for p in list(soup.find_all('p')):
+        if p.find(['ul', 'ol', 'table', 'img', 'pre', 'code']):
+            continue
+
+        raw = p.get_text(" ", strip=True)
+        if len(raw) < 120:
+            continue
+
+        lower = raw.lower()
+        page_nums = re.findall(r'\b\d{1,3}\b', raw)
+        section_hits = len(re.findall(r'\b(section|chapter)\b', lower))
+
+        # Only trigger on strong TOC signals to avoid false positives.
+        toc_like = (
+            ("table of contents" in lower)
+            or (len(page_nums) >= 6 and section_hits >= 2)
+            or (len(page_nums) >= 10)
+        )
+        if not toc_like:
+            continue
+
+        normalized = re.sub(r'\s+', ' ', raw).strip()
+        # Split at likely entry boundaries without look-behind (Python re requires fixed-width).
+        # Boundary = page number + spaces, followed by a new capitalized heading/section.
+        boundary_re = re.compile(r'\b\d{1,3}\b\s+(?=(?:Section|Chapter|[A-Z][a-z]))')
+        parts = []
+        start_idx = 0
+        for m in boundary_re.finditer(normalized):
+            chunk = normalized[start_idx:m.end()].strip(" \t-–•")
+            if len(chunk) > 2:
+                parts.append(chunk)
+            start_idx = m.end()
+        tail = normalized[start_idx:].strip(" \t-–•")
+        if len(tail) > 2:
+            parts.append(tail)
+
+        if len(parts) < 3:
+            continue
+
+        ul = soup.new_tag('ul')
+        ul['style'] = "margin-left: 20px; margin-bottom: 15px;"
+        for entry in parts:
+            li = soup.new_tag('li')
+            li.string = entry
+            ul.append(li)
+
+        p.replace_with(ul)
+        fixes.append("Repaired smushed table-of-contents paragraph into list")
 
     # 9b. Orphan <li> repair: ensure every list item is inside <ul> or <ol>.
     # Some upstream transforms can leave stray <li> nodes under <div>/<p> containers.

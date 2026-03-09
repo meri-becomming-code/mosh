@@ -3458,15 +3458,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         def build_dialog():
             dialog = Toplevel(self.root)
             dialog.title("Review Detected Images (Step 1 of 2)")
-            dialog.geometry("1280x820")
+            dialog.geometry("1360x960")
             dialog.transient(self.root)
             dialog.grab_set()
             dialog.configure(bg="#1a1a2e")
             dialog.lift()
             dialog.focus_force()
             
-            PAGE_W = 500
-            PAGE_H = 650
+            PAGE_W = 620
+            PAGE_H = max(1085, int(PAGE_W * 1.75))
             
             current_page = [0]  # Index into page_data
             tk_images = []
@@ -3738,7 +3738,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 set_refresh_button_state(True)
                 render_page(reset_selection=False)
             
-            tk.Button(side_content, text="🗑 Delete Selected", command=delete_selected,
+            tk.Button(side_content, text="🚫 Not an Image (Remove Box)", command=delete_selected,
                       bg="#dc2626", fg="white", font=("Segoe UI", 9, "bold")).pack(pady=5)
 
             btn_add_box = tk.Button(
@@ -4214,7 +4214,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             dialog = Toplevel(self.root)
             dialog.title(f"Visual Review: {os.path.basename(html_path)}")
-            dialog.geometry("1200x800")
+            dialog.geometry("1360x960")
             dialog.transient(self.root)
             if not non_modal:
                 dialog.grab_set()
@@ -4224,8 +4224,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             dialog.lift()
             dialog.focus_force()
 
-            PAGE_W = 350
-            PAGE_H = 480
+            PAGE_W = 700
+            PAGE_H = max(1225, int(PAGE_W * 1.75))
 
             total_items = len(meta)
 
@@ -4301,7 +4301,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 if not os.path.exists(cp):
                     return
                 p = Image.open(cp)
-                p.thumbnail((200, 150))
+                p.thumbnail((320, 240))
                 ti = ImageTk.PhotoImage(p)
                 tk_images.append(ti)
                 lbl.config(image=ti)
@@ -4312,7 +4312,14 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 box = info["box_abs"]
                 try:
                     with Image.open(fp) as src:
-                        crop = src.crop((box[0], box[1], box[2], box[3]))
+                        x1, y1, x2, y2 = [int(v) for v in box]
+                        x1 = max(0, min(src.width, x1))
+                        y1 = max(0, min(src.height, y1))
+                        x2 = max(0, min(src.width, x2))
+                        y2 = max(0, min(src.height, y2))
+                        if x2 <= x1 or y2 <= y1:
+                            return
+                        crop = src.crop((x1, y1, x2, y2))
                         crop.save(os.path.join(graphs_dir, gn))
                     _, sc, _ = load_full_page(info["full_image"])
                     draw_rect(pcv, box, sc)
@@ -4331,6 +4338,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 box = info["box_abs"]
                 pw, ph = info["page_width"], info["page_height"]
                 step = 50
+                before = tuple(box)
                 # expand grows outward, trim shrinks inward
                 if mode == "expand":
                     if d == "up":
@@ -4343,13 +4351,17 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         box[2] = min(pw, box[2] + step)
                 else:  # trim
                     if d == "up":
-                        box[1] = min(ph, box[1] + step)
+                        box[1] = min(box[3] - 1, box[1] + step)
                     elif d == "down":
-                        box[3] = max(0, box[3] - step)
+                        box[3] = max(box[1] + 1, box[3] - step)
                     elif d == "left":
-                        box[0] = min(pw, box[0] + step)
+                        box[0] = min(box[2] - 1, box[0] + step)
                     elif d == "right":
-                        box[2] = max(0, box[2] - step)
+                        box[2] = max(box[0] + 1, box[2] - step)
+
+                if tuple(box) == before and mode == "expand":
+                    self.gui_handler.log("   [CROP] Already at source edge for this direction")
+                    return
 
                 # Keep crop valid and non-trivial
                 min_size = 30
@@ -4539,6 +4551,55 @@ h1 {{ color: #4b3190; }}
                 except Exception as err:
                     self.gui_handler.log(f"   [OCR-TABLE] Error: {err}")
 
+            def ocr_to_text(gn, ae_widget):
+                """Convert a text image to accessible HTML text using Gemini OCR, preserving math."""
+                api_key = self.config.get("api_key", "").strip()
+                if not api_key:
+                    return
+                cp = os.path.join(graphs_dir, gn)
+                if not os.path.exists(cp):
+                    return
+                try:
+                    import google.genai as genai_ocr
+                    client = genai_ocr.Client(api_key=api_key)
+                    img = Image.open(cp)
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=[
+                            img,
+                            "This image contains text and may include math expressions. OCR it and return clean semantic HTML only "
+                            "using <p>, <ul>, <ol>, <li>, <strong>, <em>, and <code> where appropriate. "
+                            "If math appears inline, encode it as LaTeX in \\(...\\). If display math appears, encode it in $$...$$. "
+                            "Preserve wording and reading order exactly where possible, including continuation markers/arrows. "
+                            "Do NOT include markdown fences."
+                        ]
+                    )
+                    text_html = response.text.strip() if response.text else ""
+                    if text_html.startswith("```"):
+                        text_html = text_html.split("\n", 1)[-1]
+                    if text_html.endswith("```"):
+                        text_html = text_html.rsplit("```", 1)[0]
+
+                    if text_html and ("<" in text_html and ">" in text_html):
+                        info_for_gn = meta.get(gn, {})
+                        info_for_gn["text_html"] = text_html
+                        with meta_lock:
+                            meta[gn] = info_for_gn
+
+                        def update_w():
+                            ae_widget.delete("1.0", "end")
+                            ae_widget.insert("1.0", "OCR text extracted (will replace image with text block)")
+                            if gn in meta and "_alt_widget" in meta[gn]:
+                                meta[gn]["_alt_widget"].event_generate("<KeyRelease>")
+
+                        self.root.after(0, update_w)
+                        self.gui_handler.log(f"   [OCR-TEXT] Converted {gn} to HTML text")
+                        self.root.after(0, lambda: messagebox.showinfo("Text OCR Complete", "Image has been OCR-converted to accessible HTML text.\nIt will replace the image in the final page."))
+                    else:
+                        self.gui_handler.log(f"   [OCR-TEXT] Could not extract text from {gn}")
+                except Exception as err:
+                    self.gui_handler.log(f"   [OCR-TEXT] Error: {err}")
+
             def on_type_change(gn, info, combo, ae_widget):
                 """Handle type dropdown change."""
                 new_type = combo.get()
@@ -4553,6 +4614,10 @@ h1 {{ color: #4b3190; }}
                     info["decorative"] = False
                     if messagebox.askyesno("Convert Table", "Would you like AI to convert this table image to an accessible HTML table?"):
                         threading.Thread(target=lambda: ocr_to_table(gn, ae_widget), daemon=True).start()
+                elif new_type == "Text":
+                    info["decorative"] = False
+                    if messagebox.askyesno("OCR Text", "Would you like AI to OCR this image into accessible HTML text (with math preserved as LaTeX)?"):
+                        threading.Thread(target=lambda: ocr_to_text(gn, ae_widget), daemon=True).start()
                 else:
                     info["decorative"] = False
                 # Trigger status update
@@ -4567,6 +4632,7 @@ h1 {{ color: #4b3190; }}
                     with meta_lock:
                         if gn in meta: del meta[gn]
                     cf.destroy()
+                    self.gui_handler.log(f"   [NOT IMAGE] Removed {gn} from image export list")
                 except Exception as err:
                     self.gui_handler.log(f"   [DEL] Error: {err}")
 
@@ -4663,7 +4729,7 @@ h1 {{ color: #4b3190; }}
                 type_row = tk.Frame(right, bg="white")
                 type_row.pack(fill="x", pady=2)
                 tk.Label(type_row, text="Type:", font=("Segoe UI", 9, "bold"), bg="white").pack(side="left")
-                type_options = ["Graph", "Diagram", "Table", "Icon", "Decorative"]
+                type_options = ["Graph", "Diagram", "Table", "Text", "Icon", "Decorative"]
                 current_type = info.get("type", "graph").capitalize()
                 if current_type not in type_options:
                     current_type = "Graph"
@@ -4681,7 +4747,7 @@ h1 {{ color: #4b3190; }}
                 try:
                     pc = Image.open(cp)
                     crop_w, crop_h = pc.size
-                    pc.thumbnail((200, 150))
+                    pc.thumbnail((320, 240))
                     tc = ImageTk.PhotoImage(pc)
                     tk_images.append(tc)
                     lbl_c = tk.Label(cf2, image=tc, bg="#f9f9f9", borderwidth=1, relief="solid", cursor="plus")
@@ -4751,7 +4817,7 @@ h1 {{ color: #4b3190; }}
                 # Action row
                 act_row = tk.Frame(right, bg="white")
                 act_row.pack(fill="x", pady=3)
-                tk.Button(act_row, text="\U0001f5d1 Delete", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", activebackground="#fecaca", activeforeground="#991b1b", relief="flat", borderwidth=0, cursor="hand2", padx=10).pack(side="left", padx=(0, 5))
+                tk.Button(act_row, text="\U0001f6ab Not an Image", command=lambda g=gn, c=card: del_item(g, c), font=("Segoe UI", 9, "bold"), bg="#FEE2E2", fg="#c0392b", activebackground="#fecaca", activeforeground="#991b1b", relief="flat", borderwidth=0, cursor="hand2", padx=10).pack(side="left", padx=(0, 5))
 
                 def mark_decorative(g=gn, w=ae, i=info, c=type_combo):
                     w.delete("1.0", "end")
@@ -4977,6 +5043,20 @@ h1 {{ color: #4b3190; }}
                                         wrapper = soup.new_tag("div", style="overflow-x:auto; max-width:100%;")
                                         wrapper.append(table_soup)
                                         dv.replace_with(wrapper)
+
+                    # Replace text images with OCR text HTML blocks
+                    for gn, info in meta_snapshot.items():
+                        tx = info.get("text_html")
+                        if tx:
+                            for dv in soup.find_all("div", class_="mosh-visual"):
+                                im = dv.find("img")
+                                if im and gn in im.get("src", ""):
+                                    from bs4 import BeautifulSoup as BS2
+                                    text_soup = BS2(tx, "html.parser")
+                                    wrapper = soup.new_tag("div", attrs={"class": "mosh-ocr-text"})
+                                    wrapper["style"] = "max-width:100%; margin:15px 0; line-height:1.6;"
+                                    wrapper.append(text_soup)
+                                    dv.replace_with(wrapper)
 
                     with open(html_path, "w", encoding="utf-8") as f:
                         f.write(str(soup))
