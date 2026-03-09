@@ -7742,15 +7742,13 @@ YOUR WORKFLOW:
                 )
                 import urllib.parse
 
+                # Batch upload all images after processing the file, not per image
+                local_images = []
                 for img in images:
                     local_src = img.get("src")
                     if not local_src or "http" in local_src:
                         continue
-
-                    # [FIX] Handle URL-encoded characters in local paths (e.g. %20 for space)
                     clean_src = urllib.parse.unquote(local_src)
-
-                    # Resolve absolute path (supports $IMS-CC-FILEBASE$ and encoded paths)
                     img_abs_path = interactive_fixer.resolve_image_path(
                         clean_src, html_path, self.target_dir, self.gui_handler
                     )
@@ -7759,20 +7757,7 @@ YOUR WORKFLOW:
                             os.path.dirname(html_path), clean_src
                         )
                     if os.path.exists(img_abs_path):
-                        success_img, res_img = api.upload_file(
-                            img_abs_path, folder_path="remediated_images"
-                        )
-                        if success_img:
-                            # Canvas relative links usually look like /courses/:id/files/:file_id/preview
-                            canvas_img_url = f"/courses/{self.config['canvas_course_id']}/files/{res_img['id']}/preview"
-                            img["src"] = canvas_img_url
-                            self.gui_handler.log(
-                                f"      Uploaded: {os.path.basename(img_abs_path)}"
-                            )
-                        else:
-                            self.gui_handler.log(
-                                f"      [WARNING] Image upload failed: {res_img}"
-                            )
+                        local_images.append((img, img_abs_path))
                     else:
                         self.gui_handler.log(
                             f"      [MISSING IMAGE] Could not find local image: {clean_src}"
@@ -7780,6 +7765,22 @@ YOUR WORKFLOW:
                         img.decompose()
                         self.gui_handler.log(
                             "      [WARNING] Missing image removed automatically."
+                        )
+
+                # Now upload all images in a batch
+                for img, img_abs_path in local_images:
+                    success_img, res_img = api.upload_file(
+                        img_abs_path, folder_path="remediated_images"
+                    )
+                    if success_img:
+                        canvas_img_url = f"/courses/{self.config['canvas_course_id']}/files/{res_img['id']}/preview"
+                        img["src"] = canvas_img_url
+                        self.gui_handler.log(
+                            f"      Uploaded: {os.path.basename(img_abs_path)}"
+                        )
+                    else:
+                        self.gui_handler.log(
+                            f"      [WARNING] Image upload failed: {res_img}"
                         )
 
             # Re-run fixer after image mutations so uploaded wiki body keeps ADA table/font fixes.
