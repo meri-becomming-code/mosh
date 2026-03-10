@@ -4,6 +4,7 @@
 import os
 import sys
 import json
+import time
 from bs4 import BeautifulSoup
 import urllib.request
 import urllib.parse
@@ -316,6 +317,68 @@ def ensure_short_path(filepath):
         return os.path.join(dirname, new_name)
     return filepath
 
+def _normalize_windows_path(path):
+    """Normalize and long-path-protect Windows paths for reliable writes."""
+    normalized = os.path.normpath(os.path.abspath(str(path)))
+    if os.name == "nt":
+        # Add long-path prefix only when needed and not already present/UNC-prefixed.
+        if not normalized.startswith("\\\\?\\") and len(normalized) >= 240:
+            if normalized.startswith("\\\\"):
+                normalized = "\\\\?\\UNC\\" + normalized.lstrip("\\")
+            else:
+                normalized = "\\\\?\\" + normalized
+    return normalized
+
+def safe_write_text(filepath, content, io_handler=None, retries=3):
+    """Atomically writes text with retries to avoid transient Windows file-lock errors."""
+    target_path = _normalize_windows_path(filepath)
+    parent_dir = os.path.dirname(target_path)
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        temp_path = None
+        try:
+            os.makedirs(parent_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=parent_dir,
+                prefix=".mosh_tmp_",
+                suffix=".html",
+                delete=False,
+            ) as tf:
+                tf.write(content)
+                tf.flush()
+                os.fsync(tf.fileno())
+                temp_path = tf.name
+
+            os.replace(temp_path, target_path)
+            return True
+        except OSError as e:
+            last_error = e
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+            # Retry only for transient write issues.
+            transient = getattr(e, "errno", None) in (13, 22, 32)
+            if not transient or attempt >= retries:
+                break
+            if io_handler:
+                io_handler.log(
+                    f"  [WARN] Transient write issue (attempt {attempt}/{retries}) for {os.path.basename(filepath)}: {e}"
+                )
+            time.sleep(0.12 * attempt)
+        except Exception as e:
+            last_error = e
+            break
+
+    if last_error:
+        raise last_error
+    return False
+
 def save_html(filepath, soup, io_handler):
     """Saves the modified soup to the file."""
     try:
@@ -323,8 +386,7 @@ def save_html(filepath, soup, io_handler):
         filepath = ensure_short_path(filepath)
 
         io_handler.log(f"  [DEBUG] Attempting to save file: {filepath}")
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(str(soup))
+        safe_write_text(filepath, str(soup), io_handler=io_handler)
         io_handler.log(f"  [SUCCESS] Saved file: {os.path.basename(filepath)}")
         return True
     except Exception as e:
@@ -535,7 +597,11 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
         
         # [NEW] Math Equation Check (Flagged by run_fixer)
         if img.has_attr('data-math-check'):
-             issue = "Potential Math Equation (Needs Verification/LaTeX)"
+            issue = "Potential Math Equation (Needs Verification/LaTeX)"
+
+        # [NEW] Table Image Check (Flagged by run_fixer)
+        elif img.has_attr('data-table-check'):
+            issue = "Potential Data Table (Convert image to real HTML table)"
         
         # [SMART SILENCE] Only flag "Review suggested" if we DON'T have a memory for this image.
         # If we have a memory, even if it contains the word "image", we trust the user's previous choice.
@@ -556,6 +622,34 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             # context and prompt (resolve_image_path already called above)
             context = get_context(img)
             initial_val = get_image_suggestion(src, context) # [FIX] Use consistent naming
+
+            # [AUTO] If this looks like a table image and AI is available,
+            # auto-classify and convert to semantic HTML table when confirmed.
+            try:
+                table_hint_text = f"{src} {alt} {context}".lower()
+                looks_like_table = img.has_attr('data-table-check') or any(
+                    t in table_hint_text for t in ['table', 'rows', 'columns', 'spreadsheet', 'tabular']
+                )
+                if looks_like_table and io_handler.api_key and img_full_path and os.path.exists(img_full_path):
+                    io_handler.log("    [JEANIE] Checking if this image is a data table (Auto)...")
+                    is_table, detect_msg = jeanie_ai.detect_table_in_image(img_full_path, io_handler.api_key)
+                    if is_table:
+                        io_handler.log("    [JEANIE] Data table detected. Converting to accessible HTML table...")
+                        table_html, ocr_msg = jeanie_ai.generate_table_from_image(img_full_path, io_handler.api_key)
+                        if table_html and "<table" in table_html.lower():
+                            table_soup = BeautifulSoup(table_html, 'html.parser')
+                            wrapper = soup.new_tag("div", attrs={"class": "table-ocr-result", "style": "margin: 20px 0; overflow-x: auto;"})
+                            wrapper.append(table_soup)
+                            img.replace_with(wrapper)
+                            io_handler.log("    -> Success! Image auto-replaced with accessible HTML table.")
+                            modified = True
+                            continue
+                        else:
+                            io_handler.log(f"    [Error] Table OCR failed: {ocr_msg}")
+                    else:
+                        io_handler.log(f"    [JEANIE] Not classified as table ({detect_msg}). Continuing with normal review.")
+            except Exception as e_table_auto:
+                io_handler.log(f"    [JEANIE] Table auto-detect skipped: {e_table_auto}")
             
             # Final check of memory before prompting (in case it was just added in this session)
             if mem_key in io_handler.memory:
@@ -603,9 +697,11 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                     continue
 
             if img.has_attr('data-math-check'):
-                 prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX. If no, enter Alt Text: "
+                prompt_text = "    > Verify: Is this a Math Equation? If yes, enter LaTeX. If no, enter Alt Text: "
+            elif img.has_attr('data-table-check'):
+                prompt_text = "    > Verify: Is this a Data Table? Use 'Convert to Table (AI)' or enter Alt Text: "
             else:
-                 prompt_text = "    > Enter Alt Text (Press Enter to accept suggestion): " + prompt_suffix
+                prompt_text = "    > Enter Alt Text (Press Enter to accept suggestion): " + prompt_suffix
             
             if img_full_path and os.path.exists(img_full_path):
                  # Pass the AI suggestion (or filename based on if no AI) to the UI
@@ -707,6 +803,8 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
                         img['alt'] = f"Equation: {choice}"
                         io_handler.memory[mem_key] = f"Equation: {choice}"
                     del img['data-math-check']
+                if img.has_attr('data-table-check'):
+                    del img['data-table-check']
                 pass
                 
                 modified = True
@@ -916,11 +1014,10 @@ def run_auto_fixer(filepath, io_handler=None):
         
         # Only write if there were actual fixes
         if fixes:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(remediated)
+            safe_write_text(filepath, remediated, io_handler=io_handler)
             # Verify write succeeded
             import os as os_check
-            if os_check.path.getsize(filepath) > 0:
+            if os_check.path.getsize(_normalize_windows_path(filepath)) > 0:
                 io_handler.log(f"      [SAVED] {os.path.basename(filepath)}")
             else:
                 io_handler.log(f"      [WARNING] File may not have saved: {os.path.basename(filepath)}")
@@ -930,7 +1027,9 @@ def run_auto_fixer(filepath, io_handler=None):
         io_handler.log(f"  [ERROR] Permission denied writing to {os.path.basename(filepath)}: {e}")
         return False, []
     except Exception as e:
+        import traceback
         io_handler.log(f"  [ERROR] Auto-fix failed for {os.path.basename(filepath)}: {e}")
+        io_handler.log(f"  [ERROR] Auto-fix traceback: {traceback.format_exc()}")
         return False, []
 
 def main_interactive_mode(io_handler=None):
@@ -1051,6 +1150,8 @@ def run_ai_design_fixer(target_dir, io_handler=None, specific_file=None):
                 ensure_short_path(html_path)
                 with open(html_path, 'w', encoding='utf-8') as f:
                     f.write(new_html)
+                io_handler.log("      -> Re-checking ADA after design update...")
+                run_auto_fixer(html_path, io_handler)
                 improved_count += 1
                 io_handler.log(f"      -> Enhanced layout successfully!")
             else:

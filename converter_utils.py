@@ -12,10 +12,62 @@ import uuid
 import xml.etree.ElementTree as ET
 import urllib.parse
 from bs4 import BeautifulSoup
+import io
 
 
 # --- Constants ---
 ARCHIVE_FOLDER_NAME = "_ORIGINALS_DO_NOT_UPLOAD_"
+
+DEFAULT_STYLE_PREFERENCES = {
+    "image_margin_px": 15,
+    "h1_color": "#4b3190",
+    "h2_color": "#2c3e50",
+    "h3_color": "#444444",
+    "h4_color": "#374151",
+    "h5_color": "#4b5563",
+    "h6_color": "#6b7280",
+}
+
+_style_preferences = DEFAULT_STYLE_PREFERENCES.copy()
+
+
+def _normalize_hex_color(value, fallback):
+    s = str(value or "").strip()
+    if re.fullmatch(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})", s):
+        return s
+    return fallback
+
+
+def set_style_preferences(preferences=None):
+    """Sets module-wide output style preferences used by all converters."""
+    global _style_preferences
+    prefs = dict(DEFAULT_STYLE_PREFERENCES)
+    incoming = preferences or {}
+
+    try:
+        margin = int(incoming.get("image_margin_px", prefs["image_margin_px"]))
+    except Exception:
+        margin = prefs["image_margin_px"]
+    prefs["image_margin_px"] = max(0, min(80, margin))
+
+    for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+        key = f"{tag}_color"
+        prefs[key] = _normalize_hex_color(incoming.get(key), prefs[key])
+
+    _style_preferences = prefs
+
+
+def _build_user_style_overrides():
+    m = _style_preferences["image_margin_px"]
+    return f"""
+        h1 {{ color: {_style_preferences['h1_color']} !important; border-bottom-color: {_style_preferences['h1_color']} !important; }}
+        h2 {{ color: {_style_preferences['h2_color']} !important; }}
+        h3 {{ color: {_style_preferences['h3_color']} !important; }}
+        h4 {{ color: {_style_preferences['h4_color']} !important; }}
+        h5 {{ color: {_style_preferences['h5_color']} !important; }}
+        h6 {{ color: {_style_preferences['h6_color']} !important; }}
+        img {{ margin-top: {m}px !important; margin-bottom: {m}px !important; }}
+    """
 
 
 def sanitize_filename(base_name):
@@ -101,7 +153,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
         h2 {{ color: #2c3e50; margin-top: 40px; font-weight: 600; border-bottom: 1px solid #dee2e6; padding-bottom: 5px; }}
         h3 {{ color: #444; margin-top: 30px; font-weight: 600; }}
-        a {{ color: #0056b3; text-decoration: none; font-weight: 500; }}
+        a {{ color: #4b3190; text-decoration: none; font-weight: 600; }}
         a:hover {{ text-decoration: underline; }}
         
         /* Table Styles */
@@ -112,12 +164,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .content-table {{ width: 100%; border-collapse: collapse; }}
         
         img {{ 
-            max-width: 50%; 
+            max-width: 500px; 
             height: auto; 
             border-radius: 4px; 
             border: 1px solid #eee; 
             display: block;
-            margin: 10px 0;
+            margin: 15px 0;
         }}
         
         @media (max-width: 768px) {{
@@ -182,7 +234,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <div class="main-content" style="max-width: 1200px; margin: 0 auto; padding: 40px;">
+    <div class="main-content" style="max-width: 1200px; margin: 0 auto; padding: 40px; box-sizing: border-box; overflow: auto;">
         <h1>{title}</h1>
         {content}
     </div>
@@ -222,8 +274,10 @@ def _save_html(content, title, source_file, output_path, style_overrides=""):
     # [FIX] Safe Path Length
     output_path = ensure_short_path(output_path)
 
+    combined_styles = f"{style_overrides}\n{_build_user_style_overrides()}"
+
     html = HTML_TEMPLATE.format(
-        title=title, content=content, style_overrides=style_overrides
+        title=title, content=content, style_overrides=combined_styles
     )
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -260,8 +314,21 @@ def optimize_image(image_path, max_width=1100, make_transparent=False):
                         img, xy=corner, value=(255, 255, 255, 0), thresh=15
                     )
 
-        # 3. Save optimized
-        img.save(image_path, "PNG", optimize=True)
+        # 3. Save optimized in a format matching file extension to avoid broken files
+        ext = os.path.splitext(image_path)[1].lower()
+        if ext in [".jpg", ".jpeg"]:
+            if img.mode == "RGBA":
+                img = img.convert("RGB")
+            img.save(image_path, "JPEG", optimize=True, quality=90)
+        elif ext == ".gif":
+            img.save(image_path, "GIF")
+        elif ext in [".bmp"]:
+            img.save(image_path, "BMP")
+        elif ext in [".tif", ".tiff"]:
+            img.save(image_path, "TIFF")
+        else:
+            # Default to PNG for .png and unknown-safe web outputs
+            img.save(image_path, "PNG", optimize=True)
         return True
     except Exception as e:
         print(f"Image Optimization failed for {image_path}: {e}")
@@ -393,7 +460,7 @@ def convert_docx_to_html(docx_path, io_handler=None, log_func=None):
             import io
 
             width_attr = "auto"
-            style_attr = "max-width: 50%; height: auto;"  # Safe fixed default
+            style_attr = "max-width: 500px; height: auto;"  # Safe fixed default
 
             try:
                 with PILImage.open(io.BytesIO(image_bytes)) as pil_img:
@@ -714,10 +781,15 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
         light1 = theme["colors"].get("light1", "#fff")
 
         style_overrides += f"""
-            .slide-container {{ border-top-color: {accent1}; border-top-width: 5px; border-left: 2px solid #ccc; border-right: 2px solid #ccc; border-bottom: 2px solid #ccc; background-color: {light1}; }}
-            .slide-title {{ color: {dark1}; border-bottom-color: {accent1}; }}
+            .slide-container {{ width: 100%; margin-left: auto; margin-right: auto; border-top-color: {accent1}; border-top-width: 5px; border-left: 2px solid #ccc; border-right: 2px solid #ccc; border-bottom: 2px solid #ccc; background-color: {light1}; box-sizing: border-box; overflow-x: hidden; overflow-y: auto; }}
+            .slide-title {{ background-color: #4b3190 !important; color: #ffffff !important; padding: 2% !important; border-bottom: 0 !important; border-radius: 6px; }}
             h1 {{ color: {accent1}; border-bottom-color: {accent1}; }}
-            h2 {{ border-bottom-color: {accent1}; }}
+            h2 {{ background-color: #4b3190 !important; color: #ffffff !important; padding: 2% !important; border-bottom-color: {accent1}; border-radius: 6px; }}
+            .slide-image {{ max-width: 40% !important; height: auto !important; }}
+            @media (max-width: 768px) {{
+                .slide-container {{ padding: 20px !important; }}
+                .slide-image {{ float: none !important; display: block !important; margin: 12px auto !important; width: 100% !important; max-width: 100% !important; }}
+            }}
         """
 
         html_parts = []
@@ -729,10 +801,10 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
             # [NEW] Inline style for slide container (Canvas survival)
             slide_style = (
-                f"margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
+                f"width: 100%; margin-left: auto; margin-right: auto; margin-bottom: 60px; padding: 60px; border: 2px solid #ccc; "
                 f"border-top: 5px solid {accent1}; border-radius: 12px; "
                 f"background-color: {light1}; box-shadow: 0 8px 30px rgba(0,0,0,0.1); "
-                f"position: relative; display: flow-root; clear: both; overflow: auto;"
+                f"position: relative; display: flow-root; clear: both; box-sizing: border-box; overflow-x: hidden; overflow-y: auto;"
             )
             html_parts.append(
                 f'<div class="slide-container" id="slide-{slide_num}" style="{slide_style}">'
@@ -939,7 +1011,17 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
 
                     if not is_empty:
                         html_parts.append('<table class="content-table" border="1">')
-                        for row in shape.table.rows:
+                        html_parts.append('<caption style="text-align: left; font-weight: bold; margin-bottom: 10px;">Data Table</caption>')
+                        html_parts.append('<thead><tr>')
+                        first_row_cells = list(shape.table.rows[0].cells) if len(shape.table.rows) > 0 else []
+                        for cell in first_row_cells:
+                            cell_text = ""
+                            if cell.text_frame:
+                                cell_text = cell.text_frame.text.strip()
+                            html_parts.append(f'<th scope="col">{html_lib.escape(cell_text)}</th>')
+                        html_parts.append('</tr></thead>')
+                        html_parts.append('<tbody>')
+                        for row in list(shape.table.rows)[1:] if len(shape.table.rows) > 1 else []:
                             html_parts.append("<tr>")
                             for cell in row.cells:
                                 # Extract text from cell
@@ -948,14 +1030,31 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                     cell_text = cell.text_frame.text.strip()
                                 html_parts.append(f"<td>{html_lib.escape(cell_text)}</td>")
                             html_parts.append("</tr>")
+                        html_parts.append('</tbody>')
                         html_parts.append("</table>")
 
                 # Images (Alt Text prompts only if no Silent Memory)
-                if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                linked_picture_type = getattr(MSO_SHAPE_TYPE, "LINKED_PICTURE", None)
+                valid_picture_types = {MSO_SHAPE_TYPE.PICTURE}
+                if linked_picture_type is not None:
+                    valid_picture_types.add(linked_picture_type)
+
+                if shape.shape_type in valid_picture_types:
                     try:
                         image = shape.image
                         image_bytes = image.blob
-                        ext = image.ext
+                        original_ext = (image.ext or "png").lower().strip()
+                        ext = original_ext
+                        if ext == "jpeg":
+                            ext = "jpg"
+                        if not re.fullmatch(r"[a-z0-9]+", ext):
+                            ext = "png"
+
+                        # If image format is unknown to browsers, fall back to PNG container name.
+                        web_safe_exts = {"png", "jpg", "gif", "webp", "bmp", "tif", "tiff", "svg"}
+                        force_png_convert = ext not in web_safe_exts
+                        if force_png_convert:
+                            ext = "png"
                         safe_filename = sanitize_filename(filename)
                         res_dir = os.path.join(
                             output_dir, "web_resources", safe_filename
@@ -963,18 +1062,40 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         if not os.path.exists(res_dir):
                             os.makedirs(res_dir)
 
-                        # [FIX] Always use .png for PPT images because we optimize/transparency them
-                        image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.png"
+                        image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.{ext}"
                         image_full_path = os.path.join(res_dir, image_filename)
 
-                        # 1. Save original bytes first
-                        with open(image_full_path, "wb") as img_f:
-                            img_f.write(image_bytes)
+                        # 1. Save image bytes. For non-web-safe source formats (e.g., EMF/WMF),
+                        # convert to PNG so Canvas can render reliably.
+                        if force_png_convert:
+                            converted = False
+                            try:
+                                from PIL import Image
+                                pil_img = Image.open(io.BytesIO(image_bytes))
+                                if pil_img.mode in ["P", "LA"]:
+                                    pil_img = pil_img.convert("RGBA")
+                                elif pil_img.mode not in ["RGB", "RGBA"]:
+                                    pil_img = pil_img.convert("RGB")
+                                pil_img.save(image_full_path, "PNG", optimize=True)
+                                converted = True
+                            except Exception:
+                                converted = False
 
-                        # 2. [NEW] Image Optimization & Magic Transparency
-                        # We save as PNG for transparency support
+                            if not converted:
+                                # Last-resort fallback: keep original extension and bytes (do not corrupt by mislabeled .png).
+                                fallback_ext = original_ext if re.fullmatch(r"[a-z0-9]+", original_ext or "") else "bin"
+                                image_filename = f"slide{slide_num}_{uuid.uuid4().hex[:6]}.{fallback_ext}"
+                                image_full_path = os.path.join(res_dir, image_filename)
+                                with open(image_full_path, "wb") as img_f:
+                                    img_f.write(image_bytes)
+                        else:
+                            with open(image_full_path, "wb") as img_f:
+                                img_f.write(image_bytes)
+
+                        # 2. Optimize image, but do NOT force transparency removal for PPT assets
+                        # (it can erase intentional white regions and make images appear missing).
                         optimize_image(
-                            image_full_path, max_width=400, make_transparent=True
+                            image_full_path, max_width=400, make_transparent=False
                         )
 
                         rel_path = f"web_resources/{safe_filename}/{image_filename}"
@@ -1003,17 +1124,33 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                         center_threshold = slide_width * 0.1
                         dist_from_center = abs(shape_center_x - (slide_width / 2))
 
-                        if dist_from_center < center_threshold:
-                            float_style = "display: block; margin: 20px auto;"
+                        # On slides with text, prioritize side-floating so images stay beside text.
+                        if has_text_content:
+                            if shape_center_x < slide_width / 2:
+                                image_layout = "left"
+                                wrapper_style = ""
+                                float_style = "float: left; margin: 0 20px 15px 0;"
+                            else:
+                                image_layout = "right"
+                                wrapper_style = ""
+                                float_style = "float: right; margin: 0 0 15px 20px;"
+                        elif dist_from_center < center_threshold:
+                            image_layout = "center"
+                            wrapper_style = "width: 100%; margin: 15px auto; text-align: center;"
+                            float_style = "display: inline-block; margin: 0 auto;"
                         elif shape_center_x < slide_width / 2:
+                            image_layout = "left"
+                            wrapper_style = ""
                             float_style = "float: left; margin: 0 20px 15px 0;"
                         else:
+                            image_layout = "right"
+                            wrapper_style = ""
                             float_style = "float: right; margin: 0 0 15px 20px;"
 
                         # [NEW] Enhanced Image Styles (Borders/Rotation)
                         extra_img_style = get_image_styles(shape)
-                        # [FIX] Enforce 50% max-width for PPT images
-                        final_img_style = f"{float_style} {extra_img_style} max-width: 50%;".strip()
+                        # [FIX] Enforce 40% max-width for PPT images
+                        final_img_style = f"{float_style} {extra_img_style} max-width: 40%; height: auto;".strip()
 
                         # [SMART FIX] Silent Memory and prompt
                         alt_text = ""  # Default to decorative/empty if skipped
@@ -1093,9 +1230,15 @@ def convert_ppt_to_html(ppt_path, io_handler=None, log_func=None):
                                 io_handler.memory[mem_key] = alt_text
                                 io_handler.save_memory()
 
-                        html_parts.append(
-                            f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}">'
-                        )
+                        if image_layout == "center":
+                            html_parts.append(
+                                f'<div class="slide-image-wrap" style="{wrapper_style}"><img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}"></div>'
+                            )
+                        else:
+                            # Keep floating behavior for side-positioned images.
+                            html_parts.append(
+                                f'<img src="{rel_path}" alt="{alt_text}" width="{width_px}" class="slide-image" style="{final_img_style}">'
+                            )
                     except Exception as img_err:
                         print(f"Skipped image on slide {slide_num}: {img_err}")
 
@@ -1284,7 +1427,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None, force_ocr=False):
                         dist_from_center = abs(shape_center_x - (page_width / 2))
 
                         if dist_from_center < center_threshold:
-                            float_style = "display: block; margin: 20px auto;"
+                            float_style = "display: block; margin: 15px auto;"
                         elif shape_center_x < page_width / 2:
                             float_style = "float: left; margin: 0 20px 15px 0;"
                         else:
@@ -1495,7 +1638,7 @@ def convert_pdf_to_html(pdf_path, io_handler=None, force_ocr=False):
                                     )
 
                             html_parts.append(
-                                f'\u003cimg src="{rel_path}" alt="{alt_text}" class="content-image" style="display: block; margin: 20px auto; max-width: 800px;"\u003e'
+                                f'\u003cimg src="{rel_path}" alt="{alt_text}" class="content-image" style="display: block; margin: 15px auto; max-width: 500px; height: auto;"\u003e'
                             )
             except Exception as e:
                 print(f"Fallback PDF image extraction failed: {e}")
@@ -1642,6 +1785,13 @@ def update_links_in_directory(directory, old_filename, new_filename):
     count = 0
     old_base = os.path.basename(old_filename)
     new_base = os.path.basename(new_filename)
+    old_stem = os.path.splitext(old_base)[0]
+
+    def _norm_stem(value):
+        s = os.path.splitext(os.path.basename(str(value or "")))[0].lower()
+        return re.sub(r"[^a-z0-9]+", "", s)
+
+    old_stem_norm = _norm_stem(old_stem)
 
     # URL encoded version for comparison
     old_base_enc = old_base.replace(" ", "%20")
@@ -1676,8 +1826,9 @@ def update_links_in_directory(directory, old_filename, new_filename):
 
                         # Preserve prefixes like $IMS-CC-FILEBASE$/ by only replacing the filename part
                         # Case-insensitive comparison, handles missing extensions
-                        old_stem = os.path.splitext(old_base)[0].lower()
-                        href_stem = clean_href_no_qs.split("/")[-1].lower()
+                        href_leaf = clean_href_no_qs.split("/")[-1]
+                        href_stem = href_leaf.lower()
+                        href_stem_norm = _norm_stem(href_leaf)
                         
                         if (
                             clean_href_no_qs.lower().endswith(
@@ -1686,22 +1837,32 @@ def update_links_in_directory(directory, old_filename, new_filename):
                             or href_stem == old_stem
                             or href.lower() == old_base_enc.lower()
                         ):
-                            # Use regex or simple replace that targets the specific filename
-                            # We use a case-insensitive sub/replace if possible
-                            a["href"] = re.sub(
-                                re.escape(old_base), new_base, href, flags=re.IGNORECASE
-                            )
-                            a["href"] = re.sub(
-                                re.escape(old_base_enc),
-                                new_base.replace(" ", "%20"),
-                                a["href"],
-                                flags=re.IGNORECASE,
-                            )
+                            # For local file links, preserve path prefix if present.
+                            # For live Canvas URLs, write direct target URL.
+                            if new_filename.startswith("http"):
+                                a["href"] = new_href
+                            else:
+                                a["href"] = re.sub(
+                                    re.escape(old_base), new_base, href, flags=re.IGNORECASE
+                                )
+                                a["href"] = re.sub(
+                                    re.escape(old_base_enc),
+                                    new_base.replace(" ", "%20"),
+                                    a["href"],
+                                    flags=re.IGNORECASE,
+                                )
 
                             # Update link text to be human-readable
                             a.string = new_link_text
                             
                             # Add descriptive title
+                            a['title'] = new_link_text
+                            modified = True
+                        elif old_stem_norm and href_stem_norm == old_stem_norm:
+                            # Handles Canvas file_contents style links that often omit extension,
+                            # e.g. /file_contents/.../2-dot-1-the-print-statement?canvas_=1
+                            a["href"] = new_href
+                            a.string = new_link_text
                             a['title'] = new_link_text
                             modified = True
 
@@ -1751,10 +1912,12 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
         old_clean = old.strip().lower()
         old_basename = os.path.basename(old_clean)
         old_stem = os.path.splitext(old_basename)[0]
-        new_base = os.path.basename(new)
+        new_str = str(new or "").strip()
+        new_is_url = new_str.startswith("http")
+        new_base = os.path.basename(new_str)
         
         d = {
-            "new_href": new_base.replace(" ", "%20"),
+            "new_href": new_str if new_is_url else new_base.replace(" ", "%20"),
             "new_text": os.path.splitext(new_base)[0].replace("_", " ").strip(),
         }
         lookup[old_basename] = d
@@ -1780,9 +1943,13 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
 
                         if filename_part in lookup:
                             info = lookup[filename_part]
-                            # Preserving prefix logic
-                            prefix = href.rsplit("/", 1)[0] + "/" if "/" in href else ""
-                            a["href"] = prefix + info["new_href"]
+                            # If mapped target is a live URL, use it directly.
+                            # Otherwise preserve local prefix logic.
+                            if str(info["new_href"]).startswith("http"):
+                                a["href"] = info["new_href"]
+                            else:
+                                prefix = href.rsplit("/", 1)[0] + "/" if "/" in href else ""
+                                a["href"] = prefix + info["new_href"]
                             
                             # Add descriptive title
                             a['title'] = info["new_text"]

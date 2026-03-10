@@ -1,7 +1,8 @@
 import requests
 import os
 import mimetypes
-from urllib.parse import urlparse
+import re
+from urllib.parse import urlparse, quote
 
 class CanvasAPI:
     def __init__(self, base_url, token, course_id):
@@ -23,7 +24,9 @@ class CanvasAPI:
             if '/courses/' in cid_str:
                 self.course_id = cid_str.split('/courses/')[-1].split('/')[0]
             else:
-                self.course_id = cid_str
+                # Fallback: extract first long numeric token from mixed user input.
+                m = re.search(r"\b(\d{3,})\b", cid_str)
+                self.course_id = m.group(1) if m else cid_str
         except Exception:
             self.course_id = course_id
 
@@ -44,6 +47,23 @@ class CanvasAPI:
             return False, "Connection timed out. Canvas is taking too long to respond."
         except Exception as e:
             return False, f"Check your internet connection and school website address. ({e})"
+
+    def can_access_pages(self):
+        """Checks whether the current token can access course wiki pages endpoint."""
+        url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages?per_page=1"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=20)
+            if response.status_code == 200:
+                return True, "Pages endpoint reachable"
+            if response.status_code == 401:
+                return False, "Error 401: Invalid or expired Canvas access token."
+            if response.status_code == 403:
+                return False, "Error 403: Token lacks permission to manage Pages in this course."
+            if response.status_code == 404:
+                return False, f"Error 404: Course/Pages endpoint not found for course_id={self.course_id}."
+            return False, f"Error {response.status_code}: {response.text}"
+        except Exception as e:
+            return False, f"Pages endpoint check failed: {e}"
 
     def is_course_empty(self):
         """Checks if the target course has any existing WikiPages (Safety Check)."""
@@ -137,9 +157,14 @@ class CanvasAPI:
         except Exception as e:
             return False, str(e)
 
-    def update_page(self, slug, title, body):
+    def update_page(self, slug, title, body, published=True):
         """Updates an existing WikiPage."""
-        url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages/{slug}"
+        # Normalize slug: Canvas may return either slug or full URL/path.
+        raw_slug = str(slug or "").strip()
+        if "/" in raw_slug:
+            raw_slug = raw_slug.rstrip('/').split('/')[-1]
+        norm_slug = quote(raw_slug)
+        url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages/{norm_slug}"
         payload = {
             "wiki_page[title]": title,
             "wiki_page[body]": body,
@@ -153,7 +178,7 @@ class CanvasAPI:
         except Exception as e:
             return False, str(e)
 
-    def create_page(self, title, body):
+    def create_page(self, title, body, published=True):
         """Creates a new WikiPage in the specified course."""
         url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages"
         payload = {
@@ -171,46 +196,96 @@ class CanvasAPI:
         except Exception as e:
             return False, f"Page creation failed: {e}"
 
+    def upsert_page(self, title, body, published=True):
+        """Gets existing page by title/slug, updates if found, otherwise creates.
+        If update fails with 404, automatically retries with create.
+        """
+        success_get, res_get = self.get_page(title)
+        if success_get and isinstance(res_get, dict):
+            slug = res_get.get("url") or title
+            ok_upd, res_upd = self.update_page(slug, title, body, published=published)
+            if ok_upd:
+                return True, res_upd
+            # Fallback: if page vanished/slug mismatch, try create.
+            if "404" in str(res_upd):
+                return self.create_page(title, body, published=published)
+            return False, res_upd
+
+        return self.create_page(title, body, published=published)
+
     def replace_module_file_with_page(self, filename, wiki_page_slug, wiki_page_title):
         """Scans all modules for a file matching `filename` and replaces it with the new WikiPage."""
         modules_url = f"{self.base_url}/api/v1/courses/{self.course_id}/modules"
         replacements = 0
         try:
-            # 1. Fetch modules (handle pagination quickly)
-            # Typically 100 modules is enough for most courses
-            res_mods = requests.get(f"{modules_url}?per_page=100", headers=self.headers, timeout=30)
-            if res_mods.status_code != 200:
-                return False, f"Could not load modules: {res_mods.text}"
-            
-            modules = res_mods.json()
+            def _normalize_name(s):
+                # Case-insensitive, extension-insensitive, punctuation-light compare.
+                base = os.path.splitext((s or "").strip().lower())[0]
+                base = re.sub(r"[\s_\-\.]+", "", base)
+                base = re.sub(r"[^a-z0-9]", "", base)
+                return base
+
+            def _paged_get(url):
+                """Small pagination helper for Canvas list endpoints."""
+                out = []
+                next_url = url
+                seen = set()
+                while next_url and next_url not in seen:
+                    seen.add(next_url)
+                    res = requests.get(next_url, headers=self.headers, timeout=30)
+                    if res.status_code != 200:
+                        return False, res.text, out
+                    chunk = res.json() or []
+                    if isinstance(chunk, list):
+                        out.extend(chunk)
+
+                    # Parse RFC5988 Link header for rel="next"
+                    next_url = None
+                    link_header = res.headers.get("Link", "")
+                    if link_header:
+                        for part in link_header.split(','):
+                            seg = part.strip()
+                            if 'rel="next"' in seg:
+                                m = re.search(r'<([^>]+)>', seg)
+                                if m:
+                                    next_url = m.group(1)
+                                    break
+                return True, "Success", out
+
+            target_norm = _normalize_name(filename)
+
+            # 1. Fetch ALL modules (paginated)
+            ok_mods, msg_mods, modules = _paged_get(f"{modules_url}?per_page=100")
+            if not ok_mods:
+                return False, f"Could not load modules: {msg_mods}"
+
             for module in modules:
                 mod_id = module.get("id")
                 if not mod_id:
                     continue
-                
-                # 2. Fetch items per module
-                items_url = f"{modules_url}/{mod_id}/items?per_page=100"
-                res_items = requests.get(items_url, headers=self.headers, timeout=30)
-                if res_items.status_code != 200:
+
+                # 2. Fetch ALL items per module (paginated)
+                ok_items, _, items = _paged_get(f"{modules_url}/{mod_id}/items?per_page=100")
+                if not ok_items:
                     continue
-                
-                items = res_items.json()
+
                 for item in items:
                     item_id = item.get("id")
                     item_type = item.get("type", "")
-                    
+
                     if item_type == "File":
                         item_title = item.get("title", "")
-                        # Ignore extension in match to be safe
-                        import os
-                        name_no_ext = os.path.splitext(item_title)[0]
-                        file_no_ext = os.path.splitext(filename)[0]
-                        
-                        # Match precisely
-                        if item_title == filename or name_no_ext == file_no_ext:
+                        item_norm = _normalize_name(item_title)
+
+                        # Robust match: exact title, base-name match, or normalized compare.
+                        same_title = (item_title == filename)
+                        same_base = (os.path.splitext(item_title)[0].lower() == os.path.splitext(filename)[0].lower())
+                        same_norm = (item_norm and target_norm and item_norm == target_norm)
+
+                        if same_title or same_base or same_norm:
                             pos = item.get("position", 1)
                             indent = item.get("indent", 0)
-                            
+
                             # 3. Create the new Page item at the exact same spot
                             payload = {
                                 "module_item[title]": wiki_page_title,
@@ -229,6 +304,21 @@ class CanvasAPI:
                                     # New page was created but old file item wasn't removed — log but don't crash.
                                     import sys
                                     print(f"[Warning] Could not delete old module item {item_id}: {del_res.status_code}", file=sys.stderr)
+                            else:
+                                # Fallback: try in-place update from File -> Page
+                                patch_payload = {
+                                    "module_item[title]": wiki_page_title,
+                                    "module_item[type]": "Page",
+                                    "module_item[page_url]": wiki_page_slug,
+                                }
+                                put_res = requests.put(
+                                    f"{modules_url}/{mod_id}/items/{item_id}",
+                                    headers=self.headers,
+                                    data=patch_payload,
+                                    timeout=30,
+                                )
+                                if put_res.status_code in [200, 201]:
+                                    replacements += 1
             
             return True, replacements
         except Exception as e:

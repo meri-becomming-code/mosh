@@ -296,6 +296,77 @@ def generate_table_from_image(image_path, api_key):
         return None, f"MOSH Magic Table OCR Error: {str(e)}"
 
 
+def detect_table_in_image(image_path, api_key):
+    """
+    Fast classifier: returns True if image is primarily a data table, else False.
+    """
+    if not api_key:
+        return False, "Error: No Gemini API Key provided."
+
+    if not os.path.exists(image_path):
+        return False, f"Error: Image not found at {image_path}"
+
+    try:
+        with open(image_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+        _, ext = os.path.splitext(image_path.lower())
+        mime_type_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".tiff": "image/tiff",
+            ".tif": "image/tiff",
+        }
+        mime_type = mime_type_map.get(ext, "image/png")
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": "Classify this image. Is it primarily a DATA TABLE with rows/columns of values? "
+                            "Respond with ONLY one word: YES or NO."
+                        },
+                        {
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": encoded_image,
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.0,
+                "topP": 0.8,
+                "topK": 20,
+                "maxOutputTokens": 8,
+            },
+        }
+
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        if response.status_code != 200:
+            return False, f"Gemini API Error ({response.status_code}): {response.text}"
+
+        res_json = response.json()
+        try:
+            raw = res_json["candidates"][0]["content"]["parts"][0]["text"].strip().upper()
+            is_table = raw.startswith("YES")
+            return is_table, "Success"
+        except (KeyError, IndexError):
+            return False, "Unexpected response format from Gemini."
+
+    except Exception as e:
+        return False, f"MOSH Magic Table Detect Error: {str(e)}"
+
+
 def generate_text_from_scanned_image(image_path, api_key):
     """
     Uses Gemini 1.5 Flash to perform OCR on a scanned document image.
