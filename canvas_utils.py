@@ -143,7 +143,7 @@ class CanvasAPI:
         payload = {
             "wiki_page[title]": title,
             "wiki_page[body]": body,
-            "wiki_page[published]": False
+            "wiki_page[published]": True
         }
         try:
             response = requests.put(url, headers=self.headers, data=payload, timeout=30)
@@ -159,7 +159,7 @@ class CanvasAPI:
         payload = {
             "wiki_page[title]": title,
             "wiki_page[body]": body,
-            "wiki_page[published]": False # Keep it unpublished for faculty review
+            "wiki_page[published]": True # Automatically publish on creation
         }
         try:
             response = requests.post(url, headers=self.headers, data=payload, timeout=30)
