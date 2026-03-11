@@ -160,6 +160,15 @@ def remediate_html_file(filepath):
 
     Returns: (remediated_html_str, fix_list)
     """
+    fixes = []
+    print(f"Processing {os.path.basename(filepath)}...")
+    with open(filepath, "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html_content, "html.parser")
+
     # --- List Cleanup: Remove empty or fragmentary <li> and collapse empty lists ---
     for lst in soup.find_all(["ul", "ol"]):
         # Remove <li> that are empty or only whitespace/nbsp
@@ -174,10 +183,6 @@ def remediate_html_file(filepath):
         # If after cleanup, the list has no <li>, remove the list
         if not lst.find("li"):
             lst.decompose()
-    fixes = []
-    print(f"Processing {os.path.basename(filepath)}...")
-    with open(filepath, "r", encoding="utf-8") as f:
-        html_content = f.read()
 
     # --- Encoding cleanup (common mojibake artifacts) ---
     # Example: "Â©" appears when UTF-8 content is mis-decoded as cp1252.
