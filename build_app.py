@@ -95,18 +95,41 @@ def build():
     args.append("--hidden-import=jeanie_ai")
 
     # --- google-genai: namespace package fix ---
-    # google.genai lives in the user roaming site-packages. Because 'google' is a
-    # namespace package (no __init__.py), PyInstaller's --collect-all can miss it.
-    # We manually locate the package and add it with --add-data + hidden-imports.
-    import site, importlib.util
-    user_site = site.getusersitepackages()
-    genai_pkg_dir = os.path.join(user_site, "google", "genai")
-    if os.path.isdir(genai_pkg_dir):
-        # Bundle the entire google/genai folder into google/genai inside the EXE
-        args.append(f"--add-data={genai_pkg_dir}{sep}google/genai")
-    else:
-        # Fallback: let PyInstaller try to collect it normally
-        args.append("--collect-all=google.genai")
+    # 'google' is a namespace package (no __init__.py) split across user + system
+    # site-packages. PyInstaller cannot auto-detect namespace packages reliably.
+    # Solution:
+    #   1. Create a temporary synthetic google/__init__.py so Python treats it as
+    #      a regular package inside the frozen EXE.
+    #   2. Manually add google/genai, google/auth, google/oauth2 via --add-data.
+    import site as _site, tempfile as _tempfile
+    user_site = _site.getusersitepackages()
+
+    # Write a temporary __init__.py for the 'google' namespace shim
+    google_shim_dir = os.path.join(_tempfile.gettempdir(), "mosh_google_shim", "google")
+    os.makedirs(google_shim_dir, exist_ok=True)
+    google_init = os.path.join(google_shim_dir, "__init__.py")
+    with open(google_init, "w") as _f:
+        _f.write("# Namespace package shim for PyInstaller\n__path__ = __import__('pkgutil').extend_path(__path__, __name__)\n")
+
+    # Add the shim __init__.py as google/__init__.py in the EXE
+    args.append(f"--add-data={google_init}{sep}google")
+
+    # Bundle google/genai, google/auth, google/oauth2 from user roaming site-packages
+    for _pkg in ("genai", "auth", "oauth2"):
+        _pkg_dir = os.path.join(user_site, "google", _pkg)
+        if os.path.isdir(_pkg_dir):
+            args.append(f"--add-data={_pkg_dir}{sep}google/{_pkg}")
+
+    # Also check system site-packages as fallback for auth/oauth2
+    try:
+        sys_site = _site.getsitepackages()[0]
+        for _pkg in ("auth", "oauth2"):
+            _sys_pkg_dir = os.path.join(sys_site, "google", _pkg)
+            _user_pkg_dir = os.path.join(user_site, "google", _pkg)
+            if os.path.isdir(_sys_pkg_dir) and not os.path.isdir(_user_pkg_dir):
+                args.append(f"--add-data={_sys_pkg_dir}{sep}google/{_pkg}")
+    except Exception:
+        pass
 
     # Hidden imports for every known google.genai submodule
     for _mod in [
