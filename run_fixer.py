@@ -903,7 +903,7 @@ def remediate_html_file(filepath):
     if headings:
         # Canvas uses H1 for page title, so content should start at H2
         first_level = int(headings[0].name[1])
-        if first_level > 2:
+        if first_level != 2:
             old_tag = headings[0].name
             headings[0].name = "h2"
             headings[0].insert_before(Comment(f"ADA FIX: Forced {old_tag} to H2"))
@@ -1403,6 +1403,9 @@ def remediate_html_file(filepath):
         # 7d. POTENTIAL EQUATION DETECTION (Math Check)
         # Heuristic: Small images with high contrast, or alt text containing math terms but no LaTeX
         src = img.get("src", "").lower()
+        is_canvas_preview = (
+            src.startswith("/courses/") and "/files/" in src and "/preview" in src
+        )
         # Clear stale math-review flags on known non-math UI/icon assets.
         icon_like = (
             "icons%20full%20size" in src
@@ -1411,6 +1414,11 @@ def remediate_html_file(filepath):
             or "assignment_full_size" in src
             or "icon" in src
         )
+        if is_canvas_preview and img.has_attr("data-math-check"):
+            del img["data-math-check"]
+            fixes.append(
+                f"Cleared math-review flag on Canvas preview image: {os.path.basename(src)}"
+            )
         if icon_like and img.has_attr("data-math-check"):
             del img["data-math-check"]
             fixes.append(
@@ -1420,6 +1428,7 @@ def remediate_html_file(filepath):
         # [FIX] Idempotency: skip if already flagged or math'd
         if (
             (not icon_like)
+            and (not is_canvas_preview)
             and (not img.has_attr("data-math"))
             and (not img.has_attr("data-math-check"))
             and (
@@ -1483,10 +1492,32 @@ def remediate_html_file(filepath):
                 ):
                     all_graph_files.append(fn)
 
+            # If the page already points images to remote/Canvas URLs and no local graph
+            # files are currently referenced, do NOT try to "restore" local graph assets.
+            # Otherwise we create duplicate generic images appended at the bottom.
+            has_remote_imgs = False
+            has_local_graph_ref = False
+            graph_file_set = set(all_graph_files)
+            for im in soup.find_all("img"):
+                src_chk = (im.get("src") or "").strip()
+                src_low = src_chk.lower()
+                if src_low.startswith("http://") or src_low.startswith("https://") or src_low.startswith("/courses/"):
+                    has_remote_imgs = True
+                if os.path.basename(src_chk) in graph_file_set:
+                    has_local_graph_ref = True
+
+            if has_remote_imgs and not has_local_graph_ref:
+                # Images have likely already been uploaded/repointed; leave local *_graphs
+                # files alone to avoid duplicate visual blocks.
+                all_graph_files = []
+
             referenced_basenames = set()
             for im in soup.find_all("img"):
                 src = (im.get("src") or "").strip()
                 if src:
+                    src_low = src.lower()
+                    if src_low.startswith("http://") or src_low.startswith("https://") or src_low.startswith("/courses/"):
+                        continue
                     referenced_basenames.add(os.path.basename(src))
 
             missing_files = [
@@ -2037,6 +2068,10 @@ def remediate_html_file(filepath):
     i = 0
     while i < len(all_p):
         p = all_p[i]
+        # Preserve authored line-break layouts inside paragraphs.
+        if p.find("br"):
+            i += 1
+            continue
         text = p.get_text(strip=True)
         # Match *, -, or 1. at the start
         bullet_match = re.match(r"^([\*\-•]|\d+[\.\)])\s+", text)
@@ -2045,6 +2080,9 @@ def remediate_html_file(filepath):
             list_items = []
             current_p = p
             while current_p and current_p.name == "p":
+                # Stop grouping if paragraph uses explicit line breaks.
+                if current_p.find("br"):
+                    break
                 t = current_p.get_text(strip=True)
                 m = re.match(r"^([\*\-•]|\d+[\.\)])\s+", t)
                 if not m:
@@ -2097,6 +2135,9 @@ def remediate_html_file(filepath):
 
     # 9c. TOC de-smush repair: split long table-of-contents-like paragraphs into list items.
     for p in list(soup.find_all("p")):
+        # Preserve explicit line-break formatting authored in paragraph blocks.
+        if p.find("br"):
+            continue
         if p.find(["ul", "ol", "table", "img", "pre", "code"]):
             continue
 
@@ -2179,6 +2220,37 @@ def remediate_html_file(filepath):
             if p_text in {"table of contents", "contents", "table of content"}:
                 p.decompose()
                 fixes.append("Removed duplicate TOC heading paragraph inside details")
+
+    # 9e. Preserve authored newline rhythm by materializing plain-text newlines as <br>.
+    # This improves worksheet readability when upstream conversion emitted '\n' that HTML would collapse.
+    for blk in list(soup.find_all(["p", "li", "div"])):
+        if blk.find("br"):
+            continue
+        if blk.find(["ul", "ol", "table", "img", "pre", "code", "math", "iframe"]):
+            continue
+
+        # Only touch simple text-only blocks to avoid restructuring rich inline markup.
+        has_non_ws_tag_child = any(
+            getattr(child, "name", None) for child in list(blk.children)
+        )
+        if has_non_ws_tag_child:
+            continue
+
+        raw_text = blk.get_text("\n", strip=False)
+        if "\n" not in raw_text:
+            continue
+
+        lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+        if len(lines) < 2:
+            continue
+
+        blk.clear()
+        for idx, line in enumerate(lines):
+            blk.append(NavigableString(line))
+            if idx < len(lines) - 1:
+                blk.append(soup.new_tag("br"))
+
+        fixes.append("Preserved author-intended line breaks in text block")
 
     # 9b. Orphan <li> repair: ensure every list item is inside <ul> or <ol>.
     # Some upstream transforms can leave stray <li> nodes under <div>/<p> containers.

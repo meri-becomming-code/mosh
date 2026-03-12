@@ -18,6 +18,7 @@ import sys
 import os
 import time
 import shutil
+import re
 
 # Ensure the script's directory is in the Python path for local imports
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -60,6 +61,7 @@ import run_audit
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".mosh_toolkit")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIR, "toolkit_config.json")
+FAILED_UPLOADS_FILE = os.path.join(CONFIG_DIR, "failed_canvas_uploads.json")
 
 
 from gui.handler import ThreadSafeGuiHandler
@@ -250,7 +252,7 @@ class ToolkitGUI:
             "gemini_tier": "free",  # free or paid
             "math_step_mode": False,
             "math_has_visuals": True,
-            "math_manual_visual_selection": True,
+            "math_manual_visual_selection": False,
             "math_strict_validation": True,
             "math_auto_responsive": True,
             "math_final_ada_check": True,
@@ -1467,7 +1469,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         )
 
         self.var_math_manual_visual_selection = tk.BooleanVar(
-            value=self.config.get("math_manual_visual_selection", True)
+            value=self.config.get("math_manual_visual_selection", False)
         )
         chk_manual_visuals = tk.Checkbutton(
             frame_math_prefs,
@@ -3918,7 +3920,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     box_info_var.set("Page image unavailable for AI description.")
                     return
 
-                box_info_var.set("Generating AI alt text for selected box...")
+                box_info_var.set("⏳ Working on new alt tag...")
 
                 def worker():
                     try:
@@ -3951,7 +3953,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                                 ] = False
                             story_entry.delete("1.0", "end")
                             story_entry.insert("1.0", desc)
-                            box_info_var.set("AI alt text refreshed for selected box.")
+                            box_info_var.set("✅ AI alt text ready.")
                             set_refresh_button_state(False)
 
                         self.root.after(0, apply_desc)
@@ -4413,7 +4415,11 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         if page_idx not in corrections:
                             corrections[page_idx] = []
                         corrections[page_idx].append(new_box)
-                        render_page()
+                        # Auto-select newly drawn box and immediately generate AI alt text.
+                        selected_box[0] = len(corrections[page_idx]) - 1
+                        render_page(reset_selection=False)
+                        box_info_var.set("⏳ Working on new alt tag...")
+                        refresh_alt_ai_selected()
 
                     draw_start[0] = None
                     if temp_rect[0]:
@@ -4861,7 +4867,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             # In manual math workflows (and bootstrapped review mode), do not auto-approve.
             # Teachers must be able to inspect all detected visuals and add missing ones.
             manual_math_mode = bool(
-                self.config.get("math_manual_visual_selection", True)
+                self.config.get("math_manual_visual_selection", False)
             )
             allow_auto_approve = not (manual_math_mode or bootstrapped_review)
             auto_approve_default = (
@@ -4976,14 +4982,18 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                         y2 = max(0, min(src.height, y2))
                         if x2 <= x1 or y2 <= y1:
                             return
+                        # Persist normalized/clamped box so future trim/expand acts on real bounds.
+                        info["box_abs"] = [x1, y1, x2, y2]
+                        with meta_lock:
+                            meta[gn] = info
                         crop = src.crop((x1, y1, x2, y2))
                         crop.save(os.path.join(graphs_dir, gn))
                     _, sc, _ = load_full_page(info["full_image"])
-                    draw_rect(pcv, box, sc)
+                    draw_rect(pcv, info["box_abs"], sc)
                     refresh_crop(gn, lbl)
                     # Update dimension label
-                    cw = box[2] - box[0]
-                    ch = box[3] - box[1]
+                    cw = info["box_abs"][2] - info["box_abs"][0]
+                    ch = info["box_abs"][3] - info["box_abs"][1]
                     if dim_lbl:
                         warn = "  ** LOW QUALITY" if cw < 100 or ch < 100 else ""
                         color = "#c0392b" if warn else "#555"
@@ -5476,6 +5486,14 @@ h1 {{ color: #4b3190; }}
                         y1 = int(min(s["sy"], e.y) / sc)
                         x2 = int(max(s["sx"], e.x) / sc)
                         y2 = int(max(s["sy"], e.y) / sc)
+                        # Clamp drag box to source page bounds.
+                        pw = int(i.get("page_width", 0) or 0)
+                        ph = int(i.get("page_height", 0) or 0)
+                        if pw > 0 and ph > 0:
+                            x1 = max(0, min(pw, x1))
+                            y1 = max(0, min(ph, y1))
+                            x2 = max(0, min(pw, x2))
+                            y2 = max(0, min(ph, y2))
                         if (x2 - x1) < 30 or (y2 - y1) < 30:
                             return
                         i["box_abs"] = [x1, y1, x2, y2]
@@ -5607,6 +5625,16 @@ h1 {{ color: #4b3190; }}
                 info["_alt_widget"] = ae
                 alt_widgets_map[gn] = ae
                 ae_placeholder[0] = ae  # Link back for type dropdown
+
+                # Auto-generate alt text for newly drawn/manual-added boxes.
+                if info.get("manual_added") and not (sv and sv.strip() and sv.lower() != "none"):
+                    ae.delete("1.0", "end")
+                    ae.insert("1.0", "⏳ Working on new alt tag...")
+                    self.gui_handler.log(f"   [AI-ALT] Auto-describing new box: {gn}")
+                    threading.Thread(
+                        target=lambda g=gn, w=ae: ai_describe(g, w),
+                        daemon=True,
+                    ).start()
 
                 # Status listener
                 ae.bind(
@@ -6005,6 +6033,7 @@ h1 {{ color: #4b3190; }}
                                     "page_height": ph,
                                     "story": "",
                                     "type": "graph",
+                                    "manual_added": True,
                                 }
                                 meta[nn] = ni
                                 build_card(nn, ni, par)
@@ -6068,12 +6097,25 @@ h1 {{ color: #4b3190; }}
                         or soup
                     )
                     for gn, info in meta_snapshot.items():
-                        if "manual" in gn:
+                        is_manual = bool(info.get("manual_added")) or bool(
+                            re.search(r"_manual\d+\.(png|jpg|jpeg|webp|gif|bmp|tif|tiff)$", gn, re.IGNORECASE)
+                        )
+                        if is_manual:
                             already = any(
                                 gn in (it.get("src", "") or "")
                                 for it in soup.find_all("img")
                             )
                             if not already:
+                                crop_path = os.path.join(graphs_dir, gn)
+                                if not os.path.exists(crop_path):
+                                    continue
+                                try:
+                                    with Image.open(crop_path) as _ci:
+                                        cw, ch = _ci.size
+                                    if cw < 30 or ch < 30:
+                                        continue
+                                except Exception:
+                                    continue
                                 bstem = Path(html_path).stem
                                 rs = f"{bstem}_graphs/{gn}"
                                 at = (
@@ -7562,7 +7604,13 @@ YOUR WORKFLOW:
         self._run_task_in_thread(task, f"Convert {ext.upper()}")
 
     def _upload_page_to_canvas(
-        self, html_path, original_source_path, api, auto_confirm_links=False
+        self,
+        html_path,
+        original_source_path,
+        api,
+        auto_confirm_links=False,
+        attempt_retry_queue=True,
+        show_errors=True,
     ):
         """Helper to upload a single HTML file as a Canvas Page with images."""
         fname = (
@@ -7585,13 +7633,33 @@ YOUR WORKFLOW:
                     self.gui_handler.log(
                         "   [CRITICAL] Uploads paused. Verify Canvas URL, token permissions, and Course ID in Connect & Setup."
                     )
+                    self._queue_failed_canvas_upload(
+                        html_path,
+                        original_source_path,
+                        f"Pages endpoint check failed: {pages_msg}",
+                    )
                     return False
 
             if not self._canvas_pages_ok:
                 self.gui_handler.log(
                     "   [Sync] Skipped: Canvas page endpoint is unavailable with current setup."
                 )
+                self._queue_failed_canvas_upload(
+                    html_path,
+                    original_source_path,
+                    "Canvas page endpoint unavailable",
+                )
                 return False
+
+            # Best-effort retry of previously failed uploads (silent, limited batch)
+            # before processing the current file.
+            if attempt_retry_queue:
+                try:
+                    self._retry_failed_canvas_uploads(api)
+                except Exception as retry_err:
+                    self.gui_handler.log(
+                        f"   [Sync] Pending retry check skipped: {retry_err}"
+                    )
 
             def _run_required_ada_pipeline(path_for_fix):
                 """Run ADA quick-fix and verify results before upload (required)."""
@@ -7846,6 +7914,7 @@ YOUR WORKFLOW:
             if success_page:
                 canvas_page_url = res_page.get("html_url")
                 self.gui_handler.log(f"   [Sync] SUCCESS! Live Page: {canvas_page_url}")
+                self._clear_failed_canvas_upload(html_path, original_source_path)
 
                 # 4. Link update: Point ALL OTHER FILES to this live Canvas Page
                 # Never block upload flow with modal confirm dialogs.
@@ -7907,39 +7976,157 @@ YOUR WORKFLOW:
                         f"   [CRITICAL] Canvas Token Expired. Please check your setup."
                     )
                 _err = str(res_page)
+                self._queue_failed_canvas_upload(html_path, original_source_path, _err)
                 self.gui_handler.log(
                     f"   [ERROR] Page update/creation failed: {_err}"
                 )
-                self.root.after(
-                    0,
-                    lambda d=_err: messagebox.showerror(
-                        "Canvas Upload Failed",
-                        f"Could not upload '{fname}' to Canvas.\n\n"
-                        f"Please check:\n"
-                        f"  \u2022 Canvas URL in Setup\n"
-                        f"  \u2022 Course number (Course ID)\n"
-                        f"  \u2022 Canvas API key / token\n\n"
-                        f"Error detail:\n{d}",
-                    ),
-                )
+                if show_errors:
+                    self.root.after(
+                        0,
+                        lambda d=_err: messagebox.showerror(
+                            "Canvas Upload Failed",
+                            f"Could not upload '{fname}' to Canvas.\n\n"
+                            f"Please check:\n"
+                            f"  \u2022 Canvas URL in Setup\n"
+                            f"  \u2022 Course number (Course ID)\n"
+                            f"  \u2022 Canvas API key / token\n\n"
+                            f"Error detail:\n{d}\n\n"
+                            f"This file was queued for retry/resubmit.",
+                        ),
+                    )
                 return False
 
         except Exception as e:
             _err = str(e)
+            self._queue_failed_canvas_upload(html_path, original_source_path, _err)
             self.gui_handler.log(f"   [ERROR] Sync failed: {_err}")
-            self.root.after(
-                0,
-                lambda m=_err: messagebox.showerror(
-                    "Canvas Upload Failed",
-                    f"Something went wrong while uploading to Canvas.\n\n"
-                    f"Please check:\n"
-                    f"  \u2022 Canvas URL in Setup\n"
-                    f"  \u2022 Course number (Course ID)\n"
-                    f"  \u2022 Canvas API key / token\n\n"
-                    f"Error detail:\n{m}",
-                ),
-            )
+            if show_errors:
+                self.root.after(
+                    0,
+                    lambda m=_err: messagebox.showerror(
+                        "Canvas Upload Failed",
+                        f"Something went wrong while uploading to Canvas.\n\n"
+                        f"Please check:\n"
+                        f"  \u2022 Canvas URL in Setup\n"
+                        f"  \u2022 Course number (Course ID)\n"
+                        f"  \u2022 Canvas API key / token\n\n"
+                        f"Error detail:\n{m}\n\n"
+                        f"This file was queued for retry/resubmit.",
+                    ),
+                )
             return False
+
+    def _load_failed_canvas_uploads(self):
+        try:
+            if os.path.exists(FAILED_UPLOADS_FILE):
+                with open(FAILED_UPLOADS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data if isinstance(data, list) else []
+        except Exception:
+            pass
+        return []
+
+    def _save_failed_canvas_uploads(self, items):
+        try:
+            with open(FAILED_UPLOADS_FILE, "w", encoding="utf-8") as f:
+                json.dump(items, f, indent=2)
+        except Exception as e:
+            self.gui_handler.log(f"   [Sync] Could not save failed upload queue: {e}")
+
+    def _queue_failed_canvas_upload(self, html_path, original_source_path, error_text):
+        items = self._load_failed_canvas_uploads()
+        html_abs = os.path.abspath(html_path) if html_path else ""
+        src_abs = os.path.abspath(original_source_path) if original_source_path else ""
+
+        # De-duplicate by html/source pair.
+        items = [
+            it
+            for it in items
+            if not (
+                os.path.abspath(it.get("html_path", "")) == html_abs
+                and os.path.abspath(it.get("source_path", "")) == src_abs
+            )
+        ]
+
+        import datetime as _dt
+
+        items.append(
+            {
+                "html_path": html_abs,
+                "source_path": src_abs,
+                "error": str(error_text)[:500],
+                "last_failed_at": _dt.datetime.now().isoformat(timespec="seconds"),
+            }
+        )
+        self._save_failed_canvas_uploads(items)
+        self.gui_handler.log(
+            f"   [Sync] Queued failed upload for retry: {os.path.basename(html_abs) or html_abs}"
+        )
+
+    def _clear_failed_canvas_upload(self, html_path, original_source_path):
+        items = self._load_failed_canvas_uploads()
+        if not items:
+            return
+        html_abs = os.path.abspath(html_path) if html_path else ""
+        src_abs = os.path.abspath(original_source_path) if original_source_path else ""
+        kept = [
+            it
+            for it in items
+            if not (
+                os.path.abspath(it.get("html_path", "")) == html_abs
+                and os.path.abspath(it.get("source_path", "")) == src_abs
+            )
+        ]
+        if len(kept) != len(items):
+            self._save_failed_canvas_uploads(kept)
+
+    def _retry_failed_canvas_uploads(self, api, max_items=3):
+        if getattr(self, "_retrying_failed_uploads", False):
+            return
+
+        items = self._load_failed_canvas_uploads()
+        if not items:
+            return
+
+        # Force a fresh endpoint capability check during retry sweeps.
+        self._canvas_pages_checked = False
+        self._canvas_pages_ok = True
+
+        self._retrying_failed_uploads = True
+        try:
+            self.gui_handler.log(
+                f"   [Sync] Found {len(items)} failed upload(s). Attempting retry..."
+            )
+            attempted = 0
+            for it in list(items):
+                if attempted >= max_items:
+                    break
+                html_path = it.get("html_path") or ""
+                src_path = it.get("source_path") or html_path
+                if not html_path or not os.path.exists(html_path):
+                    # Remove stale queue entries when source file is gone.
+                    self._clear_failed_canvas_upload(html_path, src_path)
+                    continue
+
+                attempted += 1
+                ok = self._upload_page_to_canvas(
+                    html_path,
+                    src_path,
+                    api,
+                    auto_confirm_links=True,
+                    attempt_retry_queue=False,
+                    show_errors=False,
+                )
+                if ok:
+                    self.gui_handler.log(
+                        f"   [Sync] Retry succeeded: {os.path.basename(html_path)}"
+                    )
+                else:
+                    self.gui_handler.log(
+                        f"   [Sync] Retry still pending: {os.path.basename(html_path)}"
+                    )
+        finally:
+            self._retrying_failed_uploads = False
 
     def _get_canvas_api(self):
         """Helper to instantiate CanvasAPI from config."""
@@ -8014,6 +8201,7 @@ YOUR WORKFLOW:
             self.lbl_status_text.config(text="Converting files...", fg="blue")
             success_count = 0
             total_auto_fixes = 0
+            pending_page_retries = []
 
             # [TURBO] Collect mappings for single-pass updates
             manifest_map = {}
@@ -8125,12 +8313,48 @@ YOUR WORKFLOW:
                         ):
                             # Preserve wiki-page links (editable by instructors) in turbo link pass.
                             link_map[os.path.basename(fpath)] = live_url
+                            link_map[os.path.basename(output_path)] = live_url
                         else:
+                            pending_page_retries.append((output_path, fpath))
                             self.gui_handler.log(
-                                "   [Sync] Wiki page upload did not return a live URL; links were not switched to local HTML."
+                                "   [Sync] Wiki page upload did not return a live URL; queued for final page-creation retry."
                             )
                 else:
                     self.gui_handler.log(f"   [FAILED] {err}")
+
+            # Final retry sweep for any files that did not create editable Wiki Pages
+            # during first-pass sync. This gives one more chance before course packaging/import.
+            if (
+                self.config.get("batch_sync_confirmed")
+                and pending_page_retries
+                and self._get_canvas_api()
+            ):
+                self.gui_handler.log(
+                    "\n🔁 Final Wiki Page retry sweep (to avoid downloadable HTML-only outcomes)..."
+                )
+                sync_api = self._get_canvas_api()
+                retry_ok = 0
+                for out_path, src_path in pending_page_retries:
+                    live_url = self._upload_page_to_canvas(
+                        out_path,
+                        src_path,
+                        sync_api,
+                        auto_confirm_links=True,
+                        attempt_retry_queue=False,
+                        show_errors=False,
+                    )
+                    if (
+                        live_url
+                        and isinstance(live_url, str)
+                        and live_url.startswith("http")
+                    ):
+                        link_map[os.path.basename(src_path)] = live_url
+                        link_map[os.path.basename(out_path)] = live_url
+                        retry_ok += 1
+
+                self.gui_handler.log(
+                    f"   [Sync] Final retry results: {retry_ok}/{len(pending_page_retries)} pages successfully created as editable Canvas Wiki Pages."
+                )
 
             # --- [TURBO] PASS: Batch Updates ---
             if manifest_map:
@@ -8570,6 +8794,23 @@ YOUR WORKFLOW:
                 self.gui_handler.log(
                     "   Canvas is now importing your files. check back in 1-2 minutes."
                 )
+
+                # If any page upserts failed earlier, retry once more at the end of course push
+                # so teachers get editable Canvas Pages whenever possible.
+                try:
+                    queued = self._load_failed_canvas_uploads()
+                    if queued:
+                        self.gui_handler.log(
+                            f"🔁 Retrying {len(queued)} queued Wiki Page upload(s) after course push..."
+                        )
+                        self._canvas_pages_checked = False
+                        self._canvas_pages_ok = True
+                        self._retry_failed_canvas_uploads(api, max_items=999)
+                except Exception as retry_err:
+                    self.gui_handler.log(
+                        f"   [Sync] End-of-push page retry skipped: {retry_err}"
+                    )
+
                 self.root.after(
                     0,
                     lambda: messagebox.showinfo(
@@ -9193,7 +9434,7 @@ YOUR WORKFLOW:
         per_file_visual_mode = bool(per_file_mode_choice)
         visuals_choice = True
         manual_visual_selection_mode = bool(
-            self.config.get("math_manual_visual_selection", True)
+            self.config.get("math_manual_visual_selection", False)
         )
         if not per_file_visual_mode:
             visuals_choice = self._ask_choice_centered(
@@ -9290,6 +9531,14 @@ YOUR WORKFLOW:
                     log(f"   ⏩ User skipped finalization for {os.path.basename(dest)}")
                     return
 
+                # Re-run remediation after any visual-review edits so link text/titles
+                # stay meaningful on math pages before sync/upload.
+                try:
+                    interactive_fixer.run_auto_fixer(dest, self.gui_handler)
+                    log("   [LINKS] Post-review link remediation complete.")
+                except Exception as e_fix:
+                    log(f"   [LINKS] Post-review remediation skipped: {e_fix}")
+
                 # 3. Update Links
                 converter_utils.update_doc_links_to_html(
                     self.target_dir,
@@ -9324,6 +9573,18 @@ YOUR WORKFLOW:
 
                     with open(html_path, "r", encoding="utf-8") as f:
                         raw = f.read()
+
+                    # Ensure newly inserted/edited links (e.g., long-description links)
+                    # are normalized to meaningful link text and titles.
+                    try:
+                        interactive_fixer.run_auto_fixer(html_path, self.gui_handler)
+                        self.gui_handler.log(
+                            "   [Review] Post-save link remediation complete."
+                        )
+                    except Exception as e_fix:
+                        self.gui_handler.log(
+                            f"   [Review] Post-save remediation skipped: {e_fix}"
+                        )
 
                     changed = False
                     cleaned = _re.sub(r"\[GRAPH_BBOX:[^\]]+\]", "", raw)
@@ -9901,7 +10162,7 @@ YOUR WORKFLOW:
 
             detect_visuals_for_file = self.config.get("math_has_visuals", True)
             manual_visual_selection_for_file = bool(
-                self.config.get("math_manual_visual_selection", True)
+                self.config.get("math_manual_visual_selection", False)
             )
             if file_type == "pdf":
                 choice = prompt_pdf_visual_mode(file_path)

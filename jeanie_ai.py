@@ -599,6 +599,8 @@ def improve_html_design(html_content, api_key):
             "Ensure PowerPoint slide containers (.slide-container) use 'overflow: auto;' to properly encase images. "
             "Set a default max-width of 50% for images to prevent them from being oversized, but ensure they take 100% width on small screens/mobile. "
             "CRITICAL: Do NOT remove or alter any actual text content, links, images, or mathematical equations. "
+            "CRITICAL: Preserve existing line-break semantics exactly. Do NOT remove, add, or relocate <br>/<br /> tags. "
+            "Do NOT merge adjacent paragraphs/list items or collapse explicit spacing that changes reading flow. "
             "Just improve the structural wrappers/styling. Return ONLY the fully updated raw HTML string without markdown ticks, <html> or <body> tags."
         )
 

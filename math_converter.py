@@ -427,6 +427,15 @@ RULES:
 
 Goal: A perfect accessible digital version of this document."""
 
+MANUAL_VISUAL_SELECTION_PROMPT = """
+MANUAL_VISUAL_SELECTION_MODE:
+- The teacher will manually choose which regions should remain images.
+- DO NOT emit any [GRAPH_BBOX: ...] tokens from AI detection in this pass.
+- OCR/TRANSCRIBE all readable handwritten and typed math/text into accessible HTML/LaTeX.
+- Do NOT replace the whole page with a generic image placeholder.
+- Keep original reading order and preserve math meaning.
+"""
+
 # Simple rate limiter to track API calls and enforce delays
 _api_call_times = []
 _current_tier = "free"  # "free" or "paid"
@@ -827,12 +836,14 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
                     conversion_prompt = MATH_PROMPT
                     if visual_context:
                         conversion_prompt += f"\n\nCONTEXT FROM PROBING PASS:\n{visual_context}\n\nEnsure every element listed above has a [GRAPH_BBOX] token."
-                    elif (not detect_visuals) or manual_visual_selection:
+                    elif not detect_visuals:
                         conversion_prompt += (
                             "\n\nNO_VISUALS_MODE:\n"
                             "Assume there are no diagrams/graphs/icons to extract. "
                             "Do not emit any [GRAPH_BBOX: ...] tokens."
                         )
+                    elif manual_visual_selection:
+                        conversion_prompt += f"\n\n{MANUAL_VISUAL_SELECTION_PROMPT}"
 
                     response = generate_content_with_retry(
                         client=client,
