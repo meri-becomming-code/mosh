@@ -1292,7 +1292,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             out.append(str(p))
         return out
 
-    try {
+    try:
         if fast_license_mode:
             # Fast path: skip attribution scanner and start conversion immediately.
             safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf') if not _is_archived_path(p)] + [str(p) for p in web_resources.glob('**/*.docx') if not _is_archived_path(p)]
@@ -1340,14 +1340,11 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             if not safe_file_paths:
                 return False, "No safe PDF or Word files found to convert"
 
-    } except Exception as e {
+    except Exception as e_license:
+        # Fallback: If the licensing checker crashes, just continue with safe paths
         if log_func:
-            log_func(f"\n⚠️  Could not check licensing: {e}")
-            log_func("   Proceeding cautiously - YOU must verify licensing manually!")
-        # Fall back to processing all PDFs and Docx
-        safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf') if not _is_archived_path(p)] + [str(p) for p in web_resources.glob('**/*.docx') if not _is_archived_path(p)]
-        safe_file_paths = _dedupe_keep_order(safe_file_paths)
-    }
+            log_func(f"[Licensing scan error] {e_license}")
+        safe_file_paths = []
     
     # STEP 2: Convert safe files
     if log_func:
@@ -1418,7 +1415,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                             stop_requested = True
                             break
                         detect_visuals_for_file = bool(detect_choice)
-                    } except Exception as e_cb {
+                    } catch Exception as e_cb {
                         if log_func:
                             log_func(f"   ⚠️ Visual option callback error for {p.name}: {e_cb}. Using default.")
                     }
