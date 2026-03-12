@@ -1407,7 +1407,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
 
                 detect_visuals_for_file = detect_visuals
                 if detect_visuals_callback:
-                    try {
+                    try:
                         detect_choice = detect_visuals_callback(str(p))
                         if detect_choice is None:
                             if log_func:
@@ -1415,10 +1415,9 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                             stop_requested = True
                             break
                         detect_visuals_for_file = bool(detect_choice)
-                    } catch Exception as e_cb {
+                    except Exception as e_cb:
                         if log_func:
                             log_func(f"   ⚠️ Visual option callback error for {p.name}: {e_cb}. Using default.")
-                    }
 
                 gate_cb = None
                 if step_mode and page_gate_callback:
@@ -1433,7 +1432,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                     strict_math_validation=strict_math_validation,
                     latex_review_callback=latex_review_callback,
                 )
-            } elif ext == '.docx' {
+            elif ext == '.docx':
                 if not _docx_has_math(str(p)):
                     skipped_no_math.append(str(file_path))
                     if log_func:
@@ -1441,237 +1440,6 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                     continue
 
                 success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
-            } else {
-                continue
-            }
-
-            if success:
-                # Safety cleanup for leaked internal graph tokens.
-                html_or_error = re.sub(r'\[GRAPH_BBOX:[^\]]+\]', '', html_or_error)
-
-                # DOCX fallback: replace AI placeholder/external image URLs with local extracted assets.
-                if ext == '.docx':
-                    html_or_error = repair_docx_placeholder_image_sources(
-                        html_or_error,
-                        str(p),
-                        log_func,
-                    )
-
-                # Add attribution footer if needed
-                license_info = next((f for f in safe_files + risky_files if f['path'] == file_path), None)
-                
-                if license_info and license_info['requires_attribution']:
-                    import attribution_checker
-                    footer = attribution_checker.generate_attribution_footer(
-                        p.name,
-                        license_info['license']
-                    )
-                    # Insert footer before </body>
-                    html_or_error = html_or_error.replace('</body>', f'{footer}</body>')
-                
-                # Save HTML file IN THE SAME FOLDER as the source (for link syncing)
-                html_filename = f"{p.stem}.html"
-                html_path = p.parent / html_filename
-                
-                with open(html_path, 'w', encoding='utf-8') as f:
-                    f.write(html_or_error)
-                
-                conversion_results.append((str(file_path), str(html_path)))
-                
-                if log_func:
-                    log_func(f"   ✅ Saved: {html_filename}")
-                
-                # [NEW] Call immediate callback for upload/sync
-                if on_file_converted:
-                    try:
-                        on_file_converted(str(file_path), str(html_path))
-                    except Exception as e_cb:
-                        if log_func: log_func(f"   ⚠️ Post-processing error: {e_cb}")
             else:
-                 if log_func:
-                    log_func(f"   ⚠️ Skipping file due to error: {html_or_error}")
-        
-        } except Exception as e_file {
-            if log_func:
-                log_func(f"   ❌ Oops! Problem with {Path(file_path).name}: {e_file}")
-            continue
-    }
-    
-    if stop_requested and conversion_results:
-        if log_func:
-            log_func(f"\n✅ Partial conversion complete: {len(conversion_results)} file(s) converted before stop.")
-            if skipped_no_math:
-                log_func(f"ℹ️ Left unconverted (no math detected): {len(skipped_no_math)} file(s).")
-        return True, {
-            "converted": conversion_results,
-            "skipped_no_math": skipped_no_math,
-        }
-
-    if conversion_results:
-        if log_func:
-            log_func(f"\n✅ Converted {len(conversion_results)} file(s) successfully!")
-            log_func(f"📁 Files saved in their original folders (ready for sync)")
-            if skipped_no_math:
-                log_func(f"ℹ️ Left unconverted (no math detected): {len(skipped_no_math)} file(s).")
-            log_func(f"\n⚖️  REMEMBER: Review LICENSING_REPORT.md before publishing!")
-        return True, {
-            "converted": conversion_results,
-            "skipped_no_math": skipped_no_math,
-        }
-    elif skipped_no_math:
-        if log_func:
-            log_func(f"\nℹ️ No files converted. {len(skipped_no_math)} file(s) were left in place because no math was detected.")
-        return True, {
-            "converted": [],
-            "skipped_no_math": skipped_no_math,
-        }
-    else:
-        if log_func:
-             log_func(f"\n❌ Note: No PDF files were converted. (See detailed log above)")
-        return False, "No files processed successfully."
-
-def create_canvas_html(content, title="Canvas Math Content"):
-    """
-    Creates a standalone HTML file with the converted content.
-    Uses INLINE STYLES for maximum compatibility with Canvas LMS.
-    """
-    # Escape the title so a filename like <script>... can't inject into the <title> tag.
-    safe_title = html_lib.escape(title)
-
-    # Inject inline styles into standard elements returned by Gemini
-    content = re.sub(
-        r'<details\s*>', 
-        r'<details style="background: #f8f9fa; padding: 15px; margin: 15px 0; border-left: 4px solid #4b3190; border-radius: 4px;">', 
-        content,
-        flags=re.IGNORECASE
-    )
-    
-    content = re.sub(
-        r'<summary\s*>', 
-        r'<summary style="cursor: pointer; font-weight: bold; color: #4b3190;">', 
-        content,
-        flags=re.IGNORECASE
-    )
-
-    margin_px = _style_preferences.get("image_margin_px", 15)
-    h1_color = _style_preferences.get("h1_color", "#4b3190")
-    h2_color = _style_preferences.get("h2_color", "#2c3e50")
-    h3_color = _style_preferences.get("h3_color", "#2c3e50")
-    h4_color = _style_preferences.get("h4_color", "#374151")
-    h5_color = _style_preferences.get("h5_color", "#4b5563")
-    h6_color = _style_preferences.get("h6_color", "#6b7280")
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{safe_title}</title>
-    <!-- MathJax for local preview with cancel extension for crossed-out terms -->
-    <script>
-    window.MathJax = {{
-        tex: {{
-            packages: {{'[+]': ['cancel', 'cases']}}
-        }},
-        loader: {{
-            load: ['[tex]/cancel', '[tex]/cases']
-        }}
-    }};
-    </script>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <style>
-        body {{
-            font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 40px;
-            line-height: 1.6;
-            color: #2D2D2D;
-            background-color: #ffffff;
-        }}
-        h1 {{
-            color: {h1_color};
-            border-bottom: 2px solid {h1_color};
-            padding-bottom: 15px;
-            margin-bottom: 30px;
-            font-size: 28px; /* Reduced from browser default */
-            font-weight: 700;
-        }}
-        h2 {{ color: {h2_color}; margin-top: 30px; }}
-        h3 {{ color: {h3_color}; margin-top: 30px; }}
-        h4 {{ color: {h4_color}; margin-top: 24px; }}
-        h5 {{ color: {h5_color}; margin-top: 20px; }}
-        h6 {{ color: {h6_color}; margin-top: 16px; }}
-
-        /* Table Handling - Prevent Cutoff */
-        table {{
-            display: table;
-            width: 100%;
-            overflow-x: auto;
-            border-collapse: collapse;
-            margin: 20px 0;
-            -webkit-overflow-scrolling: touch;
-        }}
-        th, td {{
-            border: 1px solid #ddd;
-            padding: 12px;
-            text-align: left;
-        }}
-        th {{ background-color: #f8f9fa; color: #4b3190; }}
-
-        /* Interactive Solutions */
-        details {{
-            background-color: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-left: 5px solid #4b3190;
-            border-radius: 4px;
-            padding: 15px;
-            margin: 20px 0;
-            transition: all 0.2s ease;
-        }}
-        summary {{
-            font-weight: 600;
-            color: #4b3190;
-            cursor: pointer;
-            padding-bottom: 5px;
-        }}
-        summary:hover {{ color: #2c3e50; }}
-
-        /* Images */
-        img {{
-            max-width: 500px;
-            width: 100%;
-            height: auto;
-            border-radius: 4px;
-            display: block;
-            margin: {margin_px}px 0;
-        }}
-
-        @media (max-width: 768px) {{
-            img {{ max-width: 100% !important; }}
-        }}
-
-        /* Print Friendly */
-        @media print {{
-            body {{ max-width: 100%; padding: 0; }}
-            details {{ display: block !important; border: none; }}
-            summary {{ display: none; }}
-        }}
-    </style>
-</head>
-<body>
-    <h1>{safe_title}</h1>
-
-    <div class="content-wrapper">
-        {content}
-    </div>
-    
-    <hr style="border: 0; border-top: 1px solid #eee; margin: 50px 0;">
-    <p style="font-size: 10px; color: #7f8c8d; text-align: center; font-family: monospace;">
-        Accessible format created by MOSH Toolkit using Gemini AI
-    </p>
-</body>
-</html>
-"""
-    return html
+                continue
+           
