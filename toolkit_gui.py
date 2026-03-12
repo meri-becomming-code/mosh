@@ -3529,8 +3529,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             fg="white",
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w", padx=10, pady=8)
-        page_canvas = tk.Canvas(left, bg="#111827", highlightthickness=0)
-        page_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        _pcf = tk.Frame(left, bg="#111827")
+        _pcf.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        page_canvas = tk.Canvas(_pcf, bg="#111827", highlightthickness=0)
+        _pcvsb = ttk.Scrollbar(_pcf, orient="vertical", command=page_canvas.yview)
+        page_canvas.configure(yscrollcommand=_pcvsb.set)
+        _pcvsb.pack(side="right", fill="y")
+        page_canvas.pack(side="left", fill="both", expand=True)
 
         tk.Label(
             right,
@@ -3566,12 +3571,13 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         try:
             if image_path and os.path.exists(image_path):
                 pil = Image.open(image_path)
-                max_w, max_h = 620, 740
+                max_w, max_h = 600, 6000  # full height — scrollbar handles overflow
                 pil.thumbnail((max_w, max_h), Image.LANCZOS)
                 tki = ImageTk.PhotoImage(pil)
                 img_refs.append(tki)
                 page_canvas.create_image(10, 10, anchor="nw", image=tki)
                 page_canvas.image = tki
+                page_canvas.configure(scrollregion=page_canvas.bbox("all"))
         except Exception:
             page_canvas.create_text(
                 20,
@@ -3582,33 +3588,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 font=("Segoe UI", 10),
             )
 
-        # Add Accept Recommended Fix button to btns frame
-        tk.Button(
-            btns,
-            text="Accept Recommended Fix",
-            command=_accept_fix,
-            bg="#38bdf8",
-            fg="white",
-            font=("Segoe UI", 10, "bold"),
-        ).pack(side="left", padx=(10, 0))
-        try:
-            if image_path and os.path.exists(image_path):
-                pil = Image.open(image_path)
-                max_w, max_h = 620, 740
-                pil.thumbnail((max_w, max_h), Image.LANCZOS)
-                tki = ImageTk.PhotoImage(pil)
-                img_refs.append(tki)
-                page_canvas.create_image(10, 10, anchor="nw", image=tki)
-                page_canvas.image = tki
-        except Exception:
-            page_canvas.create_text(
-                20,
-                20,
-                anchor="nw",
-                text="[Could not load page preview]",
-                fill="#fca5a5",
-                font=("Segoe UI", 10),
-            )
+        def _pcwheel(e):
+            page_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        page_canvas.bind("<MouseWheel>", _pcwheel)
 
         btns = tk.Frame(dialog, bg="#1a1a2e")
         btns.pack(fill="x", padx=16, pady=(0, 14))
@@ -3655,6 +3637,16 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             fg="white",
             font=("Segoe UI", 11, "bold"),
         ).pack(side="right")
+
+        if validation and validation.get("suggestion"):
+            tk.Button(
+                btns,
+                text="Accept Recommended Fix",
+                command=_accept_fix,
+                bg="#38bdf8",
+                fg="white",
+                font=("Segoe UI", 10, "bold"),
+            ).pack(side="left", padx=(10, 0))
 
         dialog.protocol("WM_DELETE_WINDOW", _continue)
 
@@ -3784,8 +3776,12 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             canvas_frame = tk.Frame(main, bg="#2a2a3e", bd=2, relief="solid")
             canvas_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-            canvas = tk.Canvas(canvas_frame, bg="#333", highlightthickness=0)
-            canvas.pack(fill="both", expand=True, padx=5, pady=5)
+            canvas = tk.Canvas(canvas_frame, bg="#333", highlightthickness=0,
+                               scrollregion=(0, 0, PAGE_W, PAGE_H))
+            canvas_vsb = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+            canvas.configure(yscrollcommand=canvas_vsb.set)
+            canvas_vsb.pack(side="right", fill="y")
+            canvas.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=5)
 
             # Side panel for box info (scrollable so controls are never cut off)
             side = tk.Frame(main, bg="#2a2a3e", width=320)
@@ -4327,8 +4323,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 hit_pad = 8
 
                 # Convert click to image coordinates
-                img_x = (evt.x - cx) / scale
-                img_y = (evt.y - cy) / scale
+                img_x = (canvas.canvasx(evt.x) - cx) / scale
+                img_y = (canvas.canvasy(evt.y) - cy) / scale
 
                 # If multiple boxes overlap (or one is inside another),
                 # choose the smallest matching box for precise selection.
@@ -4368,7 +4364,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             def on_right_click_start(evt):
                 # Start drawing a new box
-                draw_start[0] = (evt.x, evt.y)
+                draw_start[0] = (canvas.canvasx(evt.x), canvas.canvasy(evt.y))
 
             def on_right_drag(evt):
                 if draw_start[0]:
@@ -4377,8 +4373,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                     temp_rect[0] = canvas.create_rectangle(
                         draw_start[0][0],
                         draw_start[0][1],
-                        evt.x,
-                        evt.y,
+                        canvas.canvasx(evt.x),
+                        canvas.canvasy(evt.y),
                         outline="#00ffff",
                         width=2,
                         dash=(4, 4),
@@ -4387,7 +4383,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             def on_right_release(evt):
                 if draw_start[0]:
                     x1, y1 = draw_start[0]
-                    x2, y2 = evt.x, evt.y
+                    x2, y2 = canvas.canvasx(evt.x), canvas.canvasy(evt.y)
 
                     # Convert to image coordinates
                     scale = getattr(canvas, "scale_factor", 1.0)
@@ -4436,6 +4432,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             canvas.bind("<Button-3>", on_right_click_start)
             canvas.bind("<B3-Motion>", on_right_drag)
             canvas.bind("<ButtonRelease-3>", on_right_release)
+            canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
             # Navigation buttons
             nav = tk.Frame(dialog, bg="#1a1a2e")
@@ -7905,13 +7902,39 @@ YOUR WORKFLOW:
                     self.gui_handler.log(
                         f"   [CRITICAL] Canvas Token Expired. Please check your setup."
                     )
+                _err = str(res_page)
                 self.gui_handler.log(
-                    f"   [ERROR] Page update/creation failed: {res_page}"
+                    f"   [ERROR] Page update/creation failed: {_err}"
+                )
+                self.root.after(
+                    0,
+                    lambda d=_err: messagebox.showerror(
+                        "Canvas Upload Failed",
+                        f"Could not upload '{fname}' to Canvas.\n\n"
+                        f"Please check:\n"
+                        f"  \u2022 Canvas URL in Setup\n"
+                        f"  \u2022 Course number (Course ID)\n"
+                        f"  \u2022 Canvas API key / token\n\n"
+                        f"Error detail:\n{d}",
+                    ),
                 )
                 return False
 
         except Exception as e:
-            self.gui_handler.log(f"   [ERROR] Sync failed: {e}")
+            _err = str(e)
+            self.gui_handler.log(f"   [ERROR] Sync failed: {_err}")
+            self.root.after(
+                0,
+                lambda m=_err: messagebox.showerror(
+                    "Canvas Upload Failed",
+                    f"Something went wrong while uploading to Canvas.\n\n"
+                    f"Please check:\n"
+                    f"  \u2022 Canvas URL in Setup\n"
+                    f"  \u2022 Course number (Course ID)\n"
+                    f"  \u2022 Canvas API key / token\n\n"
+                    f"Error detail:\n{m}",
+                ),
+            )
             return False
 
     def _get_canvas_api(self):
@@ -9967,6 +9990,34 @@ YOUR WORKFLOW:
                         f"   📤 NEXT STEP: Upload the .html file to Canvas"
                     )
                     self.gui_handler.log(f"   📁 Your file: {Path(output_path).name}")
+
+                    # Interactive image-conversion review pass (equation/table images)
+                    try:
+                        import interactive_fixer as _ifixer
+                        _ifixer.run_auto_fixer(output_path, self.gui_handler)
+                        with open(output_path, "r", encoding="utf-8") as _f:
+                            _html = _f.read()
+                        _has_math = (
+                            'data-math-check="true"' in _html
+                            or "data-math-check='true'" in _html
+                        )
+                        _has_table = (
+                            'data-table-check="true"' in _html
+                            or "data-table-check='true'" in _html
+                        )
+                        if _has_math or _has_table:
+                            self.gui_handler.log(
+                                "   [IMG-CONVERT] Found potential equation/table images. Opening guided conversion prompts..."
+                            )
+                            _ifixer.scan_and_fix_file(
+                                output_path,
+                                self.gui_handler,
+                                str(Path(output_path).parent),
+                            )
+                    except Exception as _e_scan:
+                        self.gui_handler.log(
+                            f"   [IMG-CONVERT] Guided image review skipped: {_e_scan}"
+                        )
 
                     # [NEW] Interactive Visual Review before finalizing
                     dest_stem = Path(output_path).stem
