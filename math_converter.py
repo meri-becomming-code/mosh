@@ -18,45 +18,32 @@ from PIL import Image
 try:
     # Preferred import path for current SDK versions.
     import google.genai as genai
-except Exception as _e:
-    print(f"[DEBUG] primary import failed: {_e}", file=sys.stderr)
+except Exception:
     try:
         # Fallback path for environments that expose namespace differently.
         from google import genai  # type: ignore
-    except Exception as _e2:
-        print(f"[DEBUG] namespace import failed: {_e2}", file=sys.stderr)
+    except Exception:
         try:
-            # Last resort: direct submodule import (helps in PyInstaller EXE context
-            # where the google namespace package __init__.py may not be present)
-            import importlib, sys as _sys
+            import importlib
             genai = importlib.import_module("google.genai")
-        except Exception as _e3:
-            print(f"[DEBUG] importlib import failed: {_e3}", file=sys.stderr)
+        except Exception:
             genai = None
 
-# Additional fallback specific to PyInstaller single-file exe:
-# When PyInstaller bundles packages, it often places them under the
-# temporary _MEIPASS directory. The namespace package structure can get
-# lost, so 'import google.genai' may still fail even though the files
-# are present. The following hack ensures the bundled 'google' package
-# directory is added to sys.path so the import can succeed.
+# PyInstaller _MEIPASS fallback: the 'google' namespace package has no
+# __init__.py, so the bundled EXE may not find it even though the files
+# exist inside the temp directory.  Inject the path and retry.
 if genai is None:
-    try:
-        import sys as _sys, os as _os
-        print(f"[DEBUG] _MEIPASS={getattr(_sys,'_MEIPASS',None)}", file=sys.stderr)
-        base = getattr(_sys, '_MEIPASS', None)
-        if base:
-            candidate = _os.path.join(base, 'google')
-            print(f"[DEBUG] candidate google path: {candidate}", file=sys.stderr)
-            if _os.path.isdir(candidate) and candidate not in _sys.path:
-                _sys.path.insert(0, candidate)
-                # retry import
-                import importlib
-                genai = importlib.import_module('google.genai')
-                print(f"[DEBUG] retry import succeeded, genai={genai}", file=sys.stderr)
-    except Exception as _e4:
-        print(f"[DEBUG] fallback import failed: {_e4}", file=sys.stderr)
-        genai = None
+    import sys as _sys
+    _meipass = getattr(_sys, '_MEIPASS', None)
+    if _meipass:
+        _gpath = os.path.join(_meipass, 'google')
+        if os.path.isdir(_gpath) and _meipass not in _sys.path:
+            _sys.path.insert(0, _meipass)
+        try:
+            import importlib
+            genai = importlib.import_module('google.genai')
+        except Exception:
+            genai = None
 
 try:
     from pdf2image import convert_from_path
@@ -734,13 +721,8 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
     Returns:
         (success, html_content_or_error_message)
     """
-    # ensure genai is available, with more detailed error if not
     if not genai:
-        try:
-            import google.genai as genai_test
-            genai = genai_test
-        except Exception as ie:
-            return False, f"Gemini library not installed ({ie})"
+        return False, "Gemini library not installed. Run: pip install google-genai pillow pdf2image"
     
     if log_func:
         log_func(f"📄 Processing PDF: {Path(pdf_path).name}")
@@ -1257,14 +1239,6 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             "skipped_no_math": [source_path, ...]
         }
     """
-    # ensure genai is importable and provide detailed error if not
-    if not genai:
-        try:
-            import google.genai as genai_test
-            genai = genai_test
-        except Exception as ie:
-            return False, f"Gemini library not installed ({ie})"
-    
     if not genai:
         return False, "Gemini library not installed"
     
@@ -1348,11 +1322,13 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             if not safe_file_paths:
                 return False, "No safe PDF or Word files found to convert"
 
-    except Exception as e_license:
-        # Fallback: If the licensing checker crashes, just continue with safe paths
+    except Exception as e:
         if log_func:
-            log_func(f"[Licensing scan error] {e_license}")
-        safe_file_paths = []
+            log_func(f"\n⚠️  Could not check licensing: {e}")
+            log_func("   Proceeding cautiously - YOU must verify licensing manually!")
+        # Fall back to processing all PDFs and Docx
+        safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf') if not _is_archived_path(p)] + [str(p) for p in web_resources.glob('**/*.docx') if not _is_archived_path(p)]
+        safe_file_paths = _dedupe_keep_order(safe_file_paths)
     
     # STEP 2: Convert safe files
     if log_func:
@@ -1450,7 +1426,6 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
             else:
                 continue
-           
 
             if success:
                 # Safety cleanup for leaked internal graph tokens.
@@ -1498,11 +1473,10 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                  if log_func:
                     log_func(f"   ⚠️ Skipping file due to error: {html_or_error}")
         
-        except Exception as e_file {
+        except Exception as e_file:
             if log_func:
                 log_func(f"   ❌ Oops! Problem with {Path(file_path).name}: {e_file}")
             continue
-    }
     
     if stop_requested and conversion_results:
         if log_func:
