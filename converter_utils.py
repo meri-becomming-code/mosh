@@ -279,6 +279,30 @@ def _save_html(content, title, source_file, output_path, style_overrides=""):
     html = HTML_TEMPLATE.format(
         title=title, content=content, style_overrides=combined_styles
     )
+
+    # [FIX] If the generated HTML lives inside a web_resources folder, ensure image
+    # src paths are not prefixed with an extra "web_resources/" segment.
+    # Example bad: web_resources/EGR252_Exam_1_Practice/page2_img.png
+    # while file is already at .../web_resources/EGR252_Exam_1_Practice.html
+    # which resolves to .../web_resources/web_resources/... (broken).
+    try:
+        if os.path.basename(os.path.dirname(output_path)).lower() == "web_resources":
+            soup = BeautifulSoup(html, "html.parser")
+            changed = False
+            for img in soup.find_all("img", src=True):
+                src = (img.get("src") or "").strip()
+                low = src.lower()
+                if low.startswith("web_resources/"):
+                    img["src"] = src[len("web_resources/") :]
+                    changed = True
+                elif low.startswith("./web_resources/"):
+                    img["src"] = src[len("./web_resources/") :]
+                    changed = True
+            if changed:
+                html = str(soup)
+    except Exception:
+        pass
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
     return output_path
@@ -1905,9 +1929,14 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
         return 0
     import urllib.parse
 
+    def _norm_name(value):
+        base = os.path.splitext(os.path.basename(str(value or "")))[0].lower()
+        return re.sub(r"[^a-z0-9]+", "", base)
+
     # Pre-process map for comparison (case-insensitive keys)
-    # Also prepare URL encoded versions
+    # Also prepare normalized versions for Canvas file_contents slugs
     lookup = {}
+    lookup_norm = {}
     for old, new in filename_map.items():
         old_clean = old.strip().lower()
         old_basename = os.path.basename(old_clean)
@@ -1923,6 +1952,9 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
         lookup[old_basename] = d
         lookup[old_clean] = d
         lookup[old_stem] = d
+        old_norm = _norm_name(old_basename)
+        if old_norm:
+            lookup_norm[old_norm] = d
 
     total_files_updated = 0
     total_links_changed = 0
@@ -1940,9 +1972,16 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
                         href = a["href"]
                         clean_href = urllib.parse.unquote(href).replace("\\", "/")
                         filename_part = clean_href.split("/")[-1].split("?")[0].lower()
+                        filename_stem = os.path.splitext(filename_part)[0]
+                        filename_norm = _norm_name(filename_part)
 
-                        if filename_part in lookup:
-                            info = lookup[filename_part]
+                        info = (
+                            lookup.get(filename_part)
+                            or lookup.get(filename_stem)
+                            or lookup_norm.get(filename_norm)
+                        )
+
+                        if info:
                             # If mapped target is a live URL, use it directly.
                             # Otherwise preserve local prefix logic.
                             if str(info["new_href"]).startswith("http"):
@@ -1954,9 +1993,20 @@ def batch_update_links_in_directory(directory, filename_map, log_func=None):
                             # Add descriptive title
                             a['title'] = info["new_text"]
 
-                            # Update text if it's generic
+                            # Update text if it's generic or still looks like a source document link
                             t = a.get_text(strip=True)
-                            if t.lower() in [filename_part, "click here", "link"]:
+                            t_low = t.lower()
+                            if (
+                                t_low in [filename_part, filename_stem, "click here", "link"]
+                                or ".pdf" in t_low
+                                or ".docx" in t_low
+                                or ".pptx" in t_low
+                                or ".xlsx" in t_low
+                                or "(pdf)" in t_low
+                                or "(docx)" in t_low
+                                or "(pptx)" in t_low
+                                or "(xlsx)" in t_low
+                            ):
                                 a.string = info["new_text"]
 
                             modified = True
@@ -2103,6 +2153,18 @@ def update_doc_links_to_html(root_dir, old_filename, new_filename, log_func=None
                     content = re.sub(
                         pattern4,
                         rf">\1{readable_name}\2(HTML)</a>",
+                        content,
+                        flags=re.IGNORECASE,
+                    )
+                    modified = True
+
+                # Pattern 4b: plain filename text (e.g., "...Motion.pdf") in anchor text.
+                pattern4b = rf">\s*{e_old_base}{e_old_ext}\s*</a>"
+                if re.search(pattern4b, content, re.IGNORECASE):
+                    readable_name = new_base.replace("_", " ")
+                    content = re.sub(
+                        pattern4b,
+                        rf">{readable_name}</a>",
                         content,
                         flags=re.IGNORECASE,
                     )

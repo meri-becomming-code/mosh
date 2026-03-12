@@ -164,6 +164,11 @@ def check_headings(soup):
 
 def check_viewport(soup):
     """Reflow Check: Ensures <meta name='viewport'> exists."""
+    # Canvas/body fragments often do not include <html>/<head>, so viewport
+    # cannot exist there. Skip this check for true fragments.
+    if not soup.find('html') and not soup.find('head'):
+        return None
+
     meta = soup.find('meta', attrs={'name': 'viewport'})
     if not meta:
         return "Missing <meta name='viewport'> (Fails WCAG Reflow/Mobile)"

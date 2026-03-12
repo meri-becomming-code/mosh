@@ -111,6 +111,41 @@ def _pdf_has_math(pdf_path):
         # If uncertain (image-only/parse issue), do not block conversion.
         return True
 
+
+def _pdf_has_visual_content(pdf_path):
+    """Best-effort visual-content detection for PDFs (images/drawings/charts/diagrams)."""
+    try:
+        import fitz
+
+        doc = fitz.open(pdf_path)
+        has_visuals = False
+        for i, page in enumerate(doc):
+            if i >= 5:  # sample first pages for speed
+                break
+
+            # Raster images embedded on page.
+            try:
+                if page.get_images(full=True):
+                    has_visuals = True
+                    break
+            except Exception:
+                pass
+
+            # Vector drawings/paths (often graphs/diagrams/axes).
+            try:
+                drawings = page.get_drawings() or []
+                if drawings:
+                    has_visuals = True
+                    break
+            except Exception:
+                pass
+
+        doc.close()
+        return has_visuals
+    except Exception:
+        # If uncertain, do not block when visual mode may be needed.
+        return True
+
 def clean_gemini_response(text):
     """
     Cleans Gemini response by removing markdown code blocks and HTML boilerplate.
@@ -328,6 +363,11 @@ FORMAT:
 Element: Type | Box: [box] | Desc: description
 ...
 
+IMPORTANT MIXED-CONTENT RULE:
+- If a region contains BOTH text and graphics (e.g., labels inside a diagram, captions embedded in a chart,
+  callouts inside a figure, coordinate labels on a graph), classify the whole region as ONE visual element.
+- Do not treat embedded labels as standalone plain text.
+
 If there are no visual elements, reply: "NO_VISUALS"
 """
 
@@ -344,6 +384,8 @@ RULES:
 2. TRANSCRIBE any standard text exactly as it appears.
 3. VISUAL ELEMENTS (GRAPHS, DIAGRAMS, ICONS):
    - You MUST output a token for every visual element detected.
+    - If a region mixes text + graphics, still treat it as a visual element and emit a [GRAPH_BBOX] token.
+    - Embedded labels/callouts inside a chart/diagram belong to that visual's STORY (not standalone body text).
    - Format: [GRAPH_BBOX: ymin, xmin, ymax, xmax, TYPE, STORY]
    - TYPE: Set to 'icon' (< 100px), 'graph' (math-heavy), or 'diagram' (complex illustration).
    - STORY: ALWAYS provide a meaningful description (1-2 sentences) for accessibility.
@@ -1383,12 +1425,6 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                 log_func(f"   🔄 Converting: {p.name} ...")
 
             if ext == '.pdf':
-                if not _pdf_has_math(str(p)):
-                    skipped_no_math.append(str(file_path))
-                    if log_func:
-                        log_func(f"   ⏭️ Ignored (no math detected): {p.name}")
-                    continue
-
                 detect_visuals_for_file = detect_visuals
                 if detect_visuals_callback:
                     try:
@@ -1402,6 +1438,17 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                     except Exception as e_cb:
                         if log_func:
                             log_func(f"   ⚠️ Visual option callback error for {p.name}: {e_cb}. Using default.")
+
+                has_math = _pdf_has_math(str(p))
+                if not has_math:
+                    visual_fallback = bool(detect_visuals_for_file) and _pdf_has_visual_content(str(p))
+                    if not visual_fallback:
+                        skipped_no_math.append(str(file_path))
+                        if log_func:
+                            log_func(f"   ⏭️ Ignored (no math/visual content detected): {p.name}")
+                        continue
+                    if log_func:
+                        log_func(f"   🖼️ Visual fallback enabled: converting {p.name} even though math text was not detected")
 
                 gate_cb = None
                 if step_mode and page_gate_callback:
