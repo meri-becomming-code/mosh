@@ -101,8 +101,14 @@ def build():
     #   1. Create a temporary synthetic google/__init__.py so Python treats it as
     #      a regular package inside the frozen EXE.
     #   2. Manually add google/genai, google/auth, google/oauth2 via --add-data.
+    #   3. Use custom hooks + a runtime hook to patch google.__path__.
     import site as _site, tempfile as _tempfile
     user_site = _site.getusersitepackages()
+
+    # Custom hooks directory
+    hooks_dir = os.path.join(project_root, "pyinstaller_hooks")
+    if os.path.isdir(hooks_dir):
+        args.append(f"--additional-hooks-dir={hooks_dir}")
 
     # Write a temporary __init__.py for the 'google' namespace shim
     google_shim_dir = os.path.join(_tempfile.gettempdir(), "mosh_google_shim", "google")
@@ -147,6 +153,12 @@ def build():
 
     args.append("--copy-metadata=google-genai")
     args.append("--copy-metadata=google-auth")
+
+    # Runtime hook: patches google.__path__ inside frozen EXE so that
+    # 'import google.genai' resolves to the data files we bundled above.
+    rthook = os.path.join(project_root, "rthook_google_ns.py")
+    if os.path.isfile(rthook):
+        args.append(f"--runtime-hook={rthook}")
     # --- end google-genai fix ---
     args.append("--hidden-import=darkdetect")  # [NEW]
     args.append("--hidden-import=pdf2image")  # [NEW]
