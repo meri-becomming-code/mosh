@@ -93,17 +93,38 @@ def build():
     args.append("--hidden-import=math_converter")  # [NEW]
     args.append("--hidden-import=requests")
     args.append("--hidden-import=jeanie_ai")
-    args.append("--hidden-import=google")
-    args.append("--hidden-import=google.genai")
-    args.append("--hidden-import=google.genai.types")
-    args.append("--hidden-import=google.genai.errors")
-    args.append("--hidden-import=google.auth")
-    args.append("--hidden-import=google.auth.transport.requests")
-    args.append("--hidden-import=google.oauth2")
-    # Collect ALL submodules + data for google-genai so runtime import succeeds in EXE.
-    args.append("--collect-all=google.genai")
+
+    # --- google-genai: namespace package fix ---
+    # google.genai lives in the user roaming site-packages. Because 'google' is a
+    # namespace package (no __init__.py), PyInstaller's --collect-all can miss it.
+    # We manually locate the package and add it with --add-data + hidden-imports.
+    import site, importlib.util
+    user_site = site.getusersitepackages()
+    genai_pkg_dir = os.path.join(user_site, "google", "genai")
+    if os.path.isdir(genai_pkg_dir):
+        # Bundle the entire google/genai folder into google/genai inside the EXE
+        args.append(f"--add-data={genai_pkg_dir}{sep}google/genai")
+    else:
+        # Fallback: let PyInstaller try to collect it normally
+        args.append("--collect-all=google.genai")
+
+    # Hidden imports for every known google.genai submodule
+    for _mod in [
+        "google", "google.genai", "google.genai.types", "google.genai.errors",
+        "google.genai.client", "google.genai.models", "google.genai.chats",
+        "google.genai.files", "google.genai.batches", "google.genai.caches",
+        "google.genai.tokens", "google.genai.tunings", "google.genai.operations",
+        "google.genai.pagers", "google.genai.live", "google.genai._api_client",
+        "google.genai._transformers", "google.genai._common",
+        "google.genai._extra_utils", "google.genai._adapters",
+        "google.auth", "google.auth.transport", "google.auth.transport.requests",
+        "google.oauth2", "google.oauth2.credentials",
+    ]:
+        args.append(f"--hidden-import={_mod}")
+
     args.append("--copy-metadata=google-genai")
     args.append("--copy-metadata=google-auth")
+    # --- end google-genai fix ---
     args.append("--hidden-import=darkdetect")  # [NEW]
     args.append("--hidden-import=pdf2image")  # [NEW]
 

@@ -23,7 +23,13 @@ except Exception:
         # Fallback path for environments that expose namespace differently.
         from google import genai  # type: ignore
     except Exception:
-        genai = None
+        try:
+            # Last resort: direct submodule import (helps in PyInstaller EXE context
+            # where the google namespace package __init__.py may not be present)
+            import importlib, sys as _sys
+            genai = importlib.import_module("google.genai")
+        except Exception:
+            genai = None
 
 try:
     from pdf2image import convert_from_path
