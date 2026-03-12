@@ -2957,6 +2957,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         math_win = Toplevel(self.root)
         math_win.title("📐 MOSH Math Whiteboard")
         math_win.geometry("900x650")
+        math_win.minsize(700, 500)
+        math_win.resizable(True, True)
         math_win.transient(self.root)
         math_win.grab_set()
 
@@ -3009,6 +3011,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         # 2. Right Side: Editor
         editor_frame = tk.Frame(main_frame, bg=colors["bg"])
         editor_frame.pack(side="right", fill="both", expand=True)
+        editor_frame.rowconfigure(1, weight=1)  # Let the text area expand
+        editor_frame.columnconfigure(0, weight=1)
 
         tk.Label(
             editor_frame,
@@ -3019,9 +3023,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         ).pack(anchor="w")
 
         txt_math = scrolledtext.ScrolledText(
-            editor_frame, font=("Consolas", 14), bg="white", height=15
+            editor_frame, font=("Consolas", 14), bg="white", height=10
         )
-        txt_math.pack(fill="both", expand=True, pady=(5, 10))
+        txt_math.pack(fill="both", expand=True, pady=(5, 5))
 
         # Load current text
         txt_math.insert(1.0, parent_var.get())
@@ -3050,7 +3054,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             # But here we just close it and let the user decide.
 
         btn_action = tk.Frame(editor_frame, bg=colors["bg"])
-        btn_action.pack(fill="x")
+        btn_action.pack(fill="x", side="bottom", pady=(5, 0))
 
         tk.Button(
             btn_action,

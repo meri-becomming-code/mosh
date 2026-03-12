@@ -1,5 +1,6 @@
 import requests
 import os
+import sys
 import mimetypes
 import re
 from urllib.parse import urlparse, quote
@@ -145,9 +146,8 @@ class CanvasAPI:
 
     def get_page(self, title_or_url):
         """Fetches a page by its URL-friendly title (slug)."""
-        import urllib.parse
         # Slugs are usually lowercase with hyphens
-        slug = urllib.parse.quote(title_or_url.lower().replace(" ", "-"))
+        slug = quote(title_or_url.lower().replace(" ", "-"))
         url = f"{self.base_url}/api/v1/courses/{self.course_id}/pages/{slug}"
         try:
             response = requests.get(url, headers=self.headers, timeout=15)
@@ -302,7 +302,6 @@ class CanvasAPI:
                                     replacements += 1
                                 else:
                                     # New page was created but old file item wasn't removed — log but don't crash.
-                                    import sys
                                     print(f"[Warning] Could not delete old module item {item_id}: {del_res.status_code}", file=sys.stderr)
                             else:
                                 # Fallback: try in-place update from File -> Page
