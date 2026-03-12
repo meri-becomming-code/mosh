@@ -18,18 +18,45 @@ from PIL import Image
 try:
     # Preferred import path for current SDK versions.
     import google.genai as genai
-except Exception:
+except Exception as _e:
+    print(f"[DEBUG] primary import failed: {_e}", file=sys.stderr)
     try:
         # Fallback path for environments that expose namespace differently.
         from google import genai  # type: ignore
-    except Exception:
+    except Exception as _e2:
+        print(f"[DEBUG] namespace import failed: {_e2}", file=sys.stderr)
         try:
             # Last resort: direct submodule import (helps in PyInstaller EXE context
             # where the google namespace package __init__.py may not be present)
             import importlib, sys as _sys
             genai = importlib.import_module("google.genai")
-        except Exception:
+        except Exception as _e3:
+            print(f"[DEBUG] importlib import failed: {_e3}", file=sys.stderr)
             genai = None
+
+# Additional fallback specific to PyInstaller single-file exe:
+# When PyInstaller bundles packages, it often places them under the
+# temporary _MEIPASS directory. The namespace package structure can get
+# lost, so 'import google.genai' may still fail even though the files
+# are present. The following hack ensures the bundled 'google' package
+# directory is added to sys.path so the import can succeed.
+if genai is None:
+    try:
+        import sys as _sys, os as _os
+        print(f"[DEBUG] _MEIPASS={getattr(_sys,'_MEIPASS',None)}", file=sys.stderr)
+        base = getattr(_sys, '_MEIPASS', None)
+        if base:
+            candidate = _os.path.join(base, 'google')
+            print(f"[DEBUG] candidate google path: {candidate}", file=sys.stderr)
+            if _os.path.isdir(candidate) and candidate not in _sys.path:
+                _sys.path.insert(0, candidate)
+                # retry import
+                import importlib
+                genai = importlib.import_module('google.genai')
+                print(f"[DEBUG] retry import succeeded, genai={genai}", file=sys.stderr)
+    except Exception as _e4:
+        print(f"[DEBUG] fallback import failed: {_e4}", file=sys.stderr)
+        genai = None
 
 try:
     from pdf2image import convert_from_path
@@ -707,8 +734,13 @@ def convert_pdf_to_latex(api_key, pdf_path, log_func=None, poppler_path=None, pr
     Returns:
         (success, html_content_or_error_message)
     """
+    # ensure genai is available, with more detailed error if not
     if not genai:
-        return False, "Gemini library not installed. Run: pip install google-genai pillow pdf2image"
+        try:
+            import google.genai as genai_test
+            genai = genai_test
+        except Exception as ie:
+            return False, f"Gemini library not installed ({ie})"
     
     if log_func:
         log_func(f"📄 Processing PDF: {Path(pdf_path).name}")
@@ -1260,7 +1292,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             out.append(str(p))
         return out
 
-    try:
+    try {
         if fast_license_mode:
             # Fast path: skip attribution scanner and start conversion immediately.
             safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf') if not _is_archived_path(p)] + [str(p) for p in web_resources.glob('**/*.docx') if not _is_archived_path(p)]
@@ -1308,13 +1340,14 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
             if not safe_file_paths:
                 return False, "No safe PDF or Word files found to convert"
 
-    except Exception as e:
+    } except Exception as e {
         if log_func:
             log_func(f"\n⚠️  Could not check licensing: {e}")
             log_func("   Proceeding cautiously - YOU must verify licensing manually!")
         # Fall back to processing all PDFs and Docx
         safe_file_paths = [str(p) for p in web_resources.glob('**/*.pdf') if not _is_archived_path(p)] + [str(p) for p in web_resources.glob('**/*.docx') if not _is_archived_path(p)]
         safe_file_paths = _dedupe_keep_order(safe_file_paths)
+    }
     
     # STEP 2: Convert safe files
     if log_func:
@@ -1377,7 +1410,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
 
                 detect_visuals_for_file = detect_visuals
                 if detect_visuals_callback:
-                    try:
+                    try {
                         detect_choice = detect_visuals_callback(str(p))
                         if detect_choice is None:
                             if log_func:
@@ -1385,9 +1418,10 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                             stop_requested = True
                             break
                         detect_visuals_for_file = bool(detect_choice)
-                    except Exception as e_cb:
+                    } except Exception as e_cb {
                         if log_func:
                             log_func(f"   ⚠️ Visual option callback error for {p.name}: {e_cb}. Using default.")
+                    }
 
                 gate_cb = None
                 if step_mode and page_gate_callback:
@@ -1402,7 +1436,7 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                     strict_math_validation=strict_math_validation,
                     latex_review_callback=latex_review_callback,
                 )
-            elif ext == '.docx':
+            } elif ext == '.docx' {
                 if not _docx_has_math(str(p)):
                     skipped_no_math.append(str(file_path))
                     if log_func:
@@ -1410,8 +1444,9 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                     continue
 
                 success, html_or_error = convert_word_to_latex(api_key, str(p), log_func)
-            else:
+            } else {
                 continue
+            }
 
             if success:
                 # Safety cleanup for leaked internal graph tokens.
@@ -1459,10 +1494,11 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
                  if log_func:
                     log_func(f"   ⚠️ Skipping file due to error: {html_or_error}")
         
-        except Exception as e_file:
+        } except Exception as e_file {
             if log_func:
                 log_func(f"   ❌ Oops! Problem with {Path(file_path).name}: {e_file}")
             continue
+    }
     
     if stop_requested and conversion_results:
         if log_func:
