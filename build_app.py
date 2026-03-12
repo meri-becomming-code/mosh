@@ -95,9 +95,15 @@ def build():
     args.append("--hidden-import=jeanie_ai")
     args.append("--hidden-import=google")
     args.append("--hidden-import=google.genai")
-    # Collect only runtime-needed package data/submodules.
-    args.append("--collect-data=google.genai")
+    args.append("--hidden-import=google.genai.types")
+    args.append("--hidden-import=google.genai.errors")
+    args.append("--hidden-import=google.auth")
+    args.append("--hidden-import=google.auth.transport.requests")
+    args.append("--hidden-import=google.oauth2")
+    # Collect ALL submodules + data for google-genai so runtime import succeeds in EXE.
+    args.append("--collect-all=google.genai")
     args.append("--copy-metadata=google-genai")
+    args.append("--copy-metadata=google-auth")
     args.append("--hidden-import=darkdetect")  # [NEW]
     args.append("--hidden-import=pdf2image")  # [NEW]
 
