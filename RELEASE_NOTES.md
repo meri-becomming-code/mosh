@@ -1,6 +1,35 @@
 # MOSH ADA Toolkit - Release Notes
 
-## Latest: Release Candidate 38 (March 1, 2026)
+## Latest: Release Candidate 73 (March 9, 2026)
+### 🚧 Production Readiness Update
+
+> ⚠️ **Math workflow status:** The math conversion workflow is **not ready for production use yet**.
+>
+> Estimated readiness: **within 7 days** (target window ends around **March 19, 2026**), pending final QA and edge-case fixes.
+
+### ✅ What is ready now (safe to use)
+- Full non-math conversion and cleanup workflows
+- ADA audit + fixer pipeline improvements
+- Visual review and acceptance workflow updates
+- Canvas upload flow alignment with Step 4 preflight
+- Failed wiki upload tracking + retry workflow
+- Link migration hardening for converted content
+- Image path normalization fixes for completed HTML
+
+### ⏳ What is still in progress
+- Math conversion reliability for mixed-content pages (equation + diagram + labels)
+- Final validation of “marked converted” behavior for edge-case PDFs
+
+### 🎥 Video Overview
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/frbdXyNBFXY" title="MOSH ADA Toolkit Overview" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+If your viewer does not support embedded video, watch here:
+https://youtu.be/frbdXyNBFXY
+
+---
+
+## Release Candidate 38 (March 1, 2026)
 ### 🚀 The "Intelligence & Precision" Update
 
 **Visual Review 2.0:**
