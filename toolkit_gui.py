@@ -2773,6 +2773,110 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             else:
                 self.gui_handler.log(f"⚠️ Could not open: {path_val}")
 
+    def _show_math_file_checklist(self, file_paths):
+        """Show a checklist dialog for math bulk conversion. Returns filtered list or None if cancelled."""
+        import threading
+
+        result = {"files": None}
+        event = threading.Event()
+
+        def build():
+            dialog = Toplevel(self.root)
+            dialog.title("Select Files to Convert (Math)")
+            dialog.transient(self.root)
+            dialog.grab_set()
+            dialog.lift()
+            dialog.focus_force()
+            self._apply_window_size(dialog, "math_file_checklist", 650, 600)
+
+            tk.Label(
+                dialog,
+                text="Select Math Files to Convert",
+                font=("Segoe UI", 14, "bold"),
+                fg="#4b3190",
+            ).pack(pady=(10, 0))
+
+            tk.Label(
+                dialog,
+                text="\u26a0\ufe0f Uncheck any files with publisher/copyright content you do NOT have rights to convert.",
+                font=("Segoe UI", 9, "bold"),
+                fg="#d32f2f",
+                wraplength=600,
+            ).pack(pady=(2, 10))
+
+            frame_canvas = tk.Frame(dialog)
+            frame_canvas.pack(fill="both", expand=True, padx=20, pady=5)
+
+            canvas = tk.Canvas(frame_canvas, bg="white")
+            scrollbar = tk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
+            scroll_frame = tk.Frame(canvas, bg="white")
+
+            scroll_frame.bind(
+                "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+
+            canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            vars_map = {}
+            for fpath in file_paths:
+                rel_path = os.path.basename(fpath)
+                var = tk.BooleanVar(value=True)
+                chk = tk.Checkbutton(
+                    scroll_frame, text=rel_path, variable=var, anchor="w", bg="white",
+                    font=("Segoe UI", 10),
+                )
+                chk.pack(fill="x", padx=5, pady=2)
+                vars_map[fpath] = var
+
+            def on_start():
+                selected = [path for path, var in vars_map.items() if var.get()]
+                if not selected:
+                    messagebox.showwarning("None Selected", "Please select at least one file.", parent=dialog)
+                    return
+                result["files"] = selected
+                dialog.destroy()
+                event.set()
+
+            def on_cancel():
+                result["files"] = None
+                dialog.destroy()
+                event.set()
+
+            def on_toggle_all():
+                any_unchecked = any(not v.get() for v in vars_map.values())
+                new_val = True if any_unchecked else False
+                for v in vars_map.values():
+                    v.set(new_val)
+
+            dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+
+            btn_frame = tk.Frame(dialog)
+            btn_frame.pack(fill="x", pady=15, padx=20)
+
+            tk.Button(
+                btn_frame, text="Select / Deselect All", command=on_toggle_all, cursor="hand2",
+            ).pack(side="left")
+            tk.Button(
+                btn_frame, text="Cancel", command=on_cancel, cursor="hand2",
+            ).pack(side="left", padx=10)
+            tk.Button(
+                btn_frame,
+                text="Convert Selected \u25b6",
+                command=on_start,
+                bg="#4b3190",
+                fg="white",
+                font=("Segoe UI", 10, "bold"),
+                cursor="hand2",
+            ).pack(side="right")
+
+        self.root.after(0, build)
+        event.wait()
+        return result["files"]
+
     def _show_image_dialog(self, message, image_path, context=None, suggestion=None):
         """Custom dialog to show an image and prompt for alt text."""
         dialog = Toplevel(self.root)
@@ -2886,6 +2990,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             result["text"] = "__DECORATIVE__"
             dialog.destroy()
 
+        def on_skip_document():
+            result["text"] = "__SKIP_DOCUMENT__"
+            dialog.destroy()
+
         def on_ocr():
             result["text"] = "__OCR__"
             dialog.destroy()
@@ -2958,6 +3066,20 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         tk.Button(
             btn_frame_2, text="Skip / Ignore", command=on_skip, width=20, cursor="hand2"
         ).pack(side="left", padx=5)
+
+        # Row 3: Skip Entire Document
+        btn_frame_3 = tk.Frame(dialog, bg="#F5F3ED")
+        btn_frame_3.pack(pady=(10, 0))
+        tk.Button(
+            btn_frame_3,
+            text="\u23ed\ufe0f Skip Entire Document / Copyright Issue",
+            command=on_skip_document,
+            bg="#FFCDD2",
+            fg="#B71C1C",
+            font=("Segoe UI", 10, "bold"),
+            width=38,
+            cursor="hand2",
+        ).pack()
 
         # [NEW] Trust AI Checkbox
         trust_var = tk.BooleanVar(
@@ -6351,7 +6473,7 @@ h1 {{ color: #4b3190; }}
         self.gui_handler.log(f"   [DEBUG] Wait loop exited, result={result}")
         return result["approved"]
 
-    def _show_link_dialog(self, message, href, context=None):
+    def _show_link_dialog(self, message, href, context=None, suggestion=None):
         """Custom dialog to show link details and prompt for text."""
         dialog = Toplevel(self.root)
         dialog.title("Link Review")
@@ -6403,10 +6525,12 @@ h1 {{ color: #4b3190; }}
                 fg="gray",
             ).pack()
 
-        entry_var = tk.StringVar()
+        entry_var = tk.StringVar(value=suggestion or "")
         entry = tk.Entry(dialog, textvariable=entry_var, width=60)
         entry.pack(pady=15)
         entry.focus_set()
+        if suggestion:
+            entry.select_range(0, "end")
 
         result = {"text": ""}
 
@@ -6416,6 +6540,10 @@ h1 {{ color: #4b3190; }}
 
         def on_skip():
             result["text"] = ""
+            dialog.destroy()
+
+        def on_skip_document():
+            result["text"] = "__SKIP_DOCUMENT__"
             dialog.destroy()
 
         btn_frame = tk.Frame(dialog)
@@ -6431,6 +6559,19 @@ h1 {{ color: #4b3190; }}
         tk.Button(
             btn_frame, text="Skip / Ignore", command=on_skip, width=15, cursor="hand2"
         ).pack(side="left", padx=5)
+
+        btn_frame_2 = tk.Frame(dialog)
+        btn_frame_2.pack(pady=(5, 10))
+        tk.Button(
+            btn_frame_2,
+            text="\u23ed\ufe0f Skip Entire Document / Copyright Issue",
+            command=on_skip_document,
+            bg="#FFCDD2",
+            fg="#B71C1C",
+            font=("Segoe UI", 10, "bold"),
+            width=38,
+            cursor="hand2",
+        ).pack()
 
         dialog.bind("<Return>", on_ok)
         self.root.wait_window(dialog)
@@ -9945,6 +10086,7 @@ YOUR WORKFLOW:
                     self.config.get("math_strict_validation", True)
                 ),
                 latex_review_callback=latex_review_callback,
+                file_filter_callback=lambda paths: self._show_math_file_checklist(paths),
             )
 
             if success:

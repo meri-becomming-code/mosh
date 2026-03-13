@@ -718,6 +718,11 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             if choice == "!!":
                 io_handler.log("    [OVERRIDE] Skipping all remaining items for this file.")
                 return modified
+
+            # [SKIP DOCUMENT] Leave entire file untouched (copyright/licensing)
+            if choice == "__SKIP_DOCUMENT__":
+                io_handler.log("    [SKIP DOCUMENT] Leaving entire file untouched (copyright/licensing issue).")
+                return False
             
             # If they enter text (or special token), save to memory
 
@@ -865,6 +870,11 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             if choice == "!!":
                 io_handler.log("    [OVERRIDE] Skipping all remaining items for this file.")
                 return modified
+
+            # [SKIP DOCUMENT] Leave entire file untouched (copyright/licensing)
+            if choice == "__SKIP_DOCUMENT__":
+                io_handler.log("    [SKIP DOCUMENT] Leaving entire file untouched (copyright/licensing issue).")
+                return False
             
             if choice and choice.strip():
                 a.string = choice.strip()
@@ -915,6 +925,11 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             if choice == "!!":
                 io_handler.log("    [OVERRIDE] Skipping all remaining items for this file.")
                 return modified
+
+            # [SKIP DOCUMENT] Leave entire file untouched (copyright/licensing)
+            if choice == "__SKIP_DOCUMENT__":
+                io_handler.log("    [SKIP DOCUMENT] Leaving entire file untouched (copyright/licensing issue).")
+                return False
             
             if choice:
                 iframe['title'] = choice

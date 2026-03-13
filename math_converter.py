@@ -1295,7 +1295,7 @@ def convert_word_to_latex(api_key, doc_path, log_func=None):
             log_func(f"❌ Error: {e}")
         return False, str(e)
 
-def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, detect_visuals_callback=None, fast_license_mode=False, manual_visual_selection=False, strict_math_validation=False, latex_review_callback=None):
+def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None, progress_callback=None, on_file_converted=None, visual_review_callback=None, step_mode=False, page_gate_callback=None, detect_visuals=True, detect_visuals_callback=None, fast_license_mode=False, manual_visual_selection=False, strict_math_validation=False, latex_review_callback=None, file_filter_callback=None):
     """
     Process all PDFs in a Canvas export (IMSCC) structure.
     Includes licensing/attribution checking to protect teachers.
@@ -1406,6 +1406,19 @@ def process_canvas_export(api_key, export_dir, log_func=None, poppler_path=None,
     if log_func:
         log_func(f"\n🤖 STEP 2: Converting files with Gemini AI...")
     
+    # [NEW] File filter callback: let user select which files to convert
+    if file_filter_callback and safe_file_paths:
+        try:
+            filtered = file_filter_callback(safe_file_paths)
+            if filtered is None:
+                return False, "Cancelled by user at file selection."
+            safe_file_paths = filtered
+            if log_func:
+                log_func(f"   📋 User selected {len(safe_file_paths)} file(s) for conversion.")
+        except Exception as e_filter:
+            if log_func:
+                log_func(f"   ⚠️ File filter error: {e_filter}. Using all files.")
+
     # [NEW] Pre-check: How many are actually left?
     already_done = 0
     remaining_paths = []
