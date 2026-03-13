@@ -96,7 +96,7 @@ class FixerIO:
         print(f"Context: {context}")
         return input(message)
 
-    def prompt_link(self, message, help_url, context=None):
+    def prompt_link(self, message, help_url, context=None, suggestion=None):
         """Ask user for input while showing a link and context."""
         print(f"Context: {context}")
         return input(message)
@@ -860,7 +860,7 @@ def scan_and_fix_file(filepath, io_handler=None, root_dir=None):
             
             prompt_suffix = " (Type '!!' to skip all remaining): "
             msg = (f"    > Enter new text for this link (Press Enter to use '{suggestion}')" if suggestion else "    > Enter new text for this link (or Press Enter to skip)") + prompt_suffix
-            choice = io_handler.prompt_link(msg, help_url, context=context)
+            choice = io_handler.prompt_link(msg, help_url, context=context, suggestion=suggestion)
             
             if choice == "!!":
                 io_handler.log("    [OVERRIDE] Skipping all remaining items for this file.")

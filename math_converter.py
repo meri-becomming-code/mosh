@@ -149,7 +149,7 @@ def _pdf_has_visual_content(pdf_path):
 def clean_gemini_response(text):
     """
     Cleans Gemini response by removing markdown code blocks and HTML boilerplate.
-    Returns only the body content.
+    Returns only the body content with proper HTML line breaks.
     """
     # 1. Strip markdown code blocks (e.g. ```html ... ```)
     # Target ``` optionally followed by alphanumeric characters, and leading/trailing whitespace
@@ -173,6 +173,22 @@ def clean_gemini_response(text):
     
     # 5. Remove orphaned single letters on their own line (common from diagrams)
     text = re.sub(r'^\s*[A-Za-z]\s*$', '', text, flags=re.MULTILINE)
+
+    # 6. Convert bare newlines to HTML line breaks so structure is preserved.
+    #    Only process text that isn't already richly marked up with block elements.
+    #    If the content already has frequent <p>, <ul>, <ol>, <div>, <h2>, <h3> etc.
+    #    tags then Gemini returned proper HTML and we leave it alone.
+    block_tags = re.findall(r'<(?:p|ul|ol|div|h[1-6]|table|blockquote|section|article)\b', text, re.IGNORECASE)
+    newlines = text.count('\n')
+    # Heuristic: if there are many newlines but few block tags, Gemini returned
+    # semi-plain text that needs line breaks converted.
+    if newlines > 3 and len(block_tags) < newlines // 3:
+        # Convert bullet markers (•, -, *) at start of line to list items
+        text = re.sub(r'(?m)^[ \t]*[•\-\*][ \t]+', '<br>\n&bull; ', text)
+        # Blank lines → paragraph break
+        text = re.sub(r'\n{2,}', '\n<br><br>\n', text)
+        # Single newlines → <br> (but not after existing HTML block tags)
+        text = re.sub(r'(?<!>)\n(?!<)', '<br>\n', text)
 
     return text.strip()
 
@@ -407,6 +423,9 @@ RULES:
    - Use <h3> for section headers
    - Use <b> for bold text
    - Use <i> for italics
+   - Wrap every paragraph or text block in <p>...</p> tags
+   - Use <ul><li> or <ol><li> for bullet/numbered lists — NEVER use bare bullet characters (•) with newlines
+   - Every line break in the original document MUST be represented by a <br>, <p>, or list element — bare newlines are INVISIBLE in HTML
 8. Solutions/Answers:
    - Wrap solutions in <details><summary>View Solution</summary>...</details>
 9. Output MUST be valid HTML snippet (no <html> cards, no markdown code blocks).

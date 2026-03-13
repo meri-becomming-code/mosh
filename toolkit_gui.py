@@ -2244,24 +2244,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
                 row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew"
             )
 
-        self.var_workflow_audit_each_step = tk.BooleanVar(
-            value=self.config.get("workflow_audit_each_step", False)
-        )
-        chk_audit_each = tk.Checkbutton(
-            self.frame_actions,
-            text="Run compliance snapshot before start and after each automated step",
-            variable=self.var_workflow_audit_each_step,
-            command=lambda: self._update_config(
-                workflow_audit_each_step=self.var_workflow_audit_each_step.get()
-            ),
-            bg="white",
-            font=("Segoe UI", 9),
-            activebackground="white",
-            selectcolor="white",
-        )
-        chk_audit_each.grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(8, 2)
-        )
+        self.var_workflow_audit_each_step = tk.BooleanVar(value=False)
 
         self.frame_actions.columnconfigure(0, weight=1)
         self.frame_actions.columnconfigure(1, weight=1)
@@ -9175,8 +9158,8 @@ YOUR WORKFLOW:
                         # args were image_path, context, suggestion
                         result = self._show_image_dialog(msg, arg1, arg2, arg3)
                     elif rtype == "link":
-                        # args were help_url, context
-                        result = self._show_link_dialog(msg, arg1, arg2)
+                        # args were help_url, context, suggestion
+                        result = self._show_link_dialog(msg, arg1, arg2, suggestion=arg3)
                     elif rtype == "visual_review":
                         # msg=html_path, arg1=graphs_dir
                         self.gui_handler.log(

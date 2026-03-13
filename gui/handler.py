@@ -70,11 +70,11 @@ class ThreadSafeGuiHandler(interactive_fixer.FixerIO):
         )
         return self._wait_for_response(suggestion or "")
 
-    def prompt_link(self, message, help_url, context=None):
+    def prompt_link(self, message, help_url, context=None, suggestion=None):
         """Ask user for input while showing a link and context."""
         if self.is_stopped():
             return ""
-        self.input_request_queue.put(("link", message, help_url, context, None))
+        self.input_request_queue.put(("link", message, help_url, context, suggestion))
         return self._wait_for_response("")
 
     def prompt_visual_review(self, html_path, graphs_dir):

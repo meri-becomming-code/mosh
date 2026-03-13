@@ -46,26 +46,32 @@ CRITICAL RULES:
 9. Add descriptive text between equations if needed
 10. Be 100% accurate with mathematical notation
 11. DO NOT return a full HTML document (no <html>, <head>, <body> tags). Return ONLY the content.
+12. STRUCTURE YOUR OUTPUT WITH HTML TAGS:
+    - Wrap every paragraph or text block in <p>...</p> tags
+    - Use <ul><li> or <ol><li> for bullet/numbered lists — NEVER use bare bullet characters with newlines
+    - Use <h3> for section headers
+    - Every line break MUST be a <br>, <p>, or list element — bare newlines are INVISIBLE in HTML
 
 OUTPUT FORMAT:
-- Return clean, ready-to-paste Canvas HTML/LaTeX
+- Return clean, ready-to-paste Canvas HTML/LaTeX using proper HTML block elements (<p>, <ul>, <ol>, <h3>)
 - Include problem numbers if present
 - Use proper LaTeX syntax (\\frac, \\sqrt, ^, _, etc.)
 - Add <details><summary>Solution</summary>...</details> tags for solutions
 
 Example output:
-**Problem 1**: Solve \\(x^2 - 5x + 6 = 0\\)
+<h3>Problem 1</h3>
+<p>Solve \\(x^2 - 5x + 6 = 0\\)</p>
 
 <details>
 <summary>Show Solution</summary>
 
-**Step 1**: Factor the quadratic
+<p><b>Step 1</b>: Factor the quadratic</p>
 $$x^2 - 5x + 6 = (x-2)(x-3)$$
 
-**Step 2**: Set each factor to zero
+<p><b>Step 2</b>: Set each factor to zero</p>
 $$x - 2 = 0 \\quad \\text{or} \\quad x - 3 = 0$$
 
-**Answer**: \\(x = 2\\) or \\(x = 3\\)
+<p><b>Answer</b>: \\(x = 2\\) or \\(x = 3\\)</p>
 </details>
 
 Now convert the image:"""
@@ -125,7 +131,15 @@ def convert_image_to_latex(client, image_path: str) -> Tuple[str, bool]:
         
         if '<!DOCTYPE html>' in latex_content:
             latex_content = re.sub(r'<!DOCTYPE html>.*', '', latex_content, flags=re.DOTALL).strip()
-            
+
+        # Convert bare newlines to HTML breaks if Gemini didn't use block elements
+        block_tags = re.findall(r'<(?:p|ul|ol|div|h[1-6]|table|blockquote)\b', latex_content, re.IGNORECASE)
+        newlines = latex_content.count('\n')
+        if newlines > 3 and len(block_tags) < newlines // 3:
+            latex_content = re.sub(r'(?m)^[ \t]*[•\-\*][ \t]+', '<br>\n&bull; ', latex_content)
+            latex_content = re.sub(r'\n{2,}', '\n<br><br>\n', latex_content)
+            latex_content = re.sub(r'(?<!>)\n(?!<)', '<br>\n', latex_content)
+
         print("✅ Converted!")
         return latex_content, True
         

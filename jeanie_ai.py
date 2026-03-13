@@ -601,6 +601,9 @@ def improve_html_design(html_content, api_key):
             "CRITICAL: Do NOT remove or alter any actual text content, links, images, or mathematical equations. "
             "CRITICAL: Preserve existing line-break semantics exactly. Do NOT remove, add, or relocate <br>/<br /> tags. "
             "Do NOT merge adjacent paragraphs/list items or collapse explicit spacing that changes reading flow. "
+            "CRITICAL: If you find text with bare bullet characters (•, *, -) that are NOT inside <ul>/<ol> list elements, "
+            "convert them to proper <ul><li>...</li></ul> lists. "
+            "If you find text blocks separated only by <br> tags with no <p> wrappers, wrap them in <p> tags for proper structure. "
             "Just improve the structural wrappers/styling. Return ONLY the fully updated raw HTML string without markdown ticks, <html> or <body> tags."
         )
 
