@@ -128,7 +128,6 @@ class ToolkitGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("MOSH's Toolkit: Making Online Spaces Helpful")
-        self.root.geometry("1150x800")  # Expanded for better visibility
         self.root.minsize(1100, 700)  # Prevents cutting off buttons
 
         # [NEW] Safe Exit Protocol
@@ -136,6 +135,16 @@ class ToolkitGUI:
 
         # --- State ---
         self.config = self._load_config()
+        # Ensure window_sizes dict exists in config
+        if "window_sizes" not in self.config:
+            self.config["window_sizes"] = {}
+        # Restore main window size
+        _main_sizes = self.config.get("window_sizes", {}).get("main_window")
+        if _main_sizes:
+            self.root.geometry(f"{_main_sizes.get('w', 1150)}x{_main_sizes.get('h', 800)}")
+        else:
+            self.root.geometry("1150x800")
+            self.config["window_sizes"] = {}
         self.target_dir = self.config.get("target_dir", "")
         self.is_running = False
         self.deferred_review = False
@@ -530,6 +539,16 @@ class ToolkitGUI:
                 "Mosh is currently working on your files!\n\nIf you close now, the process will stop and might leave half-finished files.\n\nAre you sure you want to exit?",
             ):
                 return
+        # Save main window size
+        try:
+            w = self.root.winfo_width()
+            h = self.root.winfo_height()
+            if w > 50 and h > 50:
+                sizes = self.config.setdefault("window_sizes", {})
+                sizes["main_window"] = {"w": w, "h": h}
+                self._save_config_simple()
+        except Exception:
+            pass
         self.root.destroy()
 
     def _center_window_on_root(self, win, width, height):
@@ -542,6 +561,36 @@ class ToolkitGUI:
         x = max(0, rx + (rw - width) // 2)
         y = max(0, ry + (rh - height) // 2)
         win.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _apply_window_size(self, win, key, default_w, default_h):
+        """Apply saved window size or default, centered on root."""
+        sizes = self.config.get("window_sizes", {})
+        saved = sizes.get(key)
+        if saved:
+            w = saved.get("w", default_w)
+            h = saved.get("h", default_h)
+        else:
+            w, h = default_w, default_h
+        self._center_window_on_root(win, w, h)
+        self._bind_window_size_save(win, key)
+
+    def _bind_window_size_save(self, win, key):
+        """Save window size to config when the window is closed."""
+
+        def _on_destroy(event):
+            if event.widget is not win:
+                return
+            try:
+                w = win.winfo_width()
+                h = win.winfo_height()
+                if w > 50 and h > 50:
+                    sizes = self.config.setdefault("window_sizes", {})
+                    sizes[key] = {"w": w, "h": h}
+                    self._save_config_simple()
+            except Exception:
+                pass
+
+        win.bind("<Destroy>", _on_destroy, add="+")
 
     def _ask_choice_centered(self, title, message, buttons):
         """
@@ -617,9 +666,9 @@ class ToolkitGUI:
         """Phase 12: Shows documentation directly in the app."""
         dialog = Toplevel(self.root)
         dialog.title("MOSH Documentation & Tips")
-        dialog.geometry("800x600")
         dialog.transient(self.root)
         dialog.grab_set()
+        self._apply_window_size(dialog, "documentation", 800, 600)
 
         colors = THEMES[self.config.get("theme", "light")]
         dialog.configure(bg=colors["bg"])
@@ -2745,9 +2794,9 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         """Custom dialog to show an image and prompt for alt text."""
         dialog = Toplevel(self.root)
         dialog.title("Image Review")
-        dialog.geometry("700x650")
         dialog.transient(self.root)
         dialog.grab_set()
+        self._apply_window_size(dialog, "image_review", 700, 650)
 
         def on_close_x():
             self.gui_handler.stop_requested = True
@@ -2958,8 +3007,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         """Standard 'Math Whiteboard' for LaTeX editing."""
         math_win = Toplevel(self.root)
         math_win.title("📐 MOSH Math Whiteboard")
-        math_win.geometry("900x650")
         math_win.minsize(700, 500)
+        self._apply_window_size(math_win, "math_whiteboard", 900, 650)
         math_win.resizable(True, True)
         math_win.transient(self.root)
         math_win.grab_set()
@@ -3121,8 +3170,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         manifest_win = Toplevel(self.root)
         manifest_win.title("🖼️ Visual Element Manifest")
-        manifest_win.geometry("1000x750")
         manifest_win.transient(self.root)
+        self._apply_window_size(manifest_win, "visual_manifest", 1000, 750)
         if not non_modal:
             manifest_win.grab_set()
         self.visual_manifest_win = manifest_win
@@ -3459,12 +3508,12 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         dialog = Toplevel(self.root)
         dialog.title(f"LaTeX Review — {file_name} (Page {page_num}/{total_pages})")
-        dialog.geometry("1320x820")
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.configure(bg="#1a1a2e")
         dialog.lift()
         dialog.focus_force()
+        self._apply_window_size(dialog, "latex_review", 1320, 820)
 
         hdr = tk.Frame(dialog, bg="#1a1a2e")
         hdr.pack(fill="x", padx=16, pady=(12, 8))
@@ -3596,6 +3645,7 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
         def _pcwheel(e):
             page_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+
         page_canvas.bind("<MouseWheel>", _pcwheel)
 
         btns = tk.Frame(dialog, bg="#1a1a2e")
@@ -3709,12 +3759,12 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
         def build_dialog():
             dialog = Toplevel(self.root)
             dialog.title("Review Detected Images (Step 1 of 2)")
-            dialog.geometry("1360x960")
             dialog.transient(self.root)
             dialog.grab_set()
             dialog.configure(bg="#1a1a2e")
             dialog.lift()
             dialog.focus_force()
+            self._apply_window_size(dialog, "detected_images_review", 1360, 960)
 
             PAGE_W = 620
             PAGE_H = max(1085, int(PAGE_W * 1.75))
@@ -3782,9 +3832,15 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             canvas_frame = tk.Frame(main, bg="#2a2a3e", bd=2, relief="solid")
             canvas_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-            canvas = tk.Canvas(canvas_frame, bg="#333", highlightthickness=0,
-                               scrollregion=(0, 0, PAGE_W, PAGE_H))
-            canvas_vsb = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+            canvas = tk.Canvas(
+                canvas_frame,
+                bg="#333",
+                highlightthickness=0,
+                scrollregion=(0, 0, PAGE_W, PAGE_H),
+            )
+            canvas_vsb = ttk.Scrollbar(
+                canvas_frame, orient="vertical", command=canvas.yview
+            )
             canvas.configure(yscrollcommand=canvas_vsb.set)
             canvas_vsb.pack(side="right", fill="y")
             canvas.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=5)
@@ -4442,7 +4498,10 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
             canvas.bind("<Button-3>", on_right_click_start)
             canvas.bind("<B3-Motion>", on_right_drag)
             canvas.bind("<ButtonRelease-3>", on_right_release)
-            canvas.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+            canvas.bind(
+                "<MouseWheel>",
+                lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"),
+            )
 
             # Navigation buttons
             nav = tk.Frame(dialog, bg="#1a1a2e")
@@ -4829,8 +4888,8 @@ Step 5: Run "Pre-Flight Check" and import back into a Canvas Sandbox.
 
             dialog = Toplevel(self.root)
             dialog.title(f"Visual Review: {os.path.basename(html_path)}")
-            dialog.geometry("1360x960")
             dialog.transient(self.root)
+            self._apply_window_size(dialog, "visual_review", 1360, 960)
             if not non_modal:
                 dialog.grab_set()
             dialog.configure(bg="#1a1a2e")
@@ -5627,7 +5686,9 @@ h1 {{ color: #4b3190; }}
                 ae_placeholder[0] = ae  # Link back for type dropdown
 
                 # Auto-generate alt text for newly drawn/manual-added boxes.
-                if info.get("manual_added") and not (sv and sv.strip() and sv.lower() != "none"):
+                if info.get("manual_added") and not (
+                    sv and sv.strip() and sv.lower() != "none"
+                ):
                     ae.delete("1.0", "end")
                     ae.insert("1.0", "⏳ Working on new alt tag...")
                     self.gui_handler.log(f"   [AI-ALT] Auto-describing new box: {gn}")
@@ -6098,7 +6159,11 @@ h1 {{ color: #4b3190; }}
                     )
                     for gn, info in meta_snapshot.items():
                         is_manual = bool(info.get("manual_added")) or bool(
-                            re.search(r"_manual\d+\.(png|jpg|jpeg|webp|gif|bmp|tif|tiff)$", gn, re.IGNORECASE)
+                            re.search(
+                                r"_manual\d+\.(png|jpg|jpeg|webp|gif|bmp|tif|tiff)$",
+                                gn,
+                                re.IGNORECASE,
+                            )
                         )
                         if is_manual:
                             already = any(
@@ -6307,9 +6372,9 @@ h1 {{ color: #4b3190; }}
         """Custom dialog to show link details and prompt for text."""
         dialog = Toplevel(self.root)
         dialog.title("Link Review")
-        dialog.geometry("550x400")
         dialog.transient(self.root)
         dialog.grab_set()
+        self._apply_window_size(dialog, "link_review", 550, 400)
 
         def on_close_x():
             self.gui_handler.stop_requested = True
@@ -6392,9 +6457,9 @@ h1 {{ color: #4b3190; }}
         """Phase Viral: Helps faculty spread the word to colleagues."""
         dialog = Toplevel(self.root)
         dialog.title("Spread the Word - April 2026 Deadline")
-        dialog.geometry("550x480")
         dialog.transient(self.root)
         dialog.grab_set()
+        self._apply_window_size(dialog, "share_dialog", 550, 480)
 
         colors = THEMES[self.config.get("theme", "light")]
         dialog.configure(bg=colors["bg"])
@@ -6461,10 +6526,10 @@ h1 {{ color: #4b3190; }}
         """Shows beginner-friendly quick start guide for first-time users."""
         dialog = Toplevel(self.root)
         dialog.title("First Time? Quick Start Guide")
-        dialog.geometry("750x700")
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.resizable(True, True)
+        self._apply_window_size(dialog, "quick_start", 750, 700)
 
         colors = THEMES[self.config.get("theme", "light")]
         dialog.configure(bg=colors["bg"])
@@ -7049,10 +7114,10 @@ Website: meri-becomming-code.github.io/mosh
 
         dialog = Toplevel(self.root)
         dialog.title("MOSH's Toolkit: Making Online Spaces Helpful")
-        dialog.geometry("800x750")  # Bigger window
         dialog.lift()
         dialog.focus_force()
         dialog.resizable(True, True)  # Allow resizing
+        self._apply_window_size(dialog, "instructions", 800, 750)
 
         # Style
         colors = THEMES[self.config.get("theme", "light")]
@@ -7228,10 +7293,10 @@ YOUR WORKFLOW:
         # 2. Show Dialog
         dialog = Toplevel(self.root)
         dialog.title("Interactive Conversion Wizard")
-        dialog.geometry("600x600")
         dialog.lift()
         dialog.focus_force()
         dialog.grab_set()
+        self._apply_window_size(dialog, "conversion_wizard", 600, 600)
 
         tk.Label(
             dialog,
@@ -7890,8 +7955,18 @@ YOUR WORKFLOW:
             if not page_title:
                 page_title = os.path.splitext(html_fname)[0].strip() or "Converted Page"
 
+            # [FIX] Extract only <body> inner content (+ <style> for formatting)
+            # Canvas Pages API expects body fragment, NOT a full HTML document.
+            # Sending a full document causes Canvas to render it as an HTML download.
+            body_tag = soup.find("body")
+            if body_tag:
+                style_tag = soup.find("style")
+                style_html = str(style_tag) if style_tag else ""
+                cleaned_html = style_html + body_tag.decode_contents()
+            else:
+                cleaned_html = str(soup)
+
             # Final upload-time cleanup for mojibake artifacts that may survive prior passes.
-            cleaned_html = str(soup)
             upload_cleanup_map = {
                 "&Acirc;&nbsp;": " ",
                 "&acirc;&nbsp;": " ",
@@ -7977,9 +8052,7 @@ YOUR WORKFLOW:
                     )
                 _err = str(res_page)
                 self._queue_failed_canvas_upload(html_path, original_source_path, _err)
-                self.gui_handler.log(
-                    f"   [ERROR] Page update/creation failed: {_err}"
-                )
+                self.gui_handler.log(f"   [ERROR] Page update/creation failed: {_err}")
                 if show_errors:
                     self.root.after(
                         0,
@@ -8421,9 +8494,9 @@ YOUR WORKFLOW:
         """Displays a simple dashboard checking course readiness (Threaded & Interactive)."""
         dialog = Toplevel(self.root)
         dialog.title("🚦 Pre-Flight Check")
-        dialog.geometry("550x700")
         dialog.transient(self.root)
         dialog.grab_set()
+        self._apply_window_size(dialog, "preflight_check", 550, 700)
 
         colors = THEMES[self.config.get("theme", "light")]
         dialog.configure(bg=colors["bg"])
@@ -8836,13 +8909,8 @@ YOUR WORKFLOW:
         """Shows a fun overlay with Mosh Pilot image (Flight mode)."""
         self.flight_win = Toplevel(self.root)
         self.flight_win.title("Mosh Pilot: Flying to Canvas...")
-        self.flight_win.geometry("450x450")
-        # [UX FIX] Avoid forcing to top or removing decorations so user can do other work
-        # Center
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 225
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 225
-        self.flight_win.geometry(f"+{x}+{y}")
         self.flight_win.transient(self.root)
+        self._apply_window_size(self.flight_win, "flight_animation", 450, 450)
 
         frame = tk.Frame(self.flight_win, bg="#4b3190", borderwidth=5, relief="raised")
         frame.pack(fill="both", expand=True)
@@ -10012,10 +10080,10 @@ YOUR WORKFLOW:
                 result = {"choice": None}
                 win = Toplevel(self.root)
                 win.title("Math Visual Detection")
-                win.geometry("900x780")
                 win.transient(self.root)
                 win.grab_set()
                 win.configure(bg="white")
+                self._apply_window_size(win, "math_visual_detection", 900, 780)
 
                 tk.Label(
                     win,
@@ -10259,6 +10327,7 @@ YOUR WORKFLOW:
                     # Interactive image-conversion review pass (equation/table images)
                     try:
                         import interactive_fixer as _ifixer
+
                         _ifixer.run_auto_fixer(output_path, self.gui_handler)
                         with open(output_path, "r", encoding="utf-8") as _f:
                             _html = _f.read()
